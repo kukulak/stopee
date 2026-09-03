@@ -4,8 +4,7 @@ import { Link, useLoaderData } from "@remix-run/react";
 import { Navbar } from "~/components/layout/Navbar";
 import { Footer } from "~/components/layout/Footer";
 import { FluidWaves } from "~/components/ui/FluidWaves";
-import { Logo } from "~/components/ui/Logo";
-import { ScrollyContainer } from "~/components/scrollytelling/ScrollyContainer";
+import { ScrollytellingSection } from "~/components/scrollytelling/ScrollytellingSection";
 import { PRODUCT_LIST } from "~/data/products";
 import { BLOG_POSTS } from "~/data/blogPosts";
 import { getCart } from "~/lib/cart.server";
@@ -47,60 +46,8 @@ export default function Index() {
       <Navbar cartCount={cartCount} />
 
       <main className="flex-1">
-        {/* HERO */}
-        <section className="relative overflow-hidden">
-          <FluidWaves className="absolute inset-x-0 bottom-0 h-64 w-full sm:h-80" />
-          <div className="relative mx-auto flex max-w-6xl flex-col items-center gap-10 px-4 pb-28 pt-16 text-center sm:px-6 sm:pt-24 md:flex-row md:text-left">
-            <div className="md:w-1/2">
-              <p className="font-body text-sm font-bold uppercase tracking-widest text-oliva">
-                Concentrado biotecnológico · Rinde 30L por litro
-              </p>
-              <h1 className="mt-3 font-display text-4xl font-black leading-[1.05] text-carbon sm:text-5xl lg:text-6xl">
-                Ciudades limpias, <span className="text-oliva">paseos impecables.</span>
-              </h1>
-              <p className="mx-auto mt-5 max-w-md text-lg text-carbon/70 md:mx-0">
-                El concentrado biotecnológico que neutraliza al instante y degrada los residuos
-                del paseo canino. Rinde 30 litros de frescura activa.
-              </p>
-              <div className="mt-8 flex flex-col items-center gap-3 sm:flex-row md:justify-start">
-                <Link
-                  to="/tienda"
-                  className="min-h-11 w-full rounded-full bg-lima px-8 py-3 text-center text-base font-bold text-carbon transition-transform hover:scale-105 active:scale-95 sm:w-auto"
-                >
-                  Comprar paquetes
-                </Link>
-                <a
-                  href="#modo-de-uso"
-                  className="min-h-11 w-full rounded-full border-2 border-carbon/15 px-8 py-3 text-center text-base font-bold text-carbon transition-colors hover:border-carbon/30 sm:w-auto"
-                >
-                  Explorar el modo de uso ↓
-                </a>
-              </div>
-            </div>
-
-            <div className="relative flex w-full items-center justify-center md:w-1/2">
-              <div className="relative flex aspect-square w-full max-w-sm items-center justify-center rounded-squishy bg-gradient-to-br from-lima/25 via-oliva/10 to-transparent">
-                <div className="flex items-end gap-4">
-                  <div className="flex h-52 w-24 flex-col items-center justify-center gap-2 rounded-2xl bg-carbon p-3 text-hueso shadow-xl sm:h-64 sm:w-28">
-                    <Logo className="h-10 w-auto" />
-                    <span className="text-center text-[10px] font-semibold leading-tight">
-                      1L Concentrado
-                    </span>
-                  </div>
-                  <div className="flex h-40 w-20 flex-col items-center justify-center gap-2 rounded-3xl bg-bosque p-3 text-hueso shadow-xl sm:h-48 sm:w-24">
-                    <Logo className="h-7 w-auto" />
-                    <span className="text-center text-[9px] font-semibold leading-tight">
-                      Squishable
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* SCROLLYTELLING */}
-        <ScrollyContainer />
+        {/* HERO + SCROLLYTELLING 3D (una sola coreografía continua) */}
+        <ScrollytellingSection />
 
         {/* MANIFIESTO PSICOLÓGICO */}
         <section className="relative overflow-hidden bg-carbon py-20 text-hueso">
@@ -130,7 +77,7 @@ export default function Index() {
         </section>
 
         {/* TIENDA TEASER */}
-        <section className="mx-auto max-w-6xl px-4 py-20 sm:px-6">
+        <section id="tienda-teaser" className="mx-auto max-w-6xl px-4 py-20 sm:px-6">
           <div className="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-end">
             <div>
               <p className="font-body text-sm font-bold uppercase tracking-widest text-oliva">
