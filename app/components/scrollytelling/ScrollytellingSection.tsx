@@ -70,6 +70,15 @@ export function ScrollytellingSection() {
 
       const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
+      // En pantallas angostas la cámara (ver ScrollyCanvas) se aleja para
+      // que el ancho de escena siga cabiendo, lo que además revela objetos
+      // "fuera de cuadro" que en desktop quedaban ocultos por distancia.
+      // Se compensa acercando los desplazamientos horizontales al centro y,
+      // sobre todo, ocultando/mostrando cada objeto con `visible` en vez de
+      // depender solo de la posición.
+      const isNarrow = window.innerWidth < 640;
+      const X = isNarrow ? 0.55 : 1;
+
       ctx = gsap.context(() => {
         const bottle = bottleRef.current!;
         const cap = capRef.current!;
@@ -81,17 +90,26 @@ export function ScrollytellingSection() {
         const squishableLiquidMaterial = squishableLiquid.material as THREE.MeshPhysicalMaterial;
 
         // --- Estado inicial de la escena ---
-        gsap.set(bottle.position, { x: 1.4, y: 0.2, z: 0 });
+        gsap.set(bottle.position, { x: 1.4 * X, y: 0.2, z: 0 });
         gsap.set(bottle.rotation, { x: 0, y: 0, z: 0 });
-        gsap.set(cap.position, { x: 1.4, y: 1.9, z: 0 });
+        bottle.visible = true;
+
+        gsap.set(cap.position, { x: 1.4 * X, y: 1.9, z: 0 });
         gsap.set(cap.rotation, { x: 0, y: 0, z: 0 });
         gsap.set(capLiquid.scale, { y: 0 });
+        cap.visible = true;
+
         gsap.set(squishable.position, { x: 0, y: -4, z: 0 });
         gsap.set(squishableLiquid.scale, { y: 0.001 });
         squishableLiquidMaterial.color.set("#BFE0EE");
-        gsap.set(faucet.position, { x: -4.5, y: 1.6, z: 0 });
+        squishable.visible = false;
+
+        gsap.set(faucet.position, { x: -4.5 * X, y: 1.6, z: 0 });
+        faucet.visible = false;
+
         gsap.set(waterStream.scale, { y: 0 });
-        gsap.set(waterStream.position, { x: -1.7, y: 1.1, z: 0 });
+        gsap.set(waterStream.position, { x: -1.7 * X, y: 1.1, z: 0 });
+        waterStream.visible = false;
 
         gsap.set([paso1TextRef.current, paso2TextRef.current, paso3TextRef.current, paso4TextRef.current], {
           opacity: 0,
@@ -103,7 +121,7 @@ export function ScrollytellingSection() {
             trigger: sectionRef.current,
             start: "top top",
             end: "bottom bottom",
-            scrub: prefersReducedMotion ? false : 1,
+            scrub: prefersReducedMotion ? false : 0.4,
             onUpdate: (self) => {
               if (progressBarRef.current) {
                 progressBarRef.current.style.transform = `scaleX(${self.progress})`;
@@ -124,15 +142,17 @@ export function ScrollytellingSection() {
           .to(bottle.rotation, { z: Math.PI / 2, duration: 4 }, 26)
           .to(bottle.position, { y: 0.6, duration: 4 }, 26)
           .to(cap.rotation, { y: Math.PI * 6, duration: 6, ease: "power1.in" }, 24)
-          .to(cap.position, { x: 0.55, y: 0.35, z: 0.4, duration: 6 }, 24)
+          .to(cap.position, { x: 0.55 * X, y: 0.35, z: 0.4, duration: 6 }, 24)
           .to(capLiquid.scale, { y: 1, duration: 2 }, 28)
           .to(paso1TextRef.current, { opacity: 0, duration: 2 }, 33);
 
         // ===================== PASO 2 (35 - 60) — dosificación al squishable =====================
         tl.to(paso2TextRef.current, { opacity: 1, duration: 2 }, 35)
           .to(bottle.position, { y: 6, duration: 5 }, 35)
+          .set(bottle, { visible: false }, 40)
+          .set(squishable, { visible: true }, 37)
           .to(squishable.position, { y: -0.2, duration: 6, ease: "back.out(1.2)" }, 38)
-          .to(cap.position, { x: 0.15, y: 1.05, z: 0.25, duration: 5 }, 42)
+          .to(cap.position, { x: 0.15 * X, y: 1.05, z: 0.25, duration: 5 }, 42)
           .to(cap.rotation, { z: -Math.PI / 3.2, duration: 5 }, 44)
           .to(capLiquid.scale, { y: 0.15, duration: 3 }, 50)
           .to(squishableLiquid.scale, { y: 0.12, duration: 3 }, 50)
@@ -140,17 +160,22 @@ export function ScrollytellingSection() {
 
         // ===================== PASO 3 (60 - 85) — activación con agua =====================
         tl.to(paso3TextRef.current, { opacity: 1, duration: 2 }, 60)
-          .to(cap.position, { y: 5, x: 1.5, duration: 5 }, 60)
+          .to(cap.position, { y: 5, x: 1.5 * X, duration: 5 }, 60)
+          .set(cap, { visible: false }, 65)
           .to(squishable.position, { x: 0, y: 0, duration: 5, ease: "power2.inOut" }, 60)
-          .to(faucet.position, { x: -1.7, duration: 6 }, 62)
+          .set(faucet, { visible: true }, 61)
+          .to(faucet.position, { x: -1.7 * X, duration: 6 }, 62)
+          .set(waterStream, { visible: true }, 67)
           .to(waterStream.scale, { y: 1, duration: 2 }, 68)
           .to(squishableLiquid.scale, { y: 0.86, duration: 10, ease: "power1.in" }, 68)
           .to(squishableLiquidMaterial.color, { r: 0.71, g: 0.83, b: 0.2, duration: 10 }, 68)
           .to(waterStream.scale, { y: 0, duration: 2 }, 80)
+          .set(waterStream, { visible: false }, 82)
           .to(paso3TextRef.current, { opacity: 0, duration: 2 }, 83);
 
         // ===================== PASO 4 (85 - 100) — cierre =====================
-        tl.to(faucet.position, { x: -4.5, duration: 4 }, 84)
+        tl.to(faucet.position, { x: -4.5 * X, duration: 4 }, 84)
+          .set(faucet, { visible: false }, 88)
           .to(squishable.rotation, { y: Math.PI * 2, duration: 10, ease: "power1.inOut" }, 86)
           .to(squishable.position, { y: 0.2, duration: 4, ease: "power2.out" }, 86)
           .to(paso4TextRef.current, { opacity: 1, duration: 3 }, 88);
@@ -161,7 +186,7 @@ export function ScrollytellingSection() {
   }, [canvasReady]);
 
   return (
-    <section ref={sectionRef} className="relative bg-carbon" style={{ height: "620vh" }}>
+    <section ref={sectionRef} className="relative bg-carbon" style={{ height: "480vh" }}>
       <div className="sticky top-0 h-screen w-full overflow-hidden">
         <FluidWaves tone="dark" className="absolute inset-0 h-full w-full opacity-60" />
 
