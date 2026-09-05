@@ -1,5 +1,5 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs, MetaFunction } from "@remix-run/node";
-import { json } from "@remix-run/node";
+import { json, redirect } from "@remix-run/node";
 import { useLoaderData } from "@remix-run/react";
 import { Navbar } from "~/components/layout/Navbar";
 import { Footer } from "~/components/layout/Footer";
@@ -10,6 +10,7 @@ import { PRODUCTS, LOYALTY_DISCOUNT_PERCENT } from "~/data/products";
 import type { ProductSku } from "~/data/products";
 import { addToCart, getCart, removeFromCart } from "~/lib/cart.server";
 import { getUser } from "~/lib/session.server";
+import { getSiteSettings } from "~/models/siteSettings.server";
 
 export const meta: MetaFunction = () => [
   { title: "Tienda STOPee — Higiene urbana canina" },
@@ -20,6 +21,11 @@ export const meta: MetaFunction = () => [
 ];
 
 export async function loader({ request }: LoaderFunctionArgs) {
+  const settings = await getSiteSettings();
+  if (!settings.isStoreActive) {
+    throw redirect("/");
+  }
+
   const [cartItems, user] = await Promise.all([getCart(request), getUser(request)]);
 
   const lines: CartLine[] = cartItems

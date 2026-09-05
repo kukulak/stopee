@@ -16,6 +16,7 @@ const userSchema = new Schema(
      */
     individualPurchaseCount: { type: Number, default: 0 },
     loyaltyDiscountActive: { type: Boolean, default: false },
+    role: { type: String, enum: ["customer", "admin"], default: "customer" },
   },
   { timestamps: true },
 );

@@ -55,6 +55,43 @@ export async function getUser(request: Request) {
   return UserModel.findById(userId).lean();
 }
 
+/**
+ * Protege las rutas de /admin. Reutiliza la misma sesión de cliente: un
+ * usuario se vuelve administrador teniendo `role: "admin"`, o iniciando
+ * sesión con el correo declarado en ADMIN_EMAIL (bootstrap del primer
+ * administrador sin necesitar un script aparte).
+ */
+export async function requireAdmin(request: Request) {
+  const userId = await getUserId(request);
+  if (!userId) {
+    const url = new URL(request.url);
+    const searchParams = new URLSearchParams([["redirectTo", url.pathname]]);
+    throw redirect(`/admin/login?${searchParams}`);
+  }
+
+  await connectDB();
+  const user = await UserModel.findById(userId);
+  if (!user) {
+    const url = new URL(request.url);
+    const searchParams = new URLSearchParams([["redirectTo", url.pathname]]);
+    throw redirect(`/admin/login?${searchParams}`);
+  }
+
+  const adminEmail = process.env.ADMIN_EMAIL?.toLowerCase();
+  if (user.role !== "admin" && adminEmail && user.email === adminEmail) {
+    user.role = "admin";
+    await user.save();
+  }
+
+  if (user.role !== "admin") {
+    throw new Response("No tienes permisos de administrador para ver esta página.", {
+      status: 403,
+    });
+  }
+
+  return user.toObject();
+}
+
 export async function logout(request: Request) {
   const session = await getSession(request);
   return redirect("/", {

@@ -1,13 +1,18 @@
-import type { LoaderFunctionArgs, MetaFunction } from "@remix-run/node";
+import type { ActionFunctionArgs, LoaderFunctionArgs, MetaFunction } from "@remix-run/node";
 import { json } from "@remix-run/node";
-import { Link, useLoaderData } from "@remix-run/react";
+import { Link, useActionData, useLoaderData } from "@remix-run/react";
+import { z } from "zod";
 import { Navbar } from "~/components/layout/Navbar";
 import { Footer } from "~/components/layout/Footer";
 import { FluidWaves } from "~/components/ui/FluidWaves";
 import { ScrollytellingSection } from "~/components/scrollytelling/ScrollytellingSection";
+import { PrelaunchLanding } from "~/components/prelaunch/PrelaunchLanding";
 import { PRODUCT_LIST } from "~/data/products";
 import { BLOG_POSTS } from "~/data/blogPosts";
 import { getCart } from "~/lib/cart.server";
+import { getSiteSettings } from "~/models/siteSettings.server";
+import { connectDB } from "~/lib/db.server";
+import { LeadModel } from "~/models/lead.server";
 
 export const meta: MetaFunction = () => [
   { title: "STOPee — Ciudades limpias, paseos impecables" },
@@ -18,8 +23,45 @@ export const meta: MetaFunction = () => [
 ];
 
 export async function loader({ request }: LoaderFunctionArgs) {
+  const settings = await getSiteSettings();
+
+  if (!settings.isStoreActive) {
+    return json({ isStoreActive: false as const });
+  }
+
   const cart = await getCart(request);
-  return json({ cartCount: cart.reduce((sum, item) => sum + item.quantity, 0) });
+  return json({
+    isStoreActive: true as const,
+    cartCount: cart.reduce((sum, item) => sum + item.quantity, 0),
+  });
+}
+
+const waitlistSchema = z.object({
+  email: z.string().trim().toLowerCase().email("Ingresa un correo válido."),
+});
+
+export async function action({ request }: ActionFunctionArgs) {
+  const formData = await request.formData();
+  const parsed = waitlistSchema.safeParse({ email: formData.get("email") });
+
+  if (!parsed.success) {
+    return json(
+      { ok: false, error: parsed.error.issues[0]?.message ?? "Ingresa un correo válido." },
+      { status: 400 },
+    );
+  }
+
+  await connectDB();
+  // Idempotente: si ya estaba registrado, igual confirmamos su lugar en la
+  // lista en vez de mostrar un error — nadie debería sentir que algo falló
+  // por intentar registrarse dos veces.
+  await LeadModel.findOneAndUpdate(
+    { email: parsed.data.email },
+    { $setOnInsert: { email: parsed.data.email, registeredAt: new Date() } },
+    { upsert: true },
+  );
+
+  return json({ ok: true });
 }
 
 const BENEFITS = [
@@ -38,7 +80,17 @@ const BENEFITS = [
 ];
 
 export default function Index() {
-  const { cartCount } = useLoaderData<typeof loader>();
+  const data = useLoaderData<typeof loader>();
+  const actionData = useActionData<typeof action>();
+
+  if (!data.isStoreActive) {
+    return <PrelaunchLanding actionData={actionData} />;
+  }
+
+  return <LaunchedLanding cartCount={data.cartCount} />;
+}
+
+function LaunchedLanding({ cartCount }: { cartCount: number }) {
   const featured = PRODUCT_LIST.find((p) => p.sku === "pack-basico") ?? PRODUCT_LIST[0];
 
   return (
