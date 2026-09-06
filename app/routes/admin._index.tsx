@@ -9,6 +9,7 @@ import { UserModel } from "~/models/user.server";
 import { ProductModel } from "~/models/product.server";
 import { AnalyticsEventModel } from "~/models/analyticsEvent.server";
 import { getSiteSettings } from "~/models/siteSettings.server";
+import { getActiveLoyaltyConfig } from "~/models/promotion.server";
 import { resolveDateRange, percentChange } from "~/lib/dateRange.server";
 import { monthlyEquivalent } from "~/lib/mrr.server";
 import { SUBSCRIPTION_UNIT_AMOUNT_MXN_CENTS } from "~/lib/stripe.server";
@@ -147,10 +148,14 @@ export async function loader({ request }: LoaderFunctionArgs) {
     frequencyDistribution.set(s.frequency, (frequencyDistribution.get(s.frequency) ?? 0) + 1);
   }
 
+  const loyaltyConfig = await getActiveLoyaltyConfig();
   const loyaltyUsers = await UserModel.find({ individualPurchaseCount: { $gt: 0 } })
     .select("individualPurchaseCount loyaltyDiscountActive totalSpentLTV")
     .lean();
-  const loyaltyFunnel = [1, 2, 3, 4].map((n) => ({
+  // Pasos previos al umbral configurado (si el umbral es la 3ª compra, se
+  // muestran los pasos 1 y 2; la 3ª ya cuenta como "desbloqueado").
+  const loyaltySteps = Array.from({ length: Math.max(1, loyaltyConfig.purchasesRequired - 1) }, (_, i) => i + 1);
+  const loyaltyFunnel = loyaltySteps.map((n) => ({
     step: `${n}ª compra`,
     count: loyaltyUsers.filter((u) => u.individualPurchaseCount === n).length,
   }));
@@ -268,6 +273,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
       funnel: loyaltyFunnel,
       unlocked: loyaltyUnlocked,
       avgLtv: Math.round(avgLtv),
+      purchasesRequired: loyaltyConfig.purchasesRequired,
+      percentage: loyaltyConfig.percentage,
     },
     acquisition: {
       attributionBreakdown,
@@ -570,7 +577,9 @@ export default function AdminDashboard() {
         </Card>
 
         <Card>
-          <h2 className="font-display text-lg font-bold text-carbon">Camino a la 5ª compra</h2>
+          <h2 className="font-display text-lg font-bold text-carbon">
+            Camino a la {data.loyalty.purchasesRequired}ª compra
+          </h2>
           <div className="mt-4 flex flex-col gap-2">
             {data.loyalty.funnel.map((f) => (
               <div key={f.step} className="flex items-center justify-between text-sm">
@@ -579,7 +588,9 @@ export default function AdminDashboard() {
               </div>
             ))}
             <div className="mt-2 flex items-center justify-between rounded-xl bg-lima/10 px-3 py-2 text-sm">
-              <span className="font-semibold text-bosque">Con 10% permanente desbloqueado</span>
+              <span className="font-semibold text-bosque">
+                Con {data.loyalty.percentage}% permanente desbloqueado
+              </span>
               <span className="font-bold text-bosque">{data.loyalty.unlocked}</span>
             </div>
           </div>

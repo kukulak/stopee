@@ -8,11 +8,13 @@ import { Footer } from "~/components/layout/Footer";
 import { BundleSelector } from "~/components/ecommerce/BundleSelector";
 import { SubscriptionConfigurator } from "~/components/ecommerce/SubscriptionConfigurator";
 import { CartDrawer, type CartLine } from "~/components/ecommerce/CartDrawer";
-import { PRODUCTS, LOYALTY_DISCOUNT_PERCENT } from "~/data/products";
+import { PromoBanner } from "~/components/ecommerce/PromoBanner";
+import { PRODUCTS } from "~/data/products";
 import type { ProductSku } from "~/data/products";
-import { addToCart, getCart, removeFromCart } from "~/lib/cart.server";
+import { addToCart, getCart, getCartCoupon, removeFromCart, setCartCoupon } from "~/lib/cart.server";
 import { getUser } from "~/lib/session.server";
 import { getSiteSettings } from "~/models/siteSettings.server";
+import { getActiveLoyaltyConfig, getActiveBannerPromotion, findRedeemableCoupon } from "~/models/promotion.server";
 
 export const meta: MetaFunction = () => [
   { title: "Tienda STOPee — Higiene urbana canina" },
@@ -28,7 +30,13 @@ export async function loader({ request }: LoaderFunctionArgs) {
     throw redirect("/");
   }
 
-  const [cartItems, user] = await Promise.all([getCart(request), getUser(request)]);
+  const [cartItems, user, couponCode, loyalty, bannerPromo] = await Promise.all([
+    getCart(request),
+    getUser(request),
+    getCartCoupon(request),
+    getActiveLoyaltyConfig(),
+    getActiveBannerPromotion(),
+  ]);
 
   const lines: CartLine[] = cartItems
     .filter((item): item is { sku: ProductSku; quantity: number } => item.sku in PRODUCTS)
@@ -39,16 +47,59 @@ export async function loader({ request }: LoaderFunctionArgs) {
     }));
 
   const subtotalMxn = lines.reduce((sum, line) => sum + line.product.priceMxn * line.quantity, 0);
-  const discountPercent = user?.loyaltyDiscountActive ? LOYALTY_DISCOUNT_PERCENT : 0;
 
-  return json({ lines, subtotalMxn, discountPercent, isAuthenticated: Boolean(user) });
+  let coupon: { code: string; percentage: number } | null = null;
+  if (couponCode) {
+    const promo = await findRedeemableCoupon(couponCode);
+    if (promo?.coupon?.percentage) {
+      coupon = { code: couponCode, percentage: promo.coupon.percentage };
+    }
+  }
+
+  const loyaltyDiscountPercent = user?.loyaltyDiscountActive ? loyalty.percentage : 0;
+  // Si tiene cupón activo, éste manda (fue una acción explícita del cliente);
+  // si no, aplica automáticamente el descuento de lealtad si lo tiene.
+  const discountPercent = coupon ? coupon.percentage : loyaltyDiscountPercent;
+
+  return json({
+    lines,
+    subtotalMxn,
+    discountPercent,
+    coupon,
+    isAuthenticated: Boolean(user),
+    banner: bannerPromo?.banner?.enabled
+      ? {
+          text: bannerPromo.banner.text,
+          ctaText: bannerPromo.banner.ctaText,
+          ctaHref: bannerPromo.banner.ctaHref,
+        }
+      : null,
+  });
 }
 
 export async function action({ request }: ActionFunctionArgs) {
   const formData = await request.formData();
   const intent = formData.get("intent");
-  const sku = formData.get("sku");
 
+  if (intent === "apply-coupon") {
+    const code = String(formData.get("code") ?? "").trim();
+    if (!code) {
+      return json({ error: "Ingresa un código." }, { status: 400 });
+    }
+    const promo = await findRedeemableCoupon(code);
+    if (!promo?.coupon?.percentage) {
+      return json({ error: "Ese código no es válido o ya venció." }, { status: 404 });
+    }
+    const cookie = await setCartCoupon(request, code.toUpperCase());
+    return json({ ok: true }, { headers: { "Set-Cookie": cookie } });
+  }
+
+  if (intent === "remove-coupon") {
+    const cookie = await setCartCoupon(request, null);
+    return json({ ok: true }, { headers: { "Set-Cookie": cookie } });
+  }
+
+  const sku = formData.get("sku");
   if (typeof sku !== "string" || !(sku in PRODUCTS)) {
     return json({ error: "Producto no válido." }, { status: 400 });
   }
@@ -67,7 +118,7 @@ export async function action({ request }: ActionFunctionArgs) {
 }
 
 export default function Tienda() {
-  const { lines, subtotalMxn, discountPercent } = useLoaderData<typeof loader>();
+  const { lines, subtotalMxn, discountPercent, coupon, banner } = useLoaderData<typeof loader>();
 
   useEffect(() => {
     trackEvent("view_item");
@@ -79,6 +130,12 @@ export default function Tienda() {
 
       <main className="flex-1">
         <section className="mx-auto max-w-6xl px-4 py-12 sm:px-6">
+          {banner && (
+            <div className="mb-8">
+              <PromoBanner text={banner.text} ctaText={banner.ctaText} ctaHref={banner.ctaHref} />
+            </div>
+          )}
+
           <p className="font-body text-sm font-bold uppercase tracking-widest text-oliva">
             Tienda STOPee
           </p>
@@ -96,7 +153,12 @@ export default function Tienda() {
               <SubscriptionConfigurator />
             </div>
 
-            <CartDrawer lines={lines} subtotalMxn={subtotalMxn} discountPercent={discountPercent} />
+            <CartDrawer
+              lines={lines}
+              subtotalMxn={subtotalMxn}
+              discountPercent={discountPercent}
+              coupon={coupon}
+            />
           </div>
         </section>
       </main>

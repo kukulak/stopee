@@ -9,7 +9,7 @@ import { UserModel } from "~/models/user.server";
 import { LeadModel } from "~/models/lead.server";
 import { PRODUCTS } from "~/data/products";
 import type { ProductSku } from "~/data/products";
-import { LOYALTY_PURCHASES_REQUIRED } from "~/data/products";
+import { getActiveLoyaltyConfig } from "~/models/promotion.server";
 
 const WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET;
 
@@ -82,7 +82,8 @@ async function bumpUserLoyaltyAndLTV(user: InstanceType<typeof UserModel>, netAm
   user.totalSpentLTV = (user.totalSpentLTV ?? 0) + netAmount;
   if (countsTowardLoyalty) {
     user.individualPurchaseCount += 1;
-    if (user.individualPurchaseCount >= LOYALTY_PURCHASES_REQUIRED) {
+    const loyalty = await getActiveLoyaltyConfig();
+    if (user.individualPurchaseCount >= loyalty.purchasesRequired) {
       user.loyaltyDiscountActive = true;
     }
   }

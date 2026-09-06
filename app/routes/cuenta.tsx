@@ -18,7 +18,7 @@ import {
   SUBSCRIPTION_FREQUENCIES,
   type SubscriptionFrequency,
 } from "~/data/subscriptionFrequencies";
-import { LOYALTY_PURCHASES_REQUIRED } from "~/data/products";
+import { getActiveLoyaltyConfig } from "~/models/promotion.server";
 
 const ORDER_STATUS_LABELS: Record<string, string> = {
   paid: "Pagado",
@@ -35,10 +35,11 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const userId = await requireUserId(request);
   await connectDB();
 
-  const [user, orders, subscriptions] = await Promise.all([
+  const [user, orders, subscriptions, loyaltyConfig] = await Promise.all([
     UserModel.findById(userId).lean(),
     OrderModel.find({ user: userId }).sort({ createdAt: -1 }).lean(),
     SubscriptionModel.find({ user: userId }).sort({ createdAt: -1 }).lean(),
+    getActiveLoyaltyConfig(),
   ]);
 
   if (!user) throw new Response("Usuario no encontrado", { status: 404 });
@@ -47,7 +48,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
     user: { name: user.name, email: user.email, dogName: user.dogName },
     loyalty: {
       count: user.individualPurchaseCount ?? 0,
-      required: LOYALTY_PURCHASES_REQUIRED,
+      required: loyaltyConfig.purchasesRequired,
+      percentage: loyaltyConfig.percentage,
       active: Boolean(user.loyaltyDiscountActive),
     },
     orders: orders.map((o) => ({
@@ -141,14 +143,15 @@ export default function Cuenta() {
             <p className="font-display font-bold text-carbon">Programa de fidelidad</p>
             {loyalty.active ? (
               <p className="mt-1 text-sm text-bosque">
-                Tienes activo tu 10% de descuento permanente por compras individuales. ¡Gracias
-                por ser parte del cambio!
+                Tienes activo tu {loyalty.percentage}% de descuento permanente por compras
+                individuales. ¡Gracias por ser parte del cambio!
               </p>
             ) : (
               <>
                 <p className="mt-1 text-sm text-carbon/70">
                   Llevas {loyalty.count} de {loyalty.required} compras individuales. Al completar
-                  tu {loyalty.required}ª compra, activas 10% de descuento permanente.
+                  tu {loyalty.required}ª compra, activas {loyalty.percentage}% de descuento
+                  permanente.
                 </p>
                 <div className="mt-3 flex gap-1.5">
                   {Array.from({ length: loyalty.required }).map((_, i: number) => (

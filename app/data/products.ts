@@ -60,6 +60,9 @@ export const PRODUCTS: Record<ProductSku, Product> = {
 
 export const PRODUCT_LIST = Object.values(PRODUCTS);
 
-export const LOYALTY_PURCHASES_REQUIRED = 5;
-export const LOYALTY_DISCOUNT_PERCENT = 10;
+// El umbral y porcentaje de lealtad ("camino a la Nª compra") ahora se
+// configuran en /admin/discounts (Promotion type "loyalty") — ver
+// ~/models/promotion.server.ts#getActiveLoyaltyConfig. Estos valores ya no
+// se usan; se dejó SUBSCRIPTION_DISCOUNT_PERCENT porque el flujo de
+// suscripción todavía no tiene su propia promoción configurable.
 export const SUBSCRIPTION_DISCOUNT_PERCENT = 10;

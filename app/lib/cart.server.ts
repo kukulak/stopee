@@ -19,14 +19,25 @@ export const cartStorage = createCookieSessionStorage({
   },
 });
 
+async function getSession(request: Request) {
+  return cartStorage.getSession(request.headers.get("Cookie"));
+}
+
 export async function getCart(request: Request): Promise<CartItem[]> {
-  const session = await cartStorage.getSession(request.headers.get("Cookie"));
+  const session = await getSession(request);
   const items = session.get("items");
   return Array.isArray(items) ? items : [];
 }
 
-export async function saveCart(items: CartItem[]) {
-  const session = await cartStorage.getSession();
+export async function getCartCoupon(request: Request): Promise<string | null> {
+  const session = await getSession(request);
+  const code = session.get("couponCode");
+  return typeof code === "string" && code ? code : null;
+}
+
+/** Preserva el resto de la sesión (p. ej. el cupón) al reescribir los items. */
+async function saveCart(request: Request, items: CartItem[]) {
+  const session = await getSession(request);
   session.set("items", items);
   return cartStorage.commitSession(session);
 }
@@ -39,14 +50,24 @@ export async function addToCart(request: Request, sku: string, quantity = 1) {
   } else {
     items.push({ sku, quantity });
   }
-  return { items, cookie: await saveCart(items) };
+  return { items, cookie: await saveCart(request, items) };
 }
 
 export async function removeFromCart(request: Request, sku: string) {
   const items = (await getCart(request)).filter((item) => item.sku !== sku);
-  return { items, cookie: await saveCart(items) };
+  return { items, cookie: await saveCart(request, items) };
 }
 
-export async function clearCart() {
-  return saveCart([]);
+export async function setCartCoupon(request: Request, code: string | null) {
+  const session = await getSession(request);
+  if (code) session.set("couponCode", code);
+  else session.unset("couponCode");
+  return cartStorage.commitSession(session);
+}
+
+export async function clearCart(request: Request) {
+  const session = await getSession(request);
+  session.unset("items");
+  session.unset("couponCode");
+  return cartStorage.commitSession(session);
 }

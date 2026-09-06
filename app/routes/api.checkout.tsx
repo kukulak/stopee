@@ -1,19 +1,21 @@
 import type { ActionFunctionArgs } from "@remix-run/node";
 import { json, redirect } from "@remix-run/node";
-import { PRODUCTS, LOYALTY_DISCOUNT_PERCENT } from "~/data/products";
+import { PRODUCTS } from "~/data/products";
 import type { ProductSku } from "~/data/products";
 import { STRIPE_PRICE_BY_SKU } from "~/data/stripePriceMap.server";
-import { getCart } from "~/lib/cart.server";
+import { getCart, getCartCoupon } from "~/lib/cart.server";
 import { getUser } from "~/lib/session.server";
 import { createOneTimeCheckoutSession } from "~/lib/stripe.server";
 import { getAttribution } from "~/lib/attribution.server";
 import { logEvent, getOrCreateVisitorId } from "~/lib/tracking.server";
+import { getActiveLoyaltyConfig, findRedeemableCoupon } from "~/models/promotion.server";
 
 export async function action({ request }: ActionFunctionArgs) {
-  const [cartItems, user, attribution] = await Promise.all([
+  const [cartItems, user, attribution, couponCode] = await Promise.all([
     getCart(request),
     getUser(request),
     getAttribution(request),
+    getCartCoupon(request),
   ]);
 
   const validItems = cartItems.filter(
@@ -29,7 +31,17 @@ export async function action({ request }: ActionFunctionArgs) {
     quantity: item.quantity,
   }));
 
-  const discountPercent = user?.loyaltyDiscountActive ? LOYALTY_DISCOUNT_PERCENT : undefined;
+  // El cupón, si el cliente puso uno explícitamente, gana sobre el
+  // descuento automático de lealtad — igual que se muestra en el carrito.
+  let discountPercent: number | undefined;
+  if (couponCode) {
+    const promo = await findRedeemableCoupon(couponCode);
+    discountPercent = promo?.coupon?.percentage ?? undefined;
+  }
+  if (discountPercent === undefined && user?.loyaltyDiscountActive) {
+    const loyalty = await getActiveLoyaltyConfig();
+    discountPercent = loyalty.percentage;
+  }
 
   const session = await createOneTimeCheckoutSession({
     lineItems,

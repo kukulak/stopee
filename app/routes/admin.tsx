@@ -10,7 +10,7 @@ const NAV_ITEMS = [
   { to: "/admin/orders", label: "Pedidos" },
   { to: "/admin/settings", label: "Configuración" },
   { to: "/admin/catalog", label: "Catálogo" },
-  { to: "/admin/discounts", label: "Descuentos" },
+  { to: "/admin/discounts", label: "Promociones" },
   { to: "/admin/leads", label: "Lista de espera" },
 ];
 
