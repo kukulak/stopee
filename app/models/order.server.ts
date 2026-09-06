@@ -12,21 +12,41 @@ const orderItemSchema = new Schema(
   { _id: false },
 );
 
+const attributionSchema = new Schema(
+  {
+    utm_source: { type: String, default: "" },
+    utm_medium: { type: String, default: "" },
+    utm_campaign: { type: String, default: "" },
+  },
+  { _id: false },
+);
+
 const orderSchema = new Schema(
   {
     user: { type: Schema.Types.ObjectId, ref: "User" },
     email: { type: String, required: true },
-    stripeCheckoutSessionId: { type: String, required: true, unique: true },
+    stripeCheckoutSessionId: { type: String, unique: true, sparse: true },
     stripePaymentIntentId: { type: String },
+    /** Presente solo en pedidos generados por una renovación de suscripción. */
+    stripeSubscriptionId: { type: String, index: true },
     items: { type: [orderItemSchema], required: true },
-    subtotalMxn: { type: Number, required: true },
+    // Bruto (suma de precios de lista) → descuento → neto (lo cobrado).
+    totalAmount: { type: Number, required: true },
+    discountAmount: { type: Number, default: 0 },
     discountPercent: { type: Number, default: 0 },
-    totalMxn: { type: Number, required: true },
+    netAmount: { type: Number, required: true },
+    type: {
+      type: String,
+      enum: ["one_time", "subscription_first", "subscription_recurring"],
+      default: "one_time",
+    },
     status: {
       type: String,
-      enum: ["pending", "paid", "fulfilled", "cancelled", "refunded"],
-      default: "pending",
+      enum: ["paid", "processing", "shipped", "delivered", "cancelled", "refunded"],
+      default: "paid",
     },
+    trackingNumber: { type: String, default: "" },
+    attribution: { type: attributionSchema, default: () => ({}) },
     /** true si esta orden cuenta para el contador de fidelidad (compra individual, no de suscripción) */
     countsTowardLoyalty: { type: Boolean, default: true },
     shippingAddress: {

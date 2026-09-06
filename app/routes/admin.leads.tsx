@@ -6,6 +6,14 @@ import { LeadModel } from "~/models/lead.server";
 
 export const meta: MetaFunction = () => [{ title: "Lista de espera — Admin STOPee" }];
 
+const SOURCE_LABELS: Record<string, string> = {
+  meta_ads: "Meta Ads",
+  google: "Google",
+  blog: "Blog",
+  direct: "Directo",
+  other: "Otro",
+};
+
 export async function loader() {
   await connectDB();
   const leads = await LeadModel.find().sort({ registeredAt: -1 }).lean();
@@ -17,6 +25,7 @@ export async function loader() {
       registeredAt: l.registeredAt,
       discountCodeAssigned: l.discountCodeAssigned,
       status: l.status,
+      source: l.source,
     })),
   });
 }
@@ -52,6 +61,7 @@ export default function AdminLeads() {
               <tr>
                 <th className="px-5 py-3">Correo</th>
                 <th className="px-5 py-3">Registrado</th>
+                <th className="px-5 py-3">Canal</th>
                 <th className="px-5 py-3">Código</th>
                 <th className="px-5 py-3">Estado</th>
               </tr>
@@ -67,16 +77,17 @@ export default function AdminLeads() {
                       year: "numeric",
                     })}
                   </td>
+                  <td className="px-5 py-3 text-carbon/60">{SOURCE_LABELS[lead.source] ?? lead.source}</td>
                   <td className="px-5 py-3 text-carbon/60">{lead.discountCodeAssigned}</td>
                   <td className="px-5 py-3">
                     <span
                       className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
-                        lead.status === "notified"
+                        lead.status === "converted"
                           ? "bg-lima/20 text-bosque"
                           : "bg-carbon/10 text-carbon/60"
                       }`}
                     >
-                      {lead.status === "notified" ? "Notificado" : "Pendiente"}
+                      {lead.status === "converted" ? "Convertido" : "Pendiente"}
                     </span>
                   </td>
                 </tr>

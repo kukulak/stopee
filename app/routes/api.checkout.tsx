@@ -6,9 +6,15 @@ import { STRIPE_PRICE_BY_SKU } from "~/data/stripePriceMap.server";
 import { getCart } from "~/lib/cart.server";
 import { getUser } from "~/lib/session.server";
 import { createOneTimeCheckoutSession } from "~/lib/stripe.server";
+import { getAttribution } from "~/lib/attribution.server";
+import { logEvent, getOrCreateVisitorId } from "~/lib/tracking.server";
 
 export async function action({ request }: ActionFunctionArgs) {
-  const [cartItems, user] = await Promise.all([getCart(request), getUser(request)]);
+  const [cartItems, user, attribution] = await Promise.all([
+    getCart(request),
+    getUser(request),
+    getAttribution(request),
+  ]);
 
   const validItems = cartItems.filter(
     (item): item is { sku: ProductSku; quantity: number } => item.sku in PRODUCTS,
@@ -32,12 +38,18 @@ export async function action({ request }: ActionFunctionArgs) {
     metadata: {
       userId: user ? String(user._id) : "guest",
       cartSkus: validItems.map((i) => `${i.sku}:${i.quantity}`).join(","),
+      utm_source: attribution?.utm_source ?? "",
+      utm_medium: attribution?.utm_medium ?? "",
+      utm_campaign: attribution?.utm_campaign ?? "",
     },
   });
 
   if (!session.url) {
     return json({ error: "No se pudo iniciar el pago. Intenta de nuevo." }, { status: 502 });
   }
+
+  const { visitorId } = await getOrCreateVisitorId(request);
+  await logEvent(visitorId, "begin_checkout");
 
   return redirect(session.url);
 }

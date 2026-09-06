@@ -1,6 +1,8 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs, MetaFunction } from "@remix-run/node";
 import { json, redirect } from "@remix-run/node";
 import { useLoaderData } from "@remix-run/react";
+import { useEffect } from "react";
+import { trackEvent } from "~/lib/trackClient";
 import { Navbar } from "~/components/layout/Navbar";
 import { Footer } from "~/components/layout/Footer";
 import { BundleSelector } from "~/components/ecommerce/BundleSelector";
@@ -66,6 +68,10 @@ export async function action({ request }: ActionFunctionArgs) {
 
 export default function Tienda() {
   const { lines, subtotalMxn, discountPercent } = useLoaderData<typeof loader>();
+
+  useEffect(() => {
+    trackEvent("view_item");
+  }, []);
 
   return (
     <div className="flex min-h-screen flex-col bg-hueso">

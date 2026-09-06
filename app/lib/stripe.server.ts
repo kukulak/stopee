@@ -68,7 +68,7 @@ export async function createOneTimeCheckoutSession(params: {
 const SUBSCRIPTION_DISCOUNT_PERCENT = 10;
 // Precio base del envío de 1L en la suscripción, en centavos de MXN.
 // El 10% de descuento se aplica vía cupón, no reduciendo este monto.
-const SUBSCRIPTION_UNIT_AMOUNT_MXN_CENTS = Number(
+export const SUBSCRIPTION_UNIT_AMOUNT_MXN_CENTS = Number(
   process.env.STRIPE_SUBSCRIPTION_1L_AMOUNT_CENTS ?? 45000,
 );
 let cachedSubscriptionCouponId: string | null = null;

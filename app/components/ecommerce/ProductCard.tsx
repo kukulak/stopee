@@ -1,9 +1,19 @@
 import { useFetcher } from "@remix-run/react";
+import { useEffect, useRef } from "react";
 import type { Product } from "~/data/products";
+import { trackEvent } from "~/lib/trackClient";
 
 export function ProductCard({ product }: { product: Product }) {
   const fetcher = useFetcher();
   const isAdding = fetcher.state !== "idle";
+  const wasAdding = useRef(false);
+
+  useEffect(() => {
+    if (wasAdding.current && !isAdding && fetcher.data) {
+      trackEvent("add_to_cart", product.sku);
+    }
+    wasAdding.current = isAdding;
+  }, [isAdding, fetcher.data, product.sku]);
 
   return (
     <div className="flex flex-col overflow-hidden rounded-3xl border border-carbon/10 bg-hueso transition-shadow hover:shadow-lg">

@@ -20,6 +20,8 @@ const subscriptionSchema = new Schema(
     discountPercent: { type: Number, default: 10 },
     nextDeliveryDate: { type: Date },
     currentPeriodEnd: { type: Date },
+    /** Incrementa con cada renovación de Stripe (factura pagada) que genera un Order. */
+    totalOrdersGenerated: { type: Number, default: 0 },
   },
   { timestamps: true },
 );

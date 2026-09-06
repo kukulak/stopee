@@ -10,6 +10,8 @@ import {
 } from "@remix-run/react";
 import tailwind from "~/tailwind.css?url";
 import { getSiteSettings } from "~/models/siteSettings.server";
+import { readOrCaptureAttribution, isAttributableEntryPoint } from "~/lib/attribution.server";
+import { getOrCreateVisitorId, logEvent } from "~/lib/tracking.server";
 
 export const links: LinksFunction = () => [
   { rel: "stylesheet", href: tailwind },
@@ -21,18 +23,47 @@ export const links: LinksFunction = () => [
   },
 ];
 
-export async function loader(_args: LoaderFunctionArgs) {
+export async function loader({ request }: LoaderFunctionArgs) {
+  // Captura de atribución a primer toque (utm_source/medium/campaign): debe
+  // vivir en el root porque un anuncio puede aterrizar en cualquier página,
+  // no solo en "/". Se hace aparte del try/catch de Mongo: no depende de la
+  // base de datos, así que nunca debe bloquearse por un hipo ahí.
+  const { attribution: _attribution, setCookieHeader: attributionCookieHeader } =
+    await readOrCaptureAttribution(request);
+  let visitorCookieHeader: string | null = null;
+
+  // page_view real (servidor, no depende de que el JS del cliente cargue)
+  // solo en las páginas que de verdad importan para el embudo — no en
+  // /admin, /cuenta, checkout, etc.
+  const pathname = new URL(request.url).pathname;
+  if (isAttributableEntryPoint(pathname)) {
+    try {
+      const { visitorId, setCookieHeader } = await getOrCreateVisitorId(request);
+      visitorCookieHeader = setCookieHeader;
+      await logEvent(visitorId, "page_view");
+    } catch {
+      // El tracking nunca debe tumbar la página.
+    }
+  }
+
+  const headers = new Headers();
+  if (attributionCookieHeader) headers.append("Set-Cookie", attributionCookieHeader);
+  if (visitorCookieHeader) headers.append("Set-Cookie", visitorCookieHeader);
+
   // El root loader corre en cada request de todo el sitio; si Mongo tiene un
   // hipo no debe tumbar páginas que no dependen de esto (pixeles/anuncio).
   try {
     const settings = await getSiteSettings();
-    return json({
-      googlePixelId: settings.googlePixelId ?? "",
-      metaPixelId: settings.metaPixelId ?? "",
-      announcementBarText: settings.announcementBarText ?? "",
-    });
+    return json(
+      {
+        googlePixelId: settings.googlePixelId ?? "",
+        metaPixelId: settings.metaPixelId ?? "",
+        announcementBarText: settings.announcementBarActive ? settings.announcementBarText ?? "" : "",
+      },
+      { headers },
+    );
   } catch {
-    return json({ googlePixelId: "", metaPixelId: "", announcementBarText: "" });
+    return json({ googlePixelId: "", metaPixelId: "", announcementBarText: "" }, { headers });
   }
 }
 

@@ -2,6 +2,7 @@ import type { ActionFunctionArgs } from "@remix-run/node";
 import { json, redirect } from "@remix-run/node";
 import { getUser } from "~/lib/session.server";
 import { createSubscriptionCheckoutSession } from "~/lib/stripe.server";
+import { getAttribution } from "~/lib/attribution.server";
 import {
   SUBSCRIPTION_FREQUENCIES,
   type SubscriptionFrequency,
@@ -23,10 +24,17 @@ export async function action({ request }: ActionFunctionArgs) {
     return json({ error: "Elige una frecuencia válida." }, { status: 400 });
   }
 
+  const attribution = await getAttribution(request);
+
   const session = await createSubscriptionCheckoutSession({
     frequency: frequency as SubscriptionFrequency,
     customerEmail: user.email,
-    metadata: { userId: String(user._id) },
+    metadata: {
+      userId: String(user._id),
+      utm_source: attribution?.utm_source ?? "",
+      utm_medium: attribution?.utm_medium ?? "",
+      utm_campaign: attribution?.utm_campaign ?? "",
+    },
   });
 
   if (!session.url) {

@@ -4,3 +4,7 @@ build/
 .DS_Store
 *.local
 ._*
+
+# Archivos subidos desde el admin (imágenes/videos de catálogo) — no versionar
+public/uploads/*
+!public/uploads/.gitkeep

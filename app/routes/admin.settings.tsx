@@ -12,6 +12,9 @@ export async function loader() {
     googlePixelId: settings.googlePixelId ?? "",
     metaPixelId: settings.metaPixelId ?? "",
     announcementBarText: settings.announcementBarText ?? "",
+    announcementBarActive: settings.announcementBarActive ?? false,
+    lowStockThresholdBottle1L: settings.lowStockThresholdBottle1L ?? 20,
+    lowStockThresholdSquishable: settings.lowStockThresholdSquishable ?? 20,
   });
 }
 
@@ -30,8 +33,19 @@ export async function action({ request }: ActionFunctionArgs) {
       googlePixelId: String(formData.get("googlePixelId") ?? "").trim(),
       metaPixelId: String(formData.get("metaPixelId") ?? "").trim(),
       announcementBarText: String(formData.get("announcementBarText") ?? "").trim(),
+      announcementBarActive: formData.get("announcementBarActive") === "on",
     });
     return json({ ok: true as const, savedIntent: "save-tracking" as const, error: null });
+  }
+
+  if (intent === "save-inventory") {
+    const bottle1L = Number(formData.get("lowStockThresholdBottle1L"));
+    const squishable = Number(formData.get("lowStockThresholdSquishable"));
+    await updateSiteSettings({
+      lowStockThresholdBottle1L: Number.isFinite(bottle1L) ? bottle1L : 20,
+      lowStockThresholdSquishable: Number.isFinite(squishable) ? squishable : 20,
+    });
+    return json({ ok: true as const, savedIntent: "save-inventory" as const, error: null });
   }
 
   return json(
@@ -41,22 +55,29 @@ export async function action({ request }: ActionFunctionArgs) {
 }
 
 export default function AdminSettings() {
-  const { isStoreActive, googlePixelId, metaPixelId, announcementBarText } =
-    useLoaderData<typeof loader>();
+  const {
+    isStoreActive,
+    googlePixelId,
+    metaPixelId,
+    announcementBarText,
+    announcementBarActive,
+    lowStockThresholdBottle1L,
+    lowStockThresholdSquishable,
+  } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const navigation = useNavigation();
   const isSubmittingToggle =
-    navigation.state !== "idle" &&
-    navigation.formData?.get("intent") === "toggle-store";
+    navigation.state !== "idle" && navigation.formData?.get("intent") === "toggle-store";
   const isSubmittingTracking =
-    navigation.state !== "idle" &&
-    navigation.formData?.get("intent") === "save-tracking";
+    navigation.state !== "idle" && navigation.formData?.get("intent") === "save-tracking";
+  const isSubmittingInventory =
+    navigation.state !== "idle" && navigation.formData?.get("intent") === "save-inventory";
 
   return (
     <div className="max-w-2xl">
       <h1 className="font-display text-2xl font-black text-carbon">Configuración</h1>
       <p className="mt-1 text-sm text-carbon/60">
-        Controla el interruptor de la tienda y el rastreo del sitio.
+        Controla el interruptor de la tienda, el rastreo del sitio y las alertas de inventario.
       </p>
 
       {/* Interruptor maestro */}
@@ -99,7 +120,10 @@ export default function AdminSettings() {
       </div>
 
       {/* Rastreo y anuncio */}
-      <Form method="post" className="mt-6 flex flex-col gap-5 rounded-3xl border border-carbon/10 bg-white p-6">
+      <Form
+        method="post"
+        className="mt-6 flex flex-col gap-5 rounded-3xl border border-carbon/10 bg-white p-6"
+      >
         <input type="hidden" name="intent" value="save-tracking" />
         <h2 className="font-display text-lg font-bold text-carbon">Rastreo y anuncio</h2>
 
@@ -131,9 +155,24 @@ export default function AdminSettings() {
           />
         </div>
 
-        <div>
-          <label htmlFor="announcementBarText" className="text-sm font-semibold text-carbon">
-            Texto de barra de anuncio (opcional)
+        <div className="rounded-2xl border border-carbon/10 p-4">
+          <div className="flex items-center justify-between gap-4">
+            <label htmlFor="announcementBarActive" className="text-sm font-semibold text-carbon">
+              Mostrar barra de anuncio
+            </label>
+            <input
+              id="announcementBarActive"
+              name="announcementBarActive"
+              type="checkbox"
+              defaultChecked={announcementBarActive}
+              className="h-6 w-6 accent-lima"
+            />
+          </div>
+          <p className="mt-1 text-xs text-carbon/50">
+            El texto se conserva aunque la apagues, para no tener que reescribirlo la próxima vez.
+          </p>
+          <label htmlFor="announcementBarText" className="mt-3 block text-sm font-semibold text-carbon">
+            Texto de la barra
           </label>
           <input
             id="announcementBarText"
@@ -143,7 +182,6 @@ export default function AdminSettings() {
             placeholder="Envío gratis en pedidos mayores a $999"
             className="mt-1 w-full min-h-11 rounded-xl border border-carbon/15 px-4 focus:border-oliva focus:outline-none"
           />
-          <p className="mt-1 text-xs text-carbon/50">Déjalo vacío para ocultar la barra.</p>
         </div>
 
         {actionData?.ok && actionData.savedIntent === "save-tracking" && (
@@ -156,6 +194,61 @@ export default function AdminSettings() {
           className="min-h-11 self-start rounded-full bg-carbon px-6 text-sm font-bold text-hueso disabled:opacity-60"
         >
           {isSubmittingTracking ? "Guardando…" : "Guardar cambios"}
+        </button>
+      </Form>
+
+      {/* Umbrales de inventario */}
+      <Form
+        method="post"
+        className="mt-6 flex flex-col gap-5 rounded-3xl border border-carbon/10 bg-white p-6"
+      >
+        <input type="hidden" name="intent" value="save-inventory" />
+        <div>
+          <h2 className="font-display text-lg font-bold text-carbon">Alertas de inventario</h2>
+          <p className="mt-1 text-sm text-carbon/60">
+            El dashboard te avisa cuando el stock baja de estos umbrales.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div>
+            <label htmlFor="lowStockThresholdBottle1L" className="text-sm font-semibold text-carbon">
+              Umbral STOPee 1L
+            </label>
+            <input
+              id="lowStockThresholdBottle1L"
+              name="lowStockThresholdBottle1L"
+              type="number"
+              min={0}
+              defaultValue={lowStockThresholdBottle1L}
+              className="mt-1 w-full min-h-11 rounded-xl border border-carbon/15 px-4 focus:border-oliva focus:outline-none"
+            />
+          </div>
+          <div>
+            <label htmlFor="lowStockThresholdSquishable" className="text-sm font-semibold text-carbon">
+              Umbral Squishable
+            </label>
+            <input
+              id="lowStockThresholdSquishable"
+              name="lowStockThresholdSquishable"
+              type="number"
+              min={0}
+              defaultValue={lowStockThresholdSquishable}
+              className="mt-1 w-full min-h-11 rounded-xl border border-carbon/15 px-4 focus:border-oliva focus:outline-none"
+            />
+          </div>
+        </div>
+
+        {actionData?.ok && actionData.savedIntent === "save-inventory" && (
+          <p className="text-sm font-semibold text-bosque">Umbrales guardados.</p>
+        )}
+
+        <button
+          type="submit"
+          disabled={isSubmittingInventory}
+          className="min-h-11 self-start rounded-full bg-carbon px-6 text-sm font-bold text-hueso disabled:opacity-60"
+        >
+          {isSubmittingInventory ? "Guardando…" : "Guardar umbrales"}
         </button>
       </Form>
     </div>

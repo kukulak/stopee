@@ -20,6 +20,15 @@ import {
 } from "~/data/subscriptionFrequencies";
 import { LOYALTY_PURCHASES_REQUIRED } from "~/data/products";
 
+const ORDER_STATUS_LABELS: Record<string, string> = {
+  paid: "Pagado",
+  processing: "En preparación",
+  shipped: "En tránsito",
+  delivered: "Entregado",
+  cancelled: "Cancelado",
+  refunded: "Reembolsado",
+};
+
 export const meta: MetaFunction = () => [{ title: "Mi cuenta — STOPee" }];
 
 export async function loader({ request }: LoaderFunctionArgs) {
@@ -44,7 +53,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     orders: orders.map((o) => ({
       id: String(o._id),
       items: o.items,
-      totalMxn: o.totalMxn,
+      netAmount: o.netAmount,
       status: o.status,
       createdAt: o.createdAt,
     })),
@@ -284,10 +293,11 @@ export default function Cuenta() {
                           .join(", ")}
                       </p>
                       <p className="text-xs text-carbon/50">
-                        {new Date(order.createdAt).toLocaleDateString("es-MX")} · {order.status}
+                        {new Date(order.createdAt).toLocaleDateString("es-MX")} ·{" "}
+                        {ORDER_STATUS_LABELS[order.status] ?? order.status}
                       </p>
                     </div>
-                    <p className="font-display font-bold text-carbon">${order.totalMxn} MXN</p>
+                    <p className="font-display font-bold text-carbon">${order.netAmount} MXN</p>
                   </li>
                 ))}
               </ul>

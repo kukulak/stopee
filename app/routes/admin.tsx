@@ -2,10 +2,12 @@ import type { LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import { Form, NavLink, Outlet, useLoaderData } from "@remix-run/react";
 import { requireAdmin } from "~/lib/session.server";
+import { getSiteSettings } from "~/models/siteSettings.server";
 import { Logo } from "~/components/ui/Logo";
 
 const NAV_ITEMS = [
   { to: "/admin", label: "Dashboard", end: true },
+  { to: "/admin/orders", label: "Pedidos" },
   { to: "/admin/settings", label: "Configuración" },
   { to: "/admin/catalog", label: "Catálogo" },
   { to: "/admin/discounts", label: "Descuentos" },
@@ -14,11 +16,12 @@ const NAV_ITEMS = [
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const admin = await requireAdmin(request);
-  return json({ adminEmail: admin.email as string });
+  const settings = await getSiteSettings();
+  return json({ adminEmail: admin.email as string, isStoreActive: settings.isStoreActive });
 }
 
 export default function AdminLayout() {
-  const { adminEmail } = useLoaderData<typeof loader>();
+  const { adminEmail, isStoreActive } = useLoaderData<typeof loader>();
 
   return (
     <div className="flex min-h-screen bg-hueso">
@@ -78,6 +81,24 @@ export default function AdminLayout() {
             </NavLink>
           ))}
         </nav>
+
+        <div className="flex items-center justify-end gap-2 border-b border-carbon/10 bg-white px-4 py-2.5 sm:px-8">
+          <span
+            className={`h-2 w-2 rounded-full ${isStoreActive ? "bg-lima" : "bg-carbon/30"}`}
+            aria-hidden="true"
+          />
+          <span className="text-xs font-semibold text-carbon/60">
+            {isStoreActive ? "Tienda activa" : "Tienda en pre-lanzamiento"}
+          </span>
+          <a
+            href="/"
+            target="_blank"
+            rel="noreferrer"
+            className="ml-3 inline-flex min-h-11 items-center rounded-full border border-carbon/15 px-4 text-sm font-semibold text-carbon hover:border-carbon/30"
+          >
+            Ver sitio ↗
+          </a>
+        </div>
 
         <main className="flex-1 p-4 sm:p-8">
           <Outlet />

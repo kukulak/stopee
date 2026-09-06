@@ -13,6 +13,7 @@ import { getCart } from "~/lib/cart.server";
 import { getSiteSettings } from "~/models/siteSettings.server";
 import { connectDB } from "~/lib/db.server";
 import { LeadModel } from "~/models/lead.server";
+import { getAttribution } from "~/lib/attribution.server";
 
 export const meta: MetaFunction = () => [
   { title: "STOPee — Ciudades limpias, paseos impecables" },
@@ -52,12 +53,19 @@ export async function action({ request }: ActionFunctionArgs) {
   }
 
   await connectDB();
+
+  const attribution = await getAttribution(request);
+  const LEAD_SOURCES = new Set(["meta_ads", "google", "blog", "direct"]);
+  const source = attribution && LEAD_SOURCES.has(attribution.utm_source)
+    ? attribution.utm_source
+    : "other";
+
   // Idempotente: si ya estaba registrado, igual confirmamos su lugar en la
   // lista en vez de mostrar un error — nadie debería sentir que algo falló
   // por intentar registrarse dos veces.
   await LeadModel.findOneAndUpdate(
     { email: parsed.data.email },
-    { $setOnInsert: { email: parsed.data.email, registeredAt: new Date() } },
+    { $setOnInsert: { email: parsed.data.email, registeredAt: new Date(), source } },
     { upsert: true },
   );
 
