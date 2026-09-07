@@ -14,6 +14,8 @@ import { getSiteSettings } from "~/models/siteSettings.server";
 import { connectDB } from "~/lib/db.server";
 import { LeadModel } from "~/models/lead.server";
 import { getAttribution } from "~/lib/attribution.server";
+import { getActiveHeroBanner, type HeroBanner } from "~/lib/heroBanner.server";
+import { HeroBannerSection } from "~/components/ecommerce/HeroBannerSection";
 
 export const meta: MetaFunction = () => [
   { title: "STOPee — Ciudades limpias, paseos impecables" },
@@ -30,10 +32,11 @@ export async function loader({ request }: LoaderFunctionArgs) {
     return json({ isStoreActive: false as const });
   }
 
-  const cart = await getCart(request);
+  const [cart, heroBanner] = await Promise.all([getCart(request), getActiveHeroBanner()]);
   return json({
     isStoreActive: true as const,
     cartCount: cart.reduce((sum, item) => sum + item.quantity, 0),
+    heroBanner,
   });
 }
 
@@ -95,10 +98,16 @@ export default function Index() {
     return <PrelaunchLanding actionData={actionData} />;
   }
 
-  return <LaunchedLanding cartCount={data.cartCount} />;
+  return <LaunchedLanding cartCount={data.cartCount} heroBanner={data.heroBanner} />;
 }
 
-function LaunchedLanding({ cartCount }: { cartCount: number }) {
+function LaunchedLanding({
+  cartCount,
+  heroBanner,
+}: {
+  cartCount: number;
+  heroBanner: HeroBanner | null;
+}) {
   const featured = PRODUCT_LIST.find((p) => p.sku === "pack-basico") ?? PRODUCT_LIST[0];
 
   return (
@@ -106,6 +115,11 @@ function LaunchedLanding({ cartCount }: { cartCount: number }) {
       <Navbar cartCount={cartCount} />
 
       <main className="flex-1">
+        {/* HERO editable (promoción con banner o banner personalizado) — si
+            no hay ninguno activo, no se muestra nada y el propio hero de
+            ScrollytellingSection sigue funcionando como portada. */}
+        {heroBanner && <HeroBannerSection banner={heroBanner} />}
+
         {/* HERO + SCROLLYTELLING 3D (una sola coreografía continua) */}
         <ScrollytellingSection />
 

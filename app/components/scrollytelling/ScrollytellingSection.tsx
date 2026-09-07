@@ -11,7 +11,7 @@ const ScrollyCanvas = lazy(() =>
   import("~/components/3d/ScrollyCanvas").then((m) => ({ default: m.ScrollyCanvas })),
 );
 
-export function ScrollytellingSection() {
+export function ScrollytellingSection({ exploreHref = "#tienda-teaser" }: { exploreHref?: string }) {
   const sectionRef = useRef<HTMLElement>(null);
 
   const bottleRef = useRef<THREE.Group>(null);
@@ -228,7 +228,7 @@ export function ScrollytellingSection() {
                 Comprar
               </Link>
               <a
-                href="#tienda-teaser"
+                href={exploreHref}
                 className="min-h-11 rounded-full border-2 border-hueso/25 px-7 py-3 text-sm font-bold text-hueso transition-colors hover:border-hueso/50"
               >
                 Explorar el modo de uso ↓
@@ -274,7 +274,7 @@ export function ScrollytellingSection() {
               Tu STOPee está listo. Sal a pasear con confianza.
             </p>
             <a
-              href="#tienda-teaser"
+              href={exploreHref}
               className="mt-5 inline-block min-h-11 rounded-full bg-lima px-7 py-3 text-sm font-bold text-carbon transition-transform hover:scale-105"
             >
               Ver paquetes ↓

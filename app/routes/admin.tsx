@@ -23,6 +23,7 @@ const NAV_ITEMS: {
     ],
   },
   { to: "/admin/discounts", label: "Promociones" },
+  { to: "/admin/banners", label: "Banners" },
   { to: "/admin/customers", label: "Clientes" },
   { to: "/admin/leads", label: "Lista de espera" },
 ];

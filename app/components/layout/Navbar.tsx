@@ -5,7 +5,7 @@ import { Logo } from "~/components/ui/Logo";
 const links = [
   { to: "/tienda", label: "Tienda" },
   { to: "/blog", label: "Blog Cívico" },
-  { to: "/#modo-de-uso", label: "Modo de uso" },
+  { to: "/modo-de-uso", label: "Modo de uso" },
 ];
 
 export function Navbar({ cartCount = 0 }: { cartCount?: number }) {
