@@ -8,6 +8,7 @@ import { ProductModel } from "~/models/product.server";
 import { parseCatalogFormData } from "~/lib/upload.server";
 import { collectMediaFromForm } from "~/lib/media.server";
 import { Field, inputClass, MediaGallery, AddMediaForm } from "~/components/admin/MediaFields";
+import { UNIT_OPTIONS, formatPresentation, type ProductUnit } from "~/lib/productUnit";
 
 export const meta: MetaFunction = () => [{ title: "Productos — Admin STOPee" }];
 
@@ -25,6 +26,9 @@ export async function loader() {
       stock: p.stock,
       isAvailable: p.isAvailable,
       isIndividuallySellable: p.isIndividuallySellable ?? true,
+      unitValue: p.unitValue ?? 1,
+      unit: (p.unit ?? "pieza") as ProductUnit,
+      lowStockThreshold: p.lowStockThreshold ?? 10,
       images: p.images ?? [],
       videos: (p.videos ?? []) as { url: string; source: string }[],
     })),
@@ -38,6 +42,9 @@ const productSchema = z.object({
   costPrice: z.coerce.number().min(0, "El costo no puede ser negativo.").default(0),
   stock: z.coerce.number().min(0, "El stock no puede ser negativo.").default(0),
   description: z.string().trim().nullish().transform((v) => v ?? ""),
+  unitValue: z.coerce.number().min(0.01, "La cantidad debe ser mayor a 0.").default(1),
+  unit: z.enum(UNIT_OPTIONS.map((o) => o.value) as [ProductUnit, ...ProductUnit[]]).default("pieza"),
+  lowStockThreshold: z.coerce.number().min(0, "El umbral no puede ser negativo.").default(10),
 });
 
 export async function action({ request }: ActionFunctionArgs) {
@@ -53,6 +60,9 @@ export async function action({ request }: ActionFunctionArgs) {
       costPrice: formData.get("costPrice"),
       stock: formData.get("stock"),
       description: formData.get("description"),
+      unitValue: formData.get("unitValue"),
+      unit: formData.get("unit"),
+      lowStockThreshold: formData.get("lowStockThreshold"),
     });
 
     if (!parsed.success) {
@@ -140,6 +150,41 @@ function ProductFormFields({ defaults }: { defaults?: Product }) {
       <Field label="Stock" htmlFor="stock">
         <input id="stock" name="stock" type="number" min={0} defaultValue={defaults?.stock ?? 0} className={inputClass} />
       </Field>
+      <Field label="Cantidad" htmlFor="unitValue">
+        <input id="unitValue" name="unitValue" type="number" min={0.01} step="0.01" defaultValue={defaults?.unitValue ?? 1} className={inputClass} />
+      </Field>
+      <Field label="Unidad" htmlFor="unit">
+        <select id="unit" name="unit" defaultValue={defaults?.unit ?? "pieza"} className={inputClass}>
+          {Object.entries(
+            UNIT_OPTIONS.reduce<Record<string, typeof UNIT_OPTIONS[number][]>>((acc, o) => {
+              (acc[o.group] ??= []).push(o);
+              return acc;
+            }, {}),
+          ).map(([group, options]) => (
+            <optgroup key={group} label={group}>
+              {options.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </optgroup>
+          ))}
+        </select>
+        <p className="mt-1 text-xs text-carbon/50">
+          Ej. 1 L para el concentrado, 500 g para un limpiador en polvo, 30 piezas para bolsas.
+        </p>
+      </Field>
+      <Field label="Umbral de stock bajo" htmlFor="lowStockThreshold">
+        <input
+          id="lowStockThreshold"
+          name="lowStockThreshold"
+          type="number"
+          min={0}
+          defaultValue={defaults?.lowStockThreshold ?? 10}
+          className={inputClass}
+        />
+        <p className="mt-1 text-xs text-carbon/50">El dashboard avisa cuando el stock baje de este número.</p>
+      </Field>
       <Field label="Descripción (opcional)" htmlFor="description">
         <input id="description" name="description" defaultValue={defaults?.description} className={inputClass} />
       </Field>
@@ -211,6 +256,9 @@ export default function AdminCatalogProducts() {
                   <div className="flex flex-wrap items-center gap-2">
                     <p className="font-display font-bold text-carbon">{p.name}</p>
                     <span className="rounded-full bg-carbon/5 px-2 py-0.5 text-xs text-carbon/50">{p.sku}</span>
+                    <span className="rounded-full bg-bosque/10 px-2 py-0.5 text-xs font-semibold text-bosque">
+                      {formatPresentation(p.unitValue, p.unit)}
+                    </span>
                     {!p.isIndividuallySellable && (
                       <span className="rounded-full bg-oliva/15 px-2 py-0.5 text-xs font-semibold text-oliva">
                         No para venta individual
@@ -218,7 +266,8 @@ export default function AdminCatalogProducts() {
                     )}
                   </div>
                   <p className="mt-1 text-sm text-carbon/60">
-                    Precio ${p.price} · Costo ${p.costPrice} · Margen ${(p.price - p.costPrice).toFixed(2)} · Stock {p.stock}
+                    Precio ${p.price} · Costo ${p.costPrice} · Margen ${(p.price - p.costPrice).toFixed(2)} · Stock{" "}
+                    {p.stock} · Alerta bajo {p.lowStockThreshold}
                   </p>
                 </div>
                 <div className="flex items-center gap-2">

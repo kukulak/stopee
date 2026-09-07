@@ -2,6 +2,7 @@ import { useFetcher } from "@remix-run/react";
 import { useEffect, useRef } from "react";
 import type { Product } from "~/data/products";
 import { trackEvent } from "~/lib/trackClient";
+import { formatPresentation } from "~/lib/productUnit";
 
 export function ProductCard({ product }: { product: Product }) {
   const fetcher = useFetcher();
@@ -23,7 +24,14 @@ export function ProductCard({ product }: { product: Product }) {
 
       <div className="flex flex-1 flex-col gap-3 p-5">
         <div>
-          <h3 className="font-display text-lg font-bold text-carbon">{product.name}</h3>
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="font-display text-lg font-bold text-carbon">{product.name}</h3>
+            {product.unitValue && product.unit && (
+              <span className="rounded-full bg-bosque/10 px-2 py-0.5 text-xs font-semibold text-bosque">
+                {formatPresentation(product.unitValue, product.unit)}
+              </span>
+            )}
+          </div>
           <p className="mt-1 text-sm text-carbon/60">{product.shortDescription}</p>
         </div>
 

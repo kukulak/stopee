@@ -1,4 +1,5 @@
 import mongoose, { type InferSchemaType, type Model } from "mongoose";
+import { UNIT_VALUES } from "~/lib/productUnit";
 
 const { Schema, model, models } = mongoose;
 
@@ -28,6 +29,11 @@ const productSchema = new Schema(
      * La tienda pública nunca debe listarlos como compra individual.
      */
     isIndividuallySellable: { type: Boolean, default: true },
+    /** Presentación: cantidad + unidad (p. ej. 1 L, 500 g, 30 piezas) — reemplaza tener que describirlo en texto libre. */
+    unitValue: { type: Number, min: 0.01, default: 1 },
+    unit: { type: String, enum: UNIT_VALUES, default: "pieza" },
+    /** Umbral de stock bajo propio de este producto — antes era un valor global fijo en Configuración. */
+    lowStockThreshold: { type: Number, min: 0, default: 10 },
   },
   { timestamps: true },
 );

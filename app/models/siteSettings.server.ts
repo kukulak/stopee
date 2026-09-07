@@ -12,8 +12,6 @@ const siteSettingsSchema = new Schema(
     // última redacción al desactivarla temporalmente.
     announcementBarText: { type: String, default: "" },
     announcementBarActive: { type: Boolean, default: false },
-    lowStockThresholdBottle1L: { type: Number, default: 20 },
-    lowStockThresholdSquishable: { type: Number, default: 20 },
   },
   { timestamps: true },
 );

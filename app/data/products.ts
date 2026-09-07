@@ -11,6 +11,9 @@ export type Product = {
   shortDescription: string;
   priceMxn: number;
   image: string;
+  /** Presentación (cantidad + unidad) mostrada en la tarjeta de producto — ver ~/lib/productUnit. */
+  unitValue?: number;
+  unit?: string;
   bundle?: {
     concentradoLitros: number;
     incluyeSquishable: boolean;
@@ -24,6 +27,8 @@ export const PRODUCTS: Record<ProductSku, Product> = {
     shortDescription: "Rinde 30 litros de solución activa. Bacillus subtilis + ricinoleato de zinc.",
     priceMxn: 449,
     image: "/images/concentrado-1l.png",
+    unitValue: 1,
+    unit: "L",
   },
   squishable: {
     sku: "squishable",
@@ -31,6 +36,8 @@ export const PRODUCTS: Record<ProductSku, Product> = {
     shortDescription: "Botella flexible ergonómica con boquilla dosificadora y clip para correa.",
     priceMxn: 249,
     image: "/images/squishable.png",
+    unitValue: 1,
+    unit: "pieza",
   },
   "pack-basico": {
     sku: "pack-basico",

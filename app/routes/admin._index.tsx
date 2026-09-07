@@ -15,6 +15,7 @@ import { monthlyEquivalent } from "~/lib/mrr.server";
 import { SUBSCRIPTION_UNIT_AMOUNT_MXN_CENTS } from "~/lib/stripe.server";
 import { PRODUCTS } from "~/data/products";
 import { TYPE_LABELS } from "~/components/admin/PromotionFormFields";
+import { formatPresentation } from "~/lib/productUnit";
 import { useSearchParams } from "@remix-run/react";
 import {
   ResponsiveContainer,
@@ -267,20 +268,17 @@ export async function loader({ request }: LoaderFunctionArgs) {
   }
 
   const products = await ProductModel.find().lean();
-  const thresholdBySku: Record<string, number> = {
-    "concentrado-1l": siteSettings.lowStockThresholdBottle1L ?? 20,
-    squishable: siteSettings.lowStockThresholdSquishable ?? 20,
-  };
 
   const inventoryRows = products.map((p) => {
     const soldLast30 = soldLast30ByProductSku.get(p.sku.toLowerCase()) ?? 0;
     const dailyRate = soldLast30 / 30;
     const runwayDays = dailyRate > 0 ? p.stock / dailyRate : null;
-    const threshold = thresholdBySku[p.sku.toLowerCase()] ?? 10;
+    const threshold = p.lowStockThreshold ?? 10;
     return {
       id: String(p._id),
       name: p.name,
       sku: p.sku,
+      presentation: formatPresentation(p.unitValue, p.unit),
       stock: p.stock,
       soldLast30,
       runwayDays,
@@ -783,8 +781,9 @@ export default function AdminDashboard() {
           <div className="mt-3 flex flex-col gap-2">
             {data.inventory.alerts.map((a) => (
               <div key={a.id} className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                <strong>{a.name}</strong>: quedan {a.stock} unidades (umbral {a.threshold}). Al ritmo
-                actual se agota en {a.runwayLabel}.
+                <strong>{a.name}</strong>
+                {a.presentation && ` (${a.presentation})`}: quedan {a.stock} unidades (umbral {a.threshold}). Al
+                ritmo actual se agota en {a.runwayLabel}.
               </div>
             ))}
           </div>
@@ -797,7 +796,10 @@ export default function AdminDashboard() {
           {data.inventory.lowestStock.map((p) => (
             <div key={p.id} className="flex items-center justify-between rounded-xl border border-carbon/10 px-4 py-3 text-sm">
               <div>
-                <p className="font-semibold text-carbon">{p.name}</p>
+                <p className="font-semibold text-carbon">
+                  {p.name}
+                  {p.presentation && <span className="ml-1 font-normal text-carbon/50">({p.presentation})</span>}
+                </p>
                 <p className="text-carbon/50">{p.soldLast30} vendidas en 30 días</p>
               </div>
               <div className="text-right">
