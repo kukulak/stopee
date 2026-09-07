@@ -22,6 +22,7 @@ const bannerSchema = new Schema(
   {
     enabled: { type: Boolean, default: false },
     text: { type: String, default: "", trim: true },
+    imageUrl: { type: String, default: "", trim: true },
     ctaText: { type: String, default: "", trim: true },
     ctaHref: { type: String, default: "/tienda", trim: true },
   },
@@ -95,6 +96,8 @@ const DEFAULT_LOYALTY = { purchasesRequired: 5, percentage: 10 };
 export async function getActiveLoyaltyConfig() {
   const promo = await PromotionModel.findOne({ type: "loyalty", isActive: true }).sort({ updatedAt: -1 }).lean();
   return {
+    id: promo ? String(promo._id) : null,
+    name: promo?.name ?? null,
     purchasesRequired: promo?.loyalty?.purchasesRequired ?? DEFAULT_LOYALTY.purchasesRequired,
     percentage: promo?.loyalty?.percentage ?? DEFAULT_LOYALTY.percentage,
   };

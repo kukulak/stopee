@@ -2,19 +2,28 @@ import { Link } from "@remix-run/react";
 
 export function PromoBanner({
   text,
+  imageUrl,
   ctaText,
   ctaHref,
 }: {
   text: string;
+  imageUrl?: string | null;
   ctaText?: string;
   ctaHref?: string;
 }) {
-  if (!text) return null;
+  if (!text && !imageUrl) return null;
 
   return (
-    <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-bosque via-carbon to-carbon px-6 py-5 text-hueso sm:px-8 sm:py-6">
-      <div className="relative flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
-        <p className="font-display text-lg font-bold leading-snug sm:text-xl">{text}</p>
+    <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-bosque via-carbon to-carbon text-hueso">
+      {imageUrl && (
+        <img
+          src={imageUrl}
+          alt=""
+          className="absolute inset-0 h-full w-full object-cover opacity-60"
+        />
+      )}
+      <div className="relative flex flex-col items-start justify-between gap-4 px-6 py-5 sm:flex-row sm:items-center sm:px-8 sm:py-6">
+        {text && <p className="font-display text-lg font-bold leading-snug drop-shadow sm:text-xl">{text}</p>}
         {ctaText && ctaHref && (
           <Link
             to={ctaHref}

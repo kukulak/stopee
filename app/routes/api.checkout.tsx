@@ -34,13 +34,18 @@ export async function action({ request }: ActionFunctionArgs) {
   // El cupón, si el cliente puso uno explícitamente, gana sobre el
   // descuento automático de lealtad — igual que se muestra en el carrito.
   let discountPercent: number | undefined;
+  let appliedPromotion: { id: string; name: string; type: string } | null = null;
   if (couponCode) {
     const promo = await findRedeemableCoupon(couponCode);
-    discountPercent = promo?.coupon?.percentage ?? undefined;
+    if (promo?.coupon?.percentage) {
+      discountPercent = promo.coupon.percentage;
+      appliedPromotion = { id: String(promo._id), name: promo.name, type: promo.type };
+    }
   }
   if (discountPercent === undefined && user?.loyaltyDiscountActive) {
     const loyalty = await getActiveLoyaltyConfig();
     discountPercent = loyalty.percentage;
+    if (loyalty.id) appliedPromotion = { id: loyalty.id, name: loyalty.name ?? "Lealtad", type: "loyalty" };
   }
 
   const session = await createOneTimeCheckoutSession({
@@ -53,6 +58,9 @@ export async function action({ request }: ActionFunctionArgs) {
       utm_source: attribution?.utm_source ?? "",
       utm_medium: attribution?.utm_medium ?? "",
       utm_campaign: attribution?.utm_campaign ?? "",
+      promotionId: appliedPromotion?.id ?? "",
+      promotionName: appliedPromotion?.name ?? "",
+      promotionType: appliedPromotion?.type ?? "",
     },
   });
 

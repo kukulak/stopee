@@ -47,6 +47,12 @@ const orderSchema = new Schema(
     },
     trackingNumber: { type: String, default: "" },
     attribution: { type: attributionSchema, default: () => ({}) },
+    /** Promoción redimida en este pedido, si hubo una (para medir efectividad en el dashboard). */
+    promotion: {
+      id: { type: Schema.Types.ObjectId, ref: "Promotion" },
+      name: { type: String },
+      type: { type: String },
+    },
     /** true si esta orden cuenta para el contador de fidelidad (compra individual, no de suscripción) */
     countsTowardLoyalty: { type: Boolean, default: true },
     shippingAddress: {

@@ -21,6 +21,15 @@ const MAX_VIDEO_BYTES = 80 * 1024 * 1024; // 80MB
  * un bucket (S3/Cloudinary) sin tocar el resto del formulario de admin.
  */
 export async function parseCatalogFormData(request: Request) {
+  // Los botones de acción rápida (pausar, eliminar, activar/desactivar) envían
+  // Forms simples sin archivos, que el navegador manda como urlencoded, no
+  // multipart — solo los formularios de crear/editar con campos de archivo
+  // necesitan el parser multipart.
+  const contentType = request.headers.get("content-type") ?? "";
+  if (!contentType.includes("multipart/form-data")) {
+    return request.formData();
+  }
+
   await mkdir(UPLOADS_DIR, { recursive: true });
 
   const uploadHandler = unstable_composeUploadHandlers(

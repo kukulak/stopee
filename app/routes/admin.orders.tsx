@@ -16,17 +16,26 @@ const STATUS_LABELS: Record<string, string> = {
   refunded: "Reembolsado",
 };
 const STATUS_FLOW = ["paid", "processing", "shipped", "delivered"] as const;
+const PAGE_SIZE = 20;
 
 export async function loader({ request }: LoaderFunctionArgs) {
   await connectDB();
   const url = new URL(request.url);
   const statusFilter = url.searchParams.get("status") ?? "all";
+  const page = Math.max(1, Number(url.searchParams.get("page") ?? "1") || 1);
 
   const query = statusFilter !== "all" ? { status: statusFilter } : {};
-  const orders = await OrderModel.find(query).sort({ createdAt: -1 }).limit(200).lean();
-
-  const counts = await OrderModel.aggregate([{ $group: { _id: "$status", count: { $sum: 1 } } }]);
+  const [orders, totalCount, counts] = await Promise.all([
+    OrderModel.find(query)
+      .sort({ createdAt: -1 })
+      .skip((page - 1) * PAGE_SIZE)
+      .limit(PAGE_SIZE)
+      .lean(),
+    OrderModel.countDocuments(query),
+    OrderModel.aggregate([{ $group: { _id: "$status", count: { $sum: 1 } } }]),
+  ]);
   const countByStatus = Object.fromEntries(counts.map((c) => [c._id, c.count]));
+  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
 
   return json({
     orders: orders.map((o) => ({
@@ -38,9 +47,13 @@ export async function loader({ request }: LoaderFunctionArgs) {
       status: o.status,
       trackingNumber: o.trackingNumber ?? "",
       createdAt: o.createdAt,
+      promotionName: o.promotion?.name ?? null,
     })),
     countByStatus,
     statusFilter,
+    page,
+    totalPages,
+    totalCount,
   });
 }
 
@@ -75,14 +88,15 @@ const TYPE_LABELS: Record<string, string> = {
 };
 
 export default function AdminOrders() {
-  const { orders, countByStatus, statusFilter } = useLoaderData<typeof loader>();
+  const { orders, countByStatus, statusFilter, page, totalPages, totalCount } =
+    useLoaderData<typeof loader>();
   const [searchParams] = useSearchParams();
 
   return (
     <div>
       <h1 className="font-display text-2xl font-black text-carbon">Pedidos</h1>
       <p className="mt-1 text-sm text-carbon/60">
-        Operación diaria: estado, guía y seguimiento de cada pedido.
+        Operación diaria: estado, guía y seguimiento de cada pedido. {totalCount} en total.
       </p>
 
       <div className="mt-6 flex flex-wrap gap-2">
@@ -90,6 +104,7 @@ export default function AdminOrders() {
           const params = new URLSearchParams(searchParams);
           if (status === "all") params.delete("status");
           else params.set("status", status);
+          params.delete("page");
           const count = status === "all"
             ? Object.values(countByStatus as Record<string, number>).reduce((a, b) => a + b, 0)
             : (countByStatus as Record<string, number>)[status] ?? 0;
@@ -127,6 +142,13 @@ export default function AdminOrders() {
                   <p className="mt-1 text-xs text-carbon/50">
                     {new Date(order.createdAt).toLocaleString("es-MX")} ·{" "}
                     {TYPE_LABELS[order.type] ?? order.type}
+                    {order.promotionName && (
+                      <>
+                        {" "}
+                        ·{" "}
+                        <span className="font-semibold text-oliva">{order.promotionName}</span>
+                      </>
+                    )}
                   </p>
                 </div>
                 <p className="font-display text-lg font-black text-carbon">
@@ -174,6 +196,26 @@ export default function AdminOrders() {
             </li>
           ))}
         </ul>
+      )}
+
+      {totalPages > 1 && (
+        <div className="mt-6 flex items-center justify-center gap-2">
+          {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => {
+            const params = new URLSearchParams(searchParams);
+            params.set("page", String(p));
+            return (
+              <a
+                key={p}
+                href={`?${params.toString()}`}
+                className={`flex min-h-11 min-w-11 items-center justify-center rounded-full text-sm font-semibold ${
+                  page === p ? "bg-carbon text-hueso" : "border border-carbon/15 text-carbon hover:border-carbon/30"
+                }`}
+              >
+                {p}
+              </a>
+            );
+          })}
+        </div>
       )}
     </div>
   );

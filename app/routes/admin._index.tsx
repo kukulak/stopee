@@ -14,6 +14,7 @@ import { resolveDateRange, percentChange } from "~/lib/dateRange.server";
 import { monthlyEquivalent } from "~/lib/mrr.server";
 import { SUBSCRIPTION_UNIT_AMOUNT_MXN_CENTS } from "~/lib/stripe.server";
 import { PRODUCTS } from "~/data/products";
+import { TYPE_LABELS } from "~/components/admin/PromotionFormFields";
 import { useSearchParams } from "@remix-run/react";
 import {
   ResponsiveContainer,
@@ -166,6 +167,42 @@ export async function loader({ request }: LoaderFunctionArgs) {
       ? usersWithSpend.reduce((s, u) => s + (u.totalSpentLTV ?? 0), 0) / usersWithSpend.length
       : 0;
 
+  // ---------- Efectividad de promociones ----------
+  // Se agrupa por el id de promoción guardado en cada orden (ver webhooks.stripe.tsx),
+  // así cada promoción —incluyendo copias duplicadas de un mes a otro— se compara por
+  // separado en vez de mezclar todos los descuentos en un solo número.
+  const promoPerformance = new Map<
+    string,
+    { name: string; type: string; orders: number; revenue: number; discountGiven: number }
+  >();
+  for (const o of currentOrders) {
+    if (!o.promotion?.id) continue;
+    const key = String(o.promotion.id);
+    const entry = promoPerformance.get(key) ?? {
+      name: o.promotion.name || "Promoción",
+      type: o.promotion.type || "",
+      orders: 0,
+      revenue: 0,
+      discountGiven: 0,
+    };
+    entry.orders += 1;
+    entry.revenue += o.netAmount;
+    entry.discountGiven += o.discountAmount;
+    promoPerformance.set(key, entry);
+  }
+  const promotionEffectiveness = Array.from(promoPerformance.entries())
+    .map(([id, v]) => ({
+      id,
+      name: v.name,
+      typeLabel: TYPE_LABELS[v.type as keyof typeof TYPE_LABELS] ?? v.type,
+      orders: v.orders,
+      revenue: Math.round(v.revenue),
+      discountGiven: Math.round(v.discountGiven),
+      avgOrderValue: Math.round(v.revenue / v.orders),
+    }))
+    .sort((a, b) => b.revenue - a.revenue);
+  const ordersWithoutPromotion = currentOrders.filter((o) => !o.promotion?.id).length;
+
   // ---------- Capa 4: Adquisición ----------
   const attributionMap = new Map<string, { orders: number; revenue: number }>();
   for (const o of currentOrders) {
@@ -259,6 +296,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
     bundleMatrix,
     funnel,
     adoption: { oneTime: oneTimeCount, subscription: subscriptionCount },
+    promotionEffectiveness,
+    ordersWithoutPromotion,
     subscriptionHealth: {
       ...subStatusCounts,
       total: allSubs.length,
@@ -546,6 +585,56 @@ export default function AdminDashboard() {
           </div>
         </Card>
       </div>
+
+      {/* ===== Efectividad de promociones ===== */}
+      <Card>
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="font-display text-lg font-bold text-carbon">Efectividad de promociones</h2>
+          <a href="/admin/discounts" className="text-sm font-semibold text-bosque hover:underline">
+            Administrar →
+          </a>
+        </div>
+        {data.promotionEffectiveness.length === 0 ? (
+          <p className="mt-3 text-sm text-carbon/60">
+            Ningún pedido de este periodo usó una promoción con código o banner.
+          </p>
+        ) : (
+          <div className="mt-4 overflow-x-auto">
+            <table className="w-full min-w-[560px] text-sm">
+              <thead>
+                <tr className="text-left text-xs font-semibold uppercase tracking-wide text-carbon/50">
+                  <th className="pb-2">Promoción</th>
+                  <th className="pb-2">Tipo</th>
+                  <th className="pb-2 text-right">Pedidos</th>
+                  <th className="pb-2 text-right">Ingresos netos</th>
+                  <th className="pb-2 text-right">Descuento otorgado</th>
+                  <th className="pb-2 text-right">Ticket promedio</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.promotionEffectiveness.map((p) => (
+                  <tr key={p.id} className="border-t border-carbon/5">
+                    <td className="py-2.5 font-semibold text-carbon">{p.name}</td>
+                    <td className="py-2.5 text-carbon/60">{p.typeLabel}</td>
+                    <td className="py-2.5 text-right font-semibold text-carbon">{p.orders}</td>
+                    <td className="py-2.5 text-right font-semibold text-bosque">
+                      ${p.revenue.toLocaleString("es-MX")}
+                    </td>
+                    <td className="py-2.5 text-right text-carbon/60">${p.discountGiven.toLocaleString("es-MX")}</td>
+                    <td className="py-2.5 text-right text-carbon/60">${p.avgOrderValue.toLocaleString("es-MX")}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <p className="mt-3 text-xs text-carbon/40">
+              {data.ordersWithoutPromotion} pedido{data.ordersWithoutPromotion === 1 ? "" : "s"} de este
+              periodo sin promoción aplicada. Cada promoción se cuenta por separado — al duplicar una
+              promoción para el siguiente mes, aparece como una fila nueva para comparar contra la
+              original.
+            </p>
+          </div>
+        )}
+      </Card>
 
       {/* ===== Capa 3: Suscripciones y lealtad ===== */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">

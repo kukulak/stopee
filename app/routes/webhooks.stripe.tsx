@@ -9,7 +9,7 @@ import { UserModel } from "~/models/user.server";
 import { LeadModel } from "~/models/lead.server";
 import { PRODUCTS } from "~/data/products";
 import type { ProductSku } from "~/data/products";
-import { getActiveLoyaltyConfig } from "~/models/promotion.server";
+import { getActiveLoyaltyConfig, PromotionModel } from "~/models/promotion.server";
 
 const WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET;
 
@@ -74,6 +74,16 @@ function readAttribution(metadata: Stripe.Metadata | null) {
   };
 }
 
+function readAppliedPromotion(metadata: Stripe.Metadata | null) {
+  if (!metadata?.promotionId) return undefined;
+  return { id: metadata.promotionId, name: metadata.promotionName ?? "", type: metadata.promotionType ?? "" };
+}
+
+async function bumpPromotionUsage(promotionId?: string) {
+  if (!promotionId) return;
+  await PromotionModel.findByIdAndUpdate(promotionId, { $inc: { timesUsed: 1 } });
+}
+
 async function markLeadConverted(email: string) {
   await LeadModel.findOneAndUpdate({ email, status: "pending" }, { status: "converted" });
 }
@@ -118,6 +128,8 @@ async function handleOneTimeCheckoutCompleted(session: Stripe.Checkout.Session) 
   const userId = session.metadata?.userId;
   const user = userId && userId !== "guest" ? await UserModel.findById(userId) : null;
 
+  const appliedPromotion = readAppliedPromotion(session.metadata ?? null);
+
   await OrderModel.create({
     user: user?._id,
     email,
@@ -133,9 +145,11 @@ async function handleOneTimeCheckoutCompleted(session: Stripe.Checkout.Session) 
     status: "paid",
     countsTowardLoyalty: true,
     attribution: readAttribution(session.metadata ?? null),
+    promotion: appliedPromotion,
   });
 
   await markLeadConverted(email);
+  await bumpPromotionUsage(appliedPromotion?.id);
   if (user) await bumpUserLoyaltyAndLTV(user, netAmount, true);
 }
 

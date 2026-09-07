@@ -25,14 +25,17 @@ export const meta: MetaFunction = () => [
 ];
 
 export async function loader({ request }: LoaderFunctionArgs) {
-  const settings = await getSiteSettings();
-  if (!settings.isStoreActive) {
+  const [settings, user] = await Promise.all([getSiteSettings(), getUser(request)]);
+  const isPreview = !settings.isStoreActive;
+
+  // Un admin puede ver/probar la tienda aunque todavía no esté activa para
+  // el público — todos los demás siguen viendo la landing de pre-lanzamiento.
+  if (isPreview && user?.role !== "admin") {
     throw redirect("/");
   }
 
-  const [cartItems, user, couponCode, loyalty, bannerPromo] = await Promise.all([
+  const [cartItems, couponCode, loyalty, bannerPromo] = await Promise.all([
     getCart(request),
-    getUser(request),
     getCartCoupon(request),
     getActiveLoyaltyConfig(),
     getActiveBannerPromotion(),
@@ -67,11 +70,13 @@ export async function loader({ request }: LoaderFunctionArgs) {
     discountPercent,
     coupon,
     isAuthenticated: Boolean(user),
+    isPreview,
     banner: bannerPromo?.banner?.enabled
       ? {
           text: bannerPromo.banner.text,
           ctaText: bannerPromo.banner.ctaText,
           ctaHref: bannerPromo.banner.ctaHref,
+          imageUrl: bannerPromo.banner.imageUrl || null,
         }
       : null,
   });
@@ -118,7 +123,8 @@ export async function action({ request }: ActionFunctionArgs) {
 }
 
 export default function Tienda() {
-  const { lines, subtotalMxn, discountPercent, coupon, banner } = useLoaderData<typeof loader>();
+  const { lines, subtotalMxn, discountPercent, coupon, banner, isPreview } =
+    useLoaderData<typeof loader>();
 
   useEffect(() => {
     trackEvent("view_item");
@@ -126,13 +132,23 @@ export default function Tienda() {
 
   return (
     <div className="flex min-h-screen flex-col bg-hueso">
+      {isPreview && (
+        <div className="bg-carbon px-4 py-2 text-center text-sm font-semibold text-lima">
+          Vista previa de administrador — la tienda todavía no está activa para el público.
+        </div>
+      )}
       <Navbar cartCount={lines.reduce((sum, l) => sum + l.quantity, 0)} />
 
       <main className="flex-1">
         <section className="mx-auto max-w-6xl px-4 py-12 sm:px-6">
           {banner && (
             <div className="mb-8">
-              <PromoBanner text={banner.text} ctaText={banner.ctaText} ctaHref={banner.ctaHref} />
+              <PromoBanner
+                text={banner.text}
+                imageUrl={banner.imageUrl}
+                ctaText={banner.ctaText}
+                ctaHref={banner.ctaHref}
+              />
             </div>
           )}
 

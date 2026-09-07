@@ -14,14 +14,27 @@ import { LeadModel } from "~/models/lead.server";
 export async function loader({ request }: LoaderFunctionArgs) {
   await requireAdmin(request);
   await connectDB();
-  const leads = await LeadModel.find().sort({ registeredAt: -1 }).lean();
+
+  const url = new URL(request.url);
+  const from = url.searchParams.get("from");
+  const to = url.searchParams.get("to");
+  const query: Record<string, unknown> = {};
+  if (from || to) {
+    query.registeredAt = {
+      ...(from ? { $gte: new Date(from) } : {}),
+      ...(to ? { $lte: new Date(new Date(to).getTime() + 86399999) } : {}),
+    };
+  }
+
+  const leads = await LeadModel.find(query).sort({ registeredAt: -1 }).lean();
 
   const escape = (value: string) => `"${value.replace(/"/g, '""')}"`;
-  const header = ["email", "registrado", "codigo_descuento", "estado"].join(",");
+  const header = ["email", "registrado", "canal", "codigo_descuento", "estado"].join(",");
   const lines = leads.map((l) =>
     [
       escape(l.email),
       escape(new Date(l.registeredAt ?? new Date()).toISOString()),
+      escape(l.source ?? "direct"),
       escape(l.discountCodeAssigned ?? ""),
       escape(l.status ?? "pending"),
     ].join(","),
