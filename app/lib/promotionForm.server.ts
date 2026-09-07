@@ -2,6 +2,7 @@ import { z } from "zod";
 import { PROMOTION_TYPES, type PromotionType } from "~/data/promotionTypes";
 import { PromotionModel } from "~/models/promotion.server";
 import { uploadedFileToPublicUrl } from "~/lib/upload.server";
+import { PRODUCTS } from "~/data/products";
 
 const baseSchema = z.object({
   name: z.string().trim().min(2, "Ponle un nombre a la promoción."),
@@ -153,6 +154,44 @@ export async function buildPromotionDocFromFormData(
         return { ok: false, error: "Define cada cuántas compras y el % de descuento.", status: 400 };
       }
       doc.loyalty = { purchasesRequired, percentage };
+      break;
+    }
+    case "by_requirement": {
+      const condition = String(formData.get("requirementCondition") ?? "product_in_cart") as
+        | "product_in_cart"
+        | "product_spend"
+        | "first_purchase";
+      const rewardDiscountPercentage = Number(formData.get("requirementRewardPercentage") ?? 0) || undefined;
+      const rewardGiftSku = String(formData.get("requirementRewardGiftSku") ?? "") || undefined;
+
+      if (!rewardDiscountPercentage && !rewardGiftSku) {
+        return { ok: false, error: "Define al menos una recompensa: % de descuento o producto de regalo.", status: 400 };
+      }
+      if (rewardGiftSku && !(rewardGiftSku in PRODUCTS)) {
+        return { ok: false, error: "El producto de regalo no es válido.", status: 400 };
+      }
+
+      const byRequirement: Record<string, unknown> = { condition, rewardDiscountPercentage, rewardGiftSku };
+
+      if (condition !== "first_purchase") {
+        const targetSku = String(formData.get("requirementTargetSku") ?? "");
+        if (!targetSku || !(targetSku in PRODUCTS)) {
+          return { ok: false, error: "Elige el producto o paquete requerido.", status: 400 };
+        }
+        byRequirement.targetSku = targetSku;
+
+        if (condition === "product_in_cart") {
+          byRequirement.minQuantity = Number(formData.get("requirementMinQuantity") ?? 1) || 1;
+        } else {
+          const minSpendMxn = Number(formData.get("requirementMinSpendMxn") ?? 0);
+          if (!minSpendMxn) {
+            return { ok: false, error: "Define el gasto mínimo requerido.", status: 400 };
+          }
+          byRequirement.minSpendMxn = minSpendMxn;
+        }
+      }
+
+      doc.byRequirement = byRequirement;
       break;
     }
   }

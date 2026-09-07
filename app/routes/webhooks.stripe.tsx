@@ -118,6 +118,12 @@ async function handleOneTimeCheckoutCompleted(session: Stripe.Checkout.Session) 
     })
     .filter((item): item is NonNullable<typeof item> => item !== null);
 
+  const giftSku = session.metadata?.giftSku;
+  if (giftSku && giftSku in PRODUCTS) {
+    const gift = PRODUCTS[giftSku as ProductSku];
+    items.push({ sku: giftSku, name: `🎁 ${gift.name}`, quantity: 1, unitPriceMxn: 0 });
+  }
+
   const totalAmount = items.reduce((sum, item) => sum + item.unitPriceMxn * item.quantity, 0);
   const netAmount = (session.amount_total ?? totalAmount * 100) / 100;
   const discountAmount = Math.max(0, totalAmount - netAmount);

@@ -12,12 +12,16 @@ export function CartDrawer({
   lines,
   subtotalMxn,
   discountPercent,
+  discountLabel,
   coupon,
+  gift,
 }: {
   lines: CartLine[];
   subtotalMxn: number;
   discountPercent: number;
+  discountLabel?: string;
   coupon: { code: string; percentage: number } | null;
+  gift?: { name: string } | null;
 }) {
   const fetcher = useFetcher<{ error?: string }>();
   const couponFetcher = useFetcher<{ error?: string; ok?: boolean }>();
@@ -63,6 +67,13 @@ export function CartDrawer({
             ))}
           </ul>
 
+          {gift && (
+            <div className="flex items-center gap-2 rounded-xl bg-lima/10 px-3 py-2 text-sm">
+              <span aria-hidden="true">🎁</span>
+              <span className="font-semibold text-bosque">Llévate gratis: {gift.name}</span>
+            </div>
+          )}
+
           {/* Código de descuento */}
           <div className="border-t border-carbon/10 pt-4">
             {coupon ? (
@@ -105,7 +116,7 @@ export function CartDrawer({
           <div className="border-t border-carbon/10 pt-4">
             {discountPercent > 0 && (
               <div className="mb-1 flex justify-between text-sm text-bosque">
-                <span>{coupon ? "Descuento aplicado" : "Descuento de fidelidad"}</span>
+                <span>{discountLabel || "Descuento aplicado"}</span>
                 <span>-{discountPercent}%</span>
               </div>
             )}

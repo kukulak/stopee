@@ -1,6 +1,7 @@
 import type { ActionFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import { getOrCreateVisitorId, logEvent, type TrackableEvent } from "~/lib/tracking.server";
+import { getUser } from "~/lib/session.server";
 
 const VALID_TYPES: TrackableEvent[] = ["page_view", "view_item", "add_to_cart", "begin_checkout"];
 
@@ -22,7 +23,13 @@ export async function action({ request }: ActionFunctionArgs) {
     return json({ ok: false }, { status: 400 });
   }
 
-  await logEvent(visitorId, body.type as TrackableEvent, body.sku);
+  const user = await getUser(request);
+  await logEvent(
+    visitorId,
+    body.type as TrackableEvent,
+    body.sku,
+    user ? { userId: String(user._id), email: user.email } : undefined,
+  );
 
   return json(
     { ok: true },

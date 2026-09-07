@@ -15,6 +15,7 @@ import { addToCart, getCart, getCartCoupon, removeFromCart, setCartCoupon } from
 import { getUser } from "~/lib/session.server";
 import { getSiteSettings } from "~/models/siteSettings.server";
 import { getActiveLoyaltyConfig, getActiveBannerPromotion, findRedeemableCoupon } from "~/models/promotion.server";
+import { evaluateRequirementPromotion } from "~/lib/promotionEngine.server";
 
 export const meta: MetaFunction = () => [
   { title: "Tienda STOPee — Higiene urbana canina" },
@@ -59,16 +60,36 @@ export async function loader({ request }: LoaderFunctionArgs) {
     }
   }
 
+  const isFirstPurchase = Boolean(user && user.individualPurchaseCount === 0);
+  const requirementMatch = await evaluateRequirementPromotion(
+    lines.map((l) => ({ sku: l.sku, quantity: l.quantity })),
+    isFirstPurchase,
+  );
+  const gift = requirementMatch?.rewardGiftSku ? PRODUCTS[requirementMatch.rewardGiftSku] : null;
+
   const loyaltyDiscountPercent = user?.loyaltyDiscountActive ? loyalty.percentage : 0;
-  // Si tiene cupón activo, éste manda (fue una acción explícita del cliente);
-  // si no, aplica automáticamente el descuento de lealtad si lo tiene.
-  const discountPercent = coupon ? coupon.percentage : loyaltyDiscountPercent;
+  // Prioridad: un cupón explícito del cliente gana sobre una promoción
+  // condicional, y esta a su vez gana sobre el descuento de lealtad.
+  let discountPercent = 0;
+  let discountLabel = "";
+  if (coupon) {
+    discountPercent = coupon.percentage;
+    discountLabel = `Cupón ${coupon.code}`;
+  } else if (requirementMatch?.rewardDiscountPercentage) {
+    discountPercent = requirementMatch.rewardDiscountPercentage;
+    discountLabel = requirementMatch.name;
+  } else if (loyaltyDiscountPercent > 0) {
+    discountPercent = loyaltyDiscountPercent;
+    discountLabel = "Descuento de fidelidad";
+  }
 
   return json({
     lines,
     subtotalMxn,
     discountPercent,
+    discountLabel,
     coupon,
+    gift: gift ? { name: gift.name } : null,
     isAuthenticated: Boolean(user),
     isPreview,
     banner: bannerPromo?.banner?.enabled
@@ -123,7 +144,7 @@ export async function action({ request }: ActionFunctionArgs) {
 }
 
 export default function Tienda() {
-  const { lines, subtotalMxn, discountPercent, coupon, banner, isPreview } =
+  const { lines, subtotalMxn, discountPercent, discountLabel, coupon, gift, banner, isPreview } =
     useLoaderData<typeof loader>();
 
   useEffect(() => {
@@ -173,7 +194,9 @@ export default function Tienda() {
               lines={lines}
               subtotalMxn={subtotalMxn}
               discountPercent={discountPercent}
+              discountLabel={discountLabel}
               coupon={coupon}
+              gift={gift}
             />
           </div>
         </section>

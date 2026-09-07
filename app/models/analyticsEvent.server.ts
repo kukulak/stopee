@@ -18,6 +18,13 @@ const analyticsEventSchema = new Schema(
     },
     sessionId: { type: String, required: true, index: true },
     sku: { type: String },
+    /**
+     * Solo se llena cuando el evento ocurre con sesión iniciada — permite
+     * detectar carritos abandonados con datos de contacto reales. La mayoría
+     * de las visitas son anónimas y se quedan sin estos dos campos.
+     */
+    userId: { type: Schema.Types.ObjectId, ref: "User", index: true },
+    email: { type: String },
     createdAt: { type: Date, default: Date.now, index: true },
   },
   { timestamps: false },

@@ -6,6 +6,7 @@ import { connectDB } from "~/lib/db.server";
 import { PromotionModel } from "~/models/promotion.server";
 import type { PromotionType } from "~/data/promotionTypes";
 import { ProductModel } from "~/models/product.server";
+import { PRODUCTS } from "~/data/products";
 import { parseCatalogFormData } from "~/lib/upload.server";
 import { buildPromotionDocFromFormData } from "~/lib/promotionForm.server";
 import { PromotionFormFields, TYPE_LABELS, type PromotionDefaults } from "~/components/admin/PromotionFormFields";
@@ -56,6 +57,22 @@ export async function loader() {
           }
         : null,
       loyalty: p.loyalty ?? null,
+      byRequirement: p.byRequirement
+        ? {
+            condition: p.byRequirement.condition,
+            targetSku: p.byRequirement.targetSku ?? "",
+            targetName: p.byRequirement.targetSku
+              ? PRODUCTS[p.byRequirement.targetSku as keyof typeof PRODUCTS]?.name ?? null
+              : null,
+            minQuantity: p.byRequirement.minQuantity ?? null,
+            minSpendMxn: p.byRequirement.minSpendMxn ?? null,
+            rewardDiscountPercentage: p.byRequirement.rewardDiscountPercentage ?? null,
+            rewardGiftSku: p.byRequirement.rewardGiftSku ?? "",
+            rewardGiftName: p.byRequirement.rewardGiftSku
+              ? PRODUCTS[p.byRequirement.rewardGiftSku as keyof typeof PRODUCTS]?.name ?? null
+              : null,
+          }
+        : null,
       banner: p.banner ?? { enabled: false, text: "", ctaText: "", ctaHref: "", imageUrl: "" },
     })),
   });
@@ -302,6 +319,21 @@ function describePromotion(p: PromotionRow): string {
         : "";
     case "loyalty":
       return p.loyalty ? `${p.loyalty.percentage}% permanente desde la compra #${p.loyalty.purchasesRequired}` : "";
+    case "by_requirement": {
+      if (!p.byRequirement) return "";
+      const { condition, targetName, minQuantity, minSpendMxn, rewardDiscountPercentage, rewardGiftName } = p.byRequirement;
+      const conditionLabel =
+        condition === "first_purchase"
+          ? "Es su primera compra"
+          : condition === "product_in_cart"
+            ? `${minQuantity ?? 1}+ × ${targetName ?? "producto/paquete eliminado"} en el carrito`
+            : `Gasta $${minSpendMxn} en ${targetName ?? "producto/paquete eliminado"}`;
+      const rewardParts = [
+        rewardDiscountPercentage ? `${rewardDiscountPercentage}% de descuento` : null,
+        rewardGiftName ? `regalo: ${rewardGiftName}` : null,
+      ].filter(Boolean);
+      return `${conditionLabel} → ${rewardParts.join(" + ") || "sin recompensa configurada"}`;
+    }
     default:
       return "";
   }

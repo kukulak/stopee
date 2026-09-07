@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { PROMOTION_TYPES, type PromotionType } from "~/data/promotionTypes";
+import { PRODUCT_LIST } from "~/data/products";
 
 export const TYPE_LABELS: Record<PromotionType, string> = {
   coupon: "Cupón",
@@ -12,6 +13,7 @@ export const TYPE_LABELS: Record<PromotionType, string> = {
   vip_early: "VIP primeros compradores",
   buy_together: "Comprar juntos",
   loyalty: "Programa de lealtad",
+  by_requirement: "Por requisito",
 };
 
 const inputClass =
@@ -49,6 +51,14 @@ export type PromotionDefaults = {
   vipEarly?: { percentage?: number; maxCustomers?: number | null } | null;
   buyTogether?: { productIds?: string[]; percentage?: number } | null;
   loyalty?: { purchasesRequired?: number; percentage?: number } | null;
+  byRequirement?: {
+    condition?: "product_in_cart" | "product_spend" | "first_purchase";
+    targetSku?: string;
+    minQuantity?: number | null;
+    minSpendMxn?: number | null;
+    rewardDiscountPercentage?: number | null;
+    rewardGiftSku?: string;
+  } | null;
   banner?: { enabled?: boolean; text?: string; ctaText?: string; ctaHref?: string; imageUrl?: string } | null;
 };
 
@@ -68,6 +78,9 @@ export function PromotionFormFields({
   const [type, setType] = useState<PromotionType>(defaults?.type ?? "coupon");
   const tiers = defaults?.tieredSpend?.tiers ?? [];
   const selectedBuyTogether = new Set(defaults?.buyTogether?.productIds ?? []);
+  const [requirementCondition, setRequirementCondition] = useState<"product_in_cart" | "product_spend" | "first_purchase">(
+    defaults?.byRequirement?.condition ?? "product_in_cart",
+  );
 
   return (
     <>
@@ -222,6 +235,100 @@ export function PromotionFormFields({
             Esto controla el "camino a la Nª compra": activa esta promoción y el dashboard/tienda
             usarán el número y porcentaje que definas aquí.
           </p>
+        </div>
+      )}
+
+      {type === "by_requirement" && (
+        <div className="flex flex-col gap-4">
+          <Field label="Condición" htmlFor="requirementCondition">
+            <select
+              id="requirementCondition"
+              name="requirementCondition"
+              value={requirementCondition}
+              onChange={(e) => setRequirementCondition(e.target.value as typeof requirementCondition)}
+              className={inputClass}
+            >
+              <option value="product_in_cart">Tiene cierto producto o paquete en el carrito</option>
+              <option value="product_spend">Gasta cierto monto en un producto o paquete</option>
+              <option value="first_purchase">Es su primera compra</option>
+            </select>
+          </Field>
+
+          {requirementCondition !== "first_purchase" && (
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <Field label="Producto o paquete requerido" htmlFor="requirementTargetSku">
+                <select
+                  id="requirementTargetSku"
+                  name="requirementTargetSku"
+                  required
+                  defaultValue={defaults?.byRequirement?.targetSku ?? ""}
+                  className={inputClass}
+                >
+                  <option value="">Selecciona...</option>
+                  {PRODUCT_LIST.map((item) => (
+                    <option key={item.sku} value={item.sku}>
+                      {item.name}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              {requirementCondition === "product_in_cart" ? (
+                <Field label="Cantidad mínima" htmlFor="requirementMinQuantity">
+                  <input
+                    id="requirementMinQuantity"
+                    name="requirementMinQuantity"
+                    type="number"
+                    min={1}
+                    defaultValue={defaults?.byRequirement?.minQuantity ?? 1}
+                    className={inputClass}
+                  />
+                </Field>
+              ) : (
+                <Field label="Gasto mínimo (MXN)" htmlFor="requirementMinSpendMxn">
+                  <input
+                    id="requirementMinSpendMxn"
+                    name="requirementMinSpendMxn"
+                    type="number"
+                    min={0}
+                    defaultValue={defaults?.byRequirement?.minSpendMxn ?? undefined}
+                    className={inputClass}
+                  />
+                </Field>
+              )}
+            </div>
+          )}
+
+          <div className="rounded-xl border border-carbon/10 p-3">
+            <p className="text-sm font-semibold text-carbon">Recompensa (define al menos una)</p>
+            <div className="mt-2 grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <Field label="% de descuento (opcional)" htmlFor="requirementRewardPercentage">
+                <input
+                  id="requirementRewardPercentage"
+                  name="requirementRewardPercentage"
+                  type="number"
+                  min={1}
+                  max={100}
+                  defaultValue={defaults?.byRequirement?.rewardDiscountPercentage ?? undefined}
+                  className={inputClass}
+                />
+              </Field>
+              <Field label="Producto de regalo (opcional)" htmlFor="requirementRewardGiftSku">
+                <select
+                  id="requirementRewardGiftSku"
+                  name="requirementRewardGiftSku"
+                  defaultValue={defaults?.byRequirement?.rewardGiftSku ?? ""}
+                  className={inputClass}
+                >
+                  <option value="">Sin regalo</option>
+                  {PRODUCT_LIST.map((item) => (
+                    <option key={item.sku} value={item.sku}>
+                      {item.name}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            </div>
+          </div>
         </div>
       )}
 

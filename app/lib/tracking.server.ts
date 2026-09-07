@@ -23,7 +23,18 @@ export async function getOrCreateVisitorId(
 
 export type TrackableEvent = "page_view" | "view_item" | "add_to_cart" | "begin_checkout";
 
-export async function logEvent(sessionId: string, type: TrackableEvent, sku?: string) {
+export async function logEvent(
+  sessionId: string,
+  type: TrackableEvent,
+  sku?: string,
+  identity?: { userId?: string; email?: string },
+) {
   await connectDB();
-  await AnalyticsEventModel.create({ sessionId, type, sku });
+  await AnalyticsEventModel.create({
+    sessionId,
+    type,
+    sku,
+    userId: identity?.userId || undefined,
+    email: identity?.email || undefined,
+  });
 }

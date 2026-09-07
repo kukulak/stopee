@@ -1,6 +1,6 @@
 import type { LoaderFunctionArgs, MetaFunction } from "@remix-run/node";
 import { json } from "@remix-run/node";
-import { useLoaderData } from "@remix-run/react";
+import { Link, useLoaderData } from "@remix-run/react";
 import { connectDB } from "~/lib/db.server";
 import { OrderModel } from "~/models/order.server";
 import { LeadModel } from "~/models/lead.server";
@@ -216,6 +216,28 @@ export async function loader({ request }: LoaderFunctionArgs) {
     .map(([source, v]) => ({ source, orders: v.orders, revenue: Math.round(v.revenue) }))
     .sort((a, b) => b.revenue - a.revenue);
 
+  // ---------- Perfil de clientes (resumen; el detalle vive en /admin/customers) ----------
+  const [purchasedUserIds, anonymousBuyerEmails, abandonedLookback] = await Promise.all([
+    OrderModel.distinct("user", { status: { $in: REVENUE_STATUSES }, user: { $ne: null } }),
+    OrderModel.distinct("email", { status: { $in: REVENUE_STATUSES }, user: null, email: { $ne: "desconocido@stopee.com.mx" } }),
+    Promise.resolve(new Date(Date.now() - 14 * 86400000)),
+  ]);
+  const [registeredNoPurchaseCount, totalUserCount, recentCheckoutStarters] = await Promise.all([
+    UserModel.countDocuments({ _id: { $nin: purchasedUserIds } }),
+    UserModel.countDocuments(),
+    AnalyticsEventModel.aggregate([
+      { $match: { type: "begin_checkout", userId: { $ne: null }, createdAt: { $gte: abandonedLookback } } },
+      { $group: { _id: "$userId" } },
+    ]),
+  ]);
+  const attemptedIds = recentCheckoutStarters.map((r) => r._id);
+  const convertedAfterAttempt = attemptedIds.length
+    ? new Set(
+        (await OrderModel.distinct("user", { user: { $in: attemptedIds }, createdAt: { $gte: abandonedLookback } })).map(String),
+      )
+    : new Set<string>();
+  const abandonedCartCount = attemptedIds.filter((id) => !convertedAfterAttempt.has(String(id))).length;
+
   const [totalLeads, convertedLeads, leadsInRange] = await Promise.all([
     LeadModel.countDocuments(),
     LeadModel.countDocuments({ status: "converted" }),
@@ -321,6 +343,12 @@ export async function loader({ request }: LoaderFunctionArgs) {
       convertedLeads,
       leadVelocityPerDay,
       pixelStatus,
+    },
+    customerProfile: {
+      totalUsers: totalUserCount,
+      registeredNoPurchase: registeredNoPurchaseCount,
+      anonymousBuyers: anonymousBuyerEmails.length,
+      abandonedCarts: abandonedCartCount,
     },
     inventory: {
       rows: inventoryRows,
@@ -691,7 +719,21 @@ export default function AdminDashboard() {
       </div>
 
       {/* ===== Capa 4: Adquisición ===== */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <Card>
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="font-display text-lg font-bold text-carbon">Perfil de clientes</h2>
+            <Link to="/admin/customers" className="text-sm font-semibold text-bosque hover:underline">
+              Ver todos →
+            </Link>
+          </div>
+          <div className="mt-3 flex flex-col gap-2 text-sm">
+            <div className="flex justify-between"><span className="text-carbon/60">Cuentas totales</span><span className="font-bold text-carbon">{data.customerProfile.totalUsers}</span></div>
+            <div className="flex justify-between"><span className="text-carbon/60">Registrados sin compra</span><span className="font-bold text-carbon">{data.customerProfile.registeredNoPurchase}</span></div>
+            <div className="flex justify-between"><span className="text-carbon/60">Compradores anónimos</span><span className="font-bold text-carbon">{data.customerProfile.anonymousBuyers}</span></div>
+            <div className="flex justify-between"><span className="text-carbon/60">Carritos abandonados (14d)</span><span className="font-bold text-carbon">{data.customerProfile.abandonedCarts}</span></div>
+          </div>
+        </Card>
         <Card>
           <h2 className="font-display text-lg font-bold text-carbon">Atribución de ventas por canal</h2>
           {data.acquisition.attributionBreakdown.length === 0 ? (

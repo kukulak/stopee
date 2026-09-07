@@ -79,6 +79,24 @@ const promotionSchema = new Schema(
       purchasesRequired: { type: Number, min: 2, default: 5 },
       percentage: { type: Number, min: 1, max: 100, default: 10 },
     },
+    /**
+     * A diferencia de `tieredSpend` (escalones sobre el gasto TOTAL del
+     * carrito), aquí el requisito siempre gira en torno a UN producto o
+     * paquete puntual (o a ser primera compra) — permite reglas como "2L en
+     * el carrito → regalo" o "$500 en concentrado → regalo" sin forzar esos
+     * casos dentro de un escalonado que no aplica.
+     */
+    byRequirement: {
+      condition: { type: String, enum: ["product_in_cart", "product_spend", "first_purchase"], default: "product_in_cart" },
+      // SKU del catálogo real de la tienda (app/data/products.ts) — NO el
+      // catálogo de /admin/catalog, que es un sistema aparte usado solo para
+      // inventario/margen y no es lo que hay en el carrito del cliente.
+      targetSku: { type: String },
+      minQuantity: { type: Number, min: 1 },
+      minSpendMxn: { type: Number, min: 0 },
+      rewardDiscountPercentage: { type: Number, min: 1, max: 100 },
+      rewardGiftSku: { type: String },
+    },
 
     banner: { type: bannerSchema, default: () => ({}) },
   },

@@ -10,6 +10,7 @@ export const PROMOTION_TYPES = [
   "vip_early",
   "buy_together",
   "loyalty",
+  "by_requirement",
 ] as const;
 
 export type PromotionType = (typeof PROMOTION_TYPES)[number];
