@@ -1,5 +1,6 @@
 import { Link } from "@remix-run/react";
 import type { HeroBanner } from "~/lib/heroBanner.server";
+import { trackEvent } from "~/lib/trackClient";
 
 /**
  * Hero grande y editable desde el admin (promoción con banner o banner
@@ -30,6 +31,7 @@ export function HeroBannerSection({ banner }: { banner: HeroBanner }) {
           {banner.ctaText && (
             <Link
               to={banner.ctaHref}
+              onClick={() => trackEvent("banner_click")}
               className="mt-7 inline-block min-h-11 rounded-full bg-lima px-7 py-3 text-sm font-bold text-carbon transition-transform hover:scale-105 active:scale-95"
             >
               {banner.ctaText}

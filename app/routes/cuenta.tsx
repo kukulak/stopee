@@ -1,6 +1,7 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs, MetaFunction } from "@remix-run/node";
 import { json, redirect } from "@remix-run/node";
-import { Form, useLoaderData, useNavigation } from "@remix-run/react";
+import { Form, useActionData, useLoaderData, useNavigation } from "@remix-run/react";
+import { useState } from "react";
 import { Navbar } from "~/components/layout/Navbar";
 import { Footer } from "~/components/layout/Footer";
 import { connectDB } from "~/lib/db.server";
@@ -44,8 +45,21 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
   if (!user) throw new Response("Usuario no encontrado", { status: 404 });
 
+  const dogs = (user.dogs && user.dogs.length > 0
+    ? user.dogs
+    : user.dogName
+      ? [{ name: user.dogName, birthday: null }]
+      : []
+  ) as { name: string; birthday: string | Date | null }[];
+
   return json({
-    user: { name: user.name, email: user.email, dogName: user.dogName },
+    user: {
+      name: user.name,
+      email: user.email,
+      phone: user.phone ?? "",
+      address: user.address ?? {},
+      dogs: dogs.map((d) => ({ name: d.name, birthday: d.birthday ? new Date(d.birthday).toISOString().slice(0, 10) : "" })),
+    },
     loyalty: {
       count: user.individualPurchaseCount ?? 0,
       required: loyaltyConfig.purchasesRequired,
@@ -75,6 +89,26 @@ export async function action({ request }: ActionFunctionArgs) {
   const formData = await request.formData();
   const intent = formData.get("intent");
   const subscriptionId = String(formData.get("subscriptionId") ?? "");
+
+  if (intent === "update-profile") {
+    const phone = String(formData.get("phone") ?? "").trim();
+    const address = {
+      line1: String(formData.get("addressLine1") ?? "").trim(),
+      line2: String(formData.get("addressLine2") ?? "").trim(),
+      city: String(formData.get("addressCity") ?? "").trim(),
+      state: String(formData.get("addressState") ?? "").trim(),
+      postalCode: String(formData.get("addressPostalCode") ?? "").trim(),
+      country: "MX",
+    };
+    const dogNames = formData.getAll("dogName") as string[];
+    const dogBirthdays = formData.getAll("dogBirthday") as string[];
+    const dogs = dogNames
+      .map((name, i) => ({ name: name.trim(), birthday: dogBirthdays[i] ? new Date(dogBirthdays[i]) : undefined }))
+      .filter((d) => d.name);
+
+    await UserModel.findByIdAndUpdate(userId, { phone, address, dogs });
+    return json({ ok: true, savedIntent: "update-profile" as const });
+  }
 
   const subscription = await SubscriptionModel.findOne({ _id: subscriptionId, user: userId });
   if (intent === "billing-portal") {
@@ -120,8 +154,14 @@ export async function action({ request }: ActionFunctionArgs) {
 
 export default function Cuenta() {
   const { user, loyalty, orders, subscriptions } = useLoaderData<typeof loader>();
+  const actionData = useActionData<typeof action>();
   const navigation = useNavigation();
   const isBusy = navigation.state !== "idle";
+  const isSavingProfile = isBusy && navigation.formData?.get("intent") === "update-profile";
+  const [showProfileForm, setShowProfileForm] = useState(false);
+  const [dogRows, setDogRows] = useState(
+    user.dogs.length > 0 ? user.dogs : [{ name: "", birthday: "" }],
+  );
 
   return (
     <div className="flex min-h-screen flex-col bg-hueso">
@@ -134,9 +174,151 @@ export default function Cuenta() {
           </p>
           <h1 className="mt-2 font-display text-3xl font-black text-carbon">
             Hola{user.name ? `, ${user.name}` : ""}
-            {user.dogName ? ` y ${user.dogName}` : ""} 👋
+            {user.dogs[0]?.name ? ` y ${user.dogs[0].name}` : ""} 👋
           </h1>
           <p className="mt-1 text-carbon/60">{user.email}</p>
+
+          {/* Perfil: teléfono, dirección y perros */}
+          <div className="mt-8 rounded-3xl border border-carbon/10 bg-white p-6">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="font-display font-bold text-carbon">Mi perfil</p>
+                <p className="mt-1 text-sm text-carbon/60">
+                  Teléfono, dirección de envío y tus perros — para tus pedidos y para no perdernos
+                  su cumpleaños 🎂.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowProfileForm((v) => !v)}
+                className="min-h-11 shrink-0 rounded-full border border-carbon/15 px-4 text-sm font-semibold text-carbon hover:border-carbon/30"
+              >
+                {showProfileForm ? "Cerrar" : "Editar"}
+              </button>
+            </div>
+
+            {actionData && "savedIntent" in actionData && actionData.savedIntent === "update-profile" && (
+              <p className="mt-3 text-sm font-semibold text-bosque">Perfil actualizado.</p>
+            )}
+
+            {!showProfileForm ? (
+              <div className="mt-4 grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
+                <p className="text-carbon/70">
+                  <span className="font-semibold text-carbon">Teléfono: </span>
+                  {user.phone || "sin registrar"}
+                </p>
+                <p className="text-carbon/70">
+                  <span className="font-semibold text-carbon">Dirección: </span>
+                  {user.address?.line1 ? `${user.address.line1}, ${user.address.city ?? ""}` : "sin registrar"}
+                </p>
+                <p className="text-carbon/70 sm:col-span-2">
+                  <span className="font-semibold text-carbon">Perros: </span>
+                  {user.dogs.length > 0
+                    ? user.dogs.map((d) => (d.birthday ? `${d.name} (🎂 ${d.birthday})` : d.name)).join(", ")
+                    : "sin registrar"}
+                </p>
+              </div>
+            ) : (
+              <Form method="post" className="mt-4 flex flex-col gap-4">
+                <input type="hidden" name="intent" value="update-profile" />
+
+                <div>
+                  <label htmlFor="phone" className="text-sm font-semibold text-carbon">
+                    Teléfono
+                  </label>
+                  <input
+                    id="phone"
+                    name="phone"
+                    type="tel"
+                    defaultValue={user.phone}
+                    className="mt-1 w-full min-h-11 rounded-xl border border-carbon/15 px-4 focus:border-oliva focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <p className="text-sm font-semibold text-carbon">Dirección de envío</p>
+                  <div className="mt-1 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <input
+                      name="addressLine1"
+                      placeholder="Calle y número"
+                      defaultValue={user.address?.line1}
+                      className="min-h-11 rounded-xl border border-carbon/15 px-4 focus:border-oliva focus:outline-none sm:col-span-2"
+                    />
+                    <input
+                      name="addressLine2"
+                      placeholder="Colonia, interior (opcional)"
+                      defaultValue={user.address?.line2}
+                      className="min-h-11 rounded-xl border border-carbon/15 px-4 focus:border-oliva focus:outline-none sm:col-span-2"
+                    />
+                    <input
+                      name="addressCity"
+                      placeholder="Ciudad"
+                      defaultValue={user.address?.city}
+                      className="min-h-11 rounded-xl border border-carbon/15 px-4 focus:border-oliva focus:outline-none"
+                    />
+                    <input
+                      name="addressState"
+                      placeholder="Estado"
+                      defaultValue={user.address?.state}
+                      className="min-h-11 rounded-xl border border-carbon/15 px-4 focus:border-oliva focus:outline-none"
+                    />
+                    <input
+                      name="addressPostalCode"
+                      placeholder="Código postal"
+                      defaultValue={user.address?.postalCode}
+                      className="min-h-11 rounded-xl border border-carbon/15 px-4 focus:border-oliva focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <p className="text-sm font-semibold text-carbon">Tus perros</p>
+                  <div className="mt-1 flex flex-col gap-2">
+                    {dogRows.map((dog, i) => (
+                      <div key={i} className="flex flex-wrap items-center gap-2">
+                        <input
+                          name="dogName"
+                          placeholder="Nombre"
+                          defaultValue={dog.name}
+                          className="min-h-11 flex-1 rounded-xl border border-carbon/15 px-4 focus:border-oliva focus:outline-none"
+                        />
+                        <input
+                          name="dogBirthday"
+                          type="date"
+                          defaultValue={dog.birthday ?? ""}
+                          aria-label="Cumpleaños"
+                          className="min-h-11 rounded-xl border border-carbon/15 px-4 focus:border-oliva focus:outline-none"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setDogRows((rows) => rows.filter((_, idx) => idx !== i))}
+                          aria-label="Quitar perro"
+                          className="min-h-11 min-w-11 rounded-full text-carbon/40 hover:text-carbon"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setDogRows((rows) => [...rows, { name: "", birthday: "" }])}
+                    className="mt-2 text-sm font-semibold text-bosque hover:underline"
+                  >
+                    + Agregar otro perro
+                  </button>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={isSavingProfile}
+                  className="min-h-11 self-start rounded-full bg-carbon px-6 text-sm font-bold text-hueso disabled:opacity-60"
+                >
+                  {isSavingProfile ? "Guardando…" : "Guardar perfil"}
+                </button>
+              </Form>
+            )}
+          </div>
 
           {/* Fidelidad */}
           <div className="mt-8 rounded-3xl border border-lima/30 bg-bosque/5 p-6">

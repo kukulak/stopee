@@ -3,7 +3,7 @@ import { json } from "@remix-run/node";
 import { getOrCreateVisitorId, logEvent, type TrackableEvent } from "~/lib/tracking.server";
 import { getUser } from "~/lib/session.server";
 
-const VALID_TYPES: TrackableEvent[] = ["page_view", "view_item", "add_to_cart", "begin_checkout"];
+const VALID_TYPES: TrackableEvent[] = ["page_view", "view_item", "add_to_cart", "begin_checkout", "banner_click"];
 
 /**
  * Resource route: recibe pings de eventos del front (fetch con keepalive)

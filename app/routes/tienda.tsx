@@ -11,7 +11,7 @@ import { CartDrawer, type CartLine } from "~/components/ecommerce/CartDrawer";
 import { PromoBanner } from "~/components/ecommerce/PromoBanner";
 import { PRODUCTS } from "~/data/products";
 import type { ProductSku } from "~/data/products";
-import { addToCart, getCart, getCartCoupon, removeFromCart, setCartCoupon } from "~/lib/cart.server";
+import { addToCart, getCart, getCartCoupon, removeFromCart, setCartCoupon, setCartQuantity } from "~/lib/cart.server";
 import { getUser } from "~/lib/session.server";
 import { getSiteSettings } from "~/models/siteSettings.server";
 import { getActiveLoyaltyConfig, getActiveBannerPromotion, findRedeemableCoupon } from "~/models/promotion.server";
@@ -131,7 +131,15 @@ export async function action({ request }: ActionFunctionArgs) {
   }
 
   if (intent === "add-to-cart") {
-    const { cookie } = await addToCart(request, sku);
+    const requestedQuantity = Number(formData.get("quantity") ?? 1);
+    const quantity = Number.isFinite(requestedQuantity) && requestedQuantity > 0 ? Math.floor(requestedQuantity) : 1;
+    const { cookie } = await addToCart(request, sku, quantity);
+    return json({ ok: true }, { headers: { "Set-Cookie": cookie } });
+  }
+
+  if (intent === "update-quantity") {
+    const quantity = Number(formData.get("quantity") ?? 0);
+    const { cookie } = await setCartQuantity(request, sku, Number.isFinite(quantity) ? Math.floor(quantity) : 0);
     return json({ ok: true }, { headers: { "Set-Cookie": cookie } });
   }
 

@@ -17,7 +17,7 @@ export async function loader() {
 
   const [users, leads, purchasedUserIds, guestOrders] = await Promise.all([
     UserModel.find()
-      .select("email name dogName totalSpentLTV individualPurchaseCount createdAt")
+      .select("email name dogName dogs totalSpentLTV individualPurchaseCount createdAt")
       .sort({ createdAt: -1 })
       .lean(),
     LeadModel.find().lean(),
@@ -101,6 +101,20 @@ export async function loader() {
   const totalLeads = leads.length;
   const pendingLeads = leads.filter((l) => l.status === "pending").length;
 
+  // Cumpleaños del mes: para mandar un mensaje o dar un descuento extra en el
+  // mes de cumpleaños del perro, como oportunidad de reconexión con el cliente.
+  const currentMonth = new Date().getMonth();
+  const dogBirthdaysThisMonth = users.flatMap((u) =>
+    (u.dogs ?? [])
+      .filter((d) => d.birthday && new Date(d.birthday).getMonth() === currentMonth)
+      .map((d) => ({
+        userId: String(u._id),
+        ownerEmail: u.email,
+        dogName: d.name,
+        day: new Date(d.birthday as unknown as string).getDate(),
+      })),
+  ).sort((a, b) => a.day - b.day);
+
   return json({
     counts: {
       registeredNoPurchase: registeredNoPurchase.length,
@@ -116,6 +130,7 @@ export async function loader() {
     abandonedCarts,
     anonymousAbandonedCount,
     abandonedLookbackDays: ABANDONED_LOOKBACK_DAYS,
+    dogBirthdaysThisMonth,
   });
 }
 
@@ -191,8 +206,12 @@ export default function AdminCustomers() {
               </thead>
               <tbody>
                 {data.abandonedCarts.map((c) => (
-                  <tr key={c.userId} className="border-t border-carbon/5">
-                    <td className="py-2.5 font-semibold text-carbon">{c.name || "Sin nombre"}</td>
+                  <tr key={c.userId} className="border-t border-carbon/5 hover:bg-carbon/5">
+                    <td className="py-2.5 font-semibold text-carbon">
+                      <Link to={`/admin/customers/${c.userId}`} className="block hover:underline">
+                        {c.name || "Sin nombre"}
+                      </Link>
+                    </td>
                     <td className="py-2.5 text-carbon/70">{c.email}</td>
                     <td className="py-2.5 text-right text-carbon/60">{daysAgo(c.lastAttemptAt)}</td>
                   </tr>
@@ -208,6 +227,27 @@ export default function AdminCustomers() {
           </p>
         )}
       </Card>
+
+      {data.dogBirthdaysThisMonth.length > 0 && (
+        <Card>
+          <h2 className="font-display text-lg font-bold text-carbon">🎂 Cumpleaños este mes</h2>
+          <p className="mt-1 text-sm text-carbon/60">
+            Buena oportunidad para un mensaje o un descuento extra en su mes.
+          </p>
+          <ul className="mt-3 flex flex-wrap gap-2">
+            {data.dogBirthdaysThisMonth.map((b, i) => (
+              <li key={i}>
+                <Link
+                  to={`/admin/customers/${b.userId}`}
+                  className="inline-flex items-center gap-1.5 rounded-full bg-oliva/10 px-3 py-1.5 text-sm font-semibold text-oliva hover:bg-oliva/20"
+                >
+                  {b.dogName} · día {b.day}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Card>
@@ -227,8 +267,12 @@ export default function AdminCustomers() {
                 </thead>
                 <tbody>
                   {data.registeredNoPurchase.map((u) => (
-                    <tr key={u.id} className="border-t border-carbon/5">
-                      <td className="py-2.5 text-carbon/70">{u.email}</td>
+                    <tr key={u.id} className="cursor-pointer border-t border-carbon/5 hover:bg-carbon/5">
+                      <td className="py-2.5 text-carbon/70">
+                        <Link to={`/admin/customers/${u.id}`} className="block hover:underline">
+                          {u.email}
+                        </Link>
+                      </td>
                       <td className="py-2.5 text-carbon/70">{u.name || "—"}</td>
                       <td className="py-2.5 text-right text-carbon/50">
                         {new Date(u.registeredAt).toLocaleDateString("es-MX")}
@@ -290,8 +334,12 @@ export default function AdminCustomers() {
               </thead>
               <tbody>
                 {data.customersWithPurchase.map((c) => (
-                  <tr key={c.id} className="border-t border-carbon/5">
-                    <td className="py-2.5 text-carbon/70">{c.email}</td>
+                  <tr key={c.id} className="border-t border-carbon/5 hover:bg-carbon/5">
+                    <td className="py-2.5 text-carbon/70">
+                      <Link to={`/admin/customers/${c.id}`} className="block hover:underline">
+                        {c.email}
+                      </Link>
+                    </td>
                     <td className="py-2.5 text-carbon/70">{c.name || "—"}</td>
                     <td className="py-2.5 text-carbon/70">{c.dogName || "—"}</td>
                     <td className="py-2.5 text-right font-semibold text-carbon">{c.orderCount}</td>

@@ -1,4 +1,5 @@
 import { Link } from "@remix-run/react";
+import { trackEvent } from "~/lib/trackClient";
 
 export function PromoBanner({
   text,
@@ -27,6 +28,7 @@ export function PromoBanner({
         {ctaText && ctaHref && (
           <Link
             to={ctaHref}
+            onClick={() => trackEvent("banner_click")}
             className="min-h-11 shrink-0 rounded-full bg-lima px-6 py-2.5 text-sm font-bold text-carbon transition-transform hover:scale-105"
           >
             {ctaText}

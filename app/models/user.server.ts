@@ -3,13 +3,37 @@ import bcrypt from "bcryptjs";
 
 const { Schema, model, models } = mongoose;
 
+const dogSchema = new Schema(
+  {
+    name: { type: String, required: true, trim: true },
+    birthday: { type: Date },
+  },
+  { _id: false },
+);
+
+const addressSchema = new Schema(
+  {
+    line1: { type: String, trim: true, default: "" },
+    line2: { type: String, trim: true, default: "" },
+    city: { type: String, trim: true, default: "" },
+    state: { type: String, trim: true, default: "" },
+    postalCode: { type: String, trim: true, default: "" },
+    country: { type: String, trim: true, default: "MX" },
+  },
+  { _id: false },
+);
+
 const userSchema = new Schema(
   {
     email: { type: String, required: true, unique: true, lowercase: true, trim: true },
     passwordHash: { type: String, required: true },
     name: { type: String, trim: true },
     stripeCustomerId: { type: String },
+    /** @deprecated usar `dogs` — se conserva por el registro histórico y como fallback de despliegue. */
     dogName: { type: String, trim: true },
+    phone: { type: String, trim: true, default: "" },
+    address: { type: addressSchema, default: () => ({}) },
+    dogs: { type: [dogSchema], default: [] },
     /**
      * Compras individuales confirmadas (no cuenta envíos de suscripción).
      * Al llegar a LOYALTY_PURCHASES_REQUIRED se activa `loyaltyDiscountActive`.

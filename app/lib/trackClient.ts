@@ -1,5 +1,8 @@
 /** Ping de evento desde el navegador — nunca bloquea la interacción del usuario. */
-export function trackEvent(type: "page_view" | "view_item" | "add_to_cart" | "begin_checkout", sku?: string) {
+export function trackEvent(
+  type: "page_view" | "view_item" | "add_to_cart" | "begin_checkout" | "banner_click",
+  sku?: string,
+) {
   try {
     fetch("/api/track", {
       method: "POST",

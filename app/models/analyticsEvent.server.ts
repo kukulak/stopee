@@ -12,7 +12,7 @@ const analyticsEventSchema = new Schema(
   {
     type: {
       type: String,
-      enum: ["page_view", "view_item", "add_to_cart", "begin_checkout"],
+      enum: ["page_view", "view_item", "add_to_cart", "begin_checkout", "banner_click"],
       required: true,
       index: true,
     },

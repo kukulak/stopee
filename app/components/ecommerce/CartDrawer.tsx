@@ -8,6 +8,50 @@ export type CartLine = {
   product: Product;
 };
 
+function CartLineRow({ line }: { line: CartLine }) {
+  const fetcher = useFetcher();
+  const isUpdating = fetcher.state !== "idle";
+
+  function updateQuantity(quantity: number) {
+    fetcher.submit(
+      { intent: "update-quantity", sku: line.sku, quantity: String(quantity) },
+      { method: "post", action: "/tienda" },
+    );
+  }
+
+  return (
+    <li className={`flex items-center justify-between gap-3 ${isUpdating ? "opacity-60" : ""}`}>
+      <div>
+        <p className="text-sm font-semibold text-carbon">{line.product.name}</p>
+        <p className="text-xs text-carbon/50">${line.product.priceMxn} MXN c/u</p>
+      </div>
+      <div className="flex items-center gap-1">
+        <button
+          type="button"
+          onClick={() => updateQuantity(line.quantity - 1)}
+          disabled={isUpdating}
+          aria-label={line.quantity <= 1 ? `Quitar ${line.product.name} del carrito` : `Reducir cantidad de ${line.product.name}`}
+          className="flex min-h-11 min-w-11 items-center justify-center rounded-full text-carbon/60 hover:bg-carbon/5 disabled:opacity-50"
+        >
+          {line.quantity <= 1 ? "✕" : "−"}
+        </button>
+        <span className="w-6 text-center text-sm font-semibold text-carbon" aria-live="polite">
+          {line.quantity}
+        </span>
+        <button
+          type="button"
+          onClick={() => updateQuantity(line.quantity + 1)}
+          disabled={isUpdating}
+          aria-label={`Aumentar cantidad de ${line.product.name}`}
+          className="flex min-h-11 min-w-11 items-center justify-center rounded-full text-carbon/60 hover:bg-carbon/5 disabled:opacity-50"
+        >
+          +
+        </button>
+      </div>
+    </li>
+  );
+}
+
 export function CartDrawer({
   lines,
   subtotalMxn,
@@ -23,9 +67,9 @@ export function CartDrawer({
   coupon: { code: string; percentage: number } | null;
   gift?: { name: string } | null;
 }) {
-  const fetcher = useFetcher<{ error?: string }>();
+  const checkoutFetcher = useFetcher<{ error?: string }>();
   const couponFetcher = useFetcher<{ error?: string; ok?: boolean }>();
-  const isCheckingOut = fetcher.state !== "idle";
+  const isCheckingOut = checkoutFetcher.state !== "idle";
   const isApplyingCoupon = couponFetcher.state !== "idle";
   const [codeInput, setCodeInput] = useState("");
   const totalMxn = Math.round(subtotalMxn * (1 - discountPercent / 100));
@@ -45,25 +89,7 @@ export function CartDrawer({
         <>
           <ul className="flex flex-col gap-3">
             {lines.map((line) => (
-              <li key={line.sku} className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-sm font-semibold text-carbon">{line.product.name}</p>
-                  <p className="text-xs text-carbon/50">
-                    {line.quantity} × ${line.product.priceMxn} MXN
-                  </p>
-                </div>
-                <fetcher.Form method="post" action="/tienda">
-                  <input type="hidden" name="intent" value="remove-from-cart" />
-                  <input type="hidden" name="sku" value={line.sku} />
-                  <button
-                    type="submit"
-                    className="min-h-11 min-w-11 rounded-full text-carbon/40 hover:text-carbon"
-                    aria-label={`Quitar ${line.product.name} del carrito`}
-                  >
-                    ✕
-                  </button>
-                </fetcher.Form>
-              </li>
+              <CartLineRow key={line.sku} line={line} />
             ))}
           </ul>
 
@@ -126,7 +152,7 @@ export function CartDrawer({
             </div>
           </div>
 
-          <fetcher.Form method="post" action="/api/checkout">
+          <checkoutFetcher.Form method="post" action="/api/checkout">
             <button
               type="submit"
               disabled={isCheckingOut}
@@ -134,9 +160,9 @@ export function CartDrawer({
             >
               {isCheckingOut ? "Redirigiendo a pago…" : "Ir a pagar"}
             </button>
-          </fetcher.Form>
-          {fetcher.data?.error && (
-            <p className="text-sm font-semibold text-red-600">{fetcher.data.error}</p>
+          </checkoutFetcher.Form>
+          {checkoutFetcher.data?.error && (
+            <p className="text-sm font-semibold text-red-600">{checkoutFetcher.data.error}</p>
           )}
         </>
       )}

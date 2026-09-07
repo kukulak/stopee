@@ -21,7 +21,7 @@ export async function getOrCreateVisitorId(
   return { visitorId, setCookieHeader: await visitorCookie.serialize(visitorId) };
 }
 
-export type TrackableEvent = "page_view" | "view_item" | "add_to_cart" | "begin_checkout";
+export type TrackableEvent = "page_view" | "view_item" | "add_to_cart" | "begin_checkout" | "banner_click";
 
 export async function logEvent(
   sessionId: string,

@@ -58,6 +58,19 @@ export async function removeFromCart(request: Request, sku: string) {
   return { items, cookie: await saveCart(request, items) };
 }
 
+/** Fija la cantidad exacta de una línea (para los +/- del carrito) — 0 o menos la elimina. */
+export async function setCartQuantity(request: Request, sku: string, quantity: number) {
+  const items = await getCart(request);
+  if (quantity <= 0) {
+    const filtered = items.filter((item) => item.sku !== sku);
+    return { items: filtered, cookie: await saveCart(request, filtered) };
+  }
+  const existing = items.find((item) => item.sku === sku);
+  if (existing) existing.quantity = quantity;
+  else items.push({ sku, quantity });
+  return { items, cookie: await saveCart(request, items) };
+}
+
 export async function setCartCoupon(request: Request, code: string | null) {
   const session = await getSession(request);
   if (code) session.set("couponCode", code);
