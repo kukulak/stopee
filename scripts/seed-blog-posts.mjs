@@ -1,13 +1,19 @@
-export type BlogPost = {
-  slug: string;
-  title: string;
-  excerpt: string;
-  content: string[];
-  publishedAt: string;
-  readingMinutes: number;
-};
+// Migración única: crea en la base de datos los artículos que antes vivían
+// hardcodeados en app/data/blogPosts.ts, ahora que el blog se administra
+// desde /admin/blog. Es idempotente — si un slug ya existe, lo omite.
+//
+// Uso: node --env-file=.env scripts/seed-blog-posts.mjs
+// (o "npm run seed:blog", que hace lo mismo)
 
-export const BLOG_POSTS: BlogPost[] = [
+import mongoose from "mongoose";
+
+const MONGODB_URI = process.env.MONGODB_URI;
+if (!MONGODB_URI) {
+  console.error("Falta MONGODB_URI en el entorno.");
+  process.exit(1);
+}
+
+const POSTS = [
   {
     slug: "manejo-consciente-de-residuos",
     title: "Manejo consciente de residuos: la bolsa no es el final del camino",
@@ -20,7 +26,7 @@ export const BLOG_POSTS: BlogPost[] = [
       "Dejar bolsas cerradas en botes de basura abiertos, expuestas al sol durante horas, acelera la descomposición y libera bacterias y olores hacia el entorno. La recomendación es simple y directa: al llegar a casa, vacía el contenido de la bolsa directamente en el escusado o coladera domiciliaria y desecha la bolsa por separado en el bote de basura.",
       "Este pequeño ajuste de rutina reduce la carga bacteriana en la vía pública, mejora el manejo higiénico de residuos y evita que otros vecinos, niños o mascotas tengan contacto indirecto con material orgánico expuesto.",
       "En STOPee creemos que la higiene urbana canina se resuelve con hábitos claros y accesibles para todos, no con reglas complicadas. Popa a la coladera, orina neutralizada con STOPee: dos acciones, una ciudad más limpia.",
-    ],
+    ].join("\n\n"),
   },
   {
     slug: "la-regla-de-oro-de-la-correa",
@@ -30,11 +36,11 @@ export const BLOG_POSTS: BlogPost[] = [
     publishedAt: "2026-01-19",
     readingMinutes: 3,
     content: [
-      "\"Mi perro es súper tranquilo, no necesita correa\" es una de las frases que más incidentes evitables genera en la vía pública. La correa no es un juicio sobre el temperamento de tu perro: es una garantía de control ante lo impredecible del entorno urbano.",
+      '"Mi perro es súper tranquilo, no necesita correa" es una de las frases que más incidentes evitables genera en la vía pública. La correa no es un juicio sobre el temperamento de tu perro: es una garantía de control ante lo impredecible del entorno urbano.',
       "Un ruido fuerte, otro perro, una bicicleta o simplemente un olor interesante pueden hacer que cualquier perro, sin importar su entrenamiento, reaccione de forma repentina. La correa firme y bien ajustada te da el margen de control necesario para proteger a tu perro, a otros perros y a las personas que comparten la banqueta contigo.",
       "Además, muchas personas sienten temor genuino hacia los perros, incluso los más pequeños. Ver una correa puesta, sujeta con firmeza, transmite respeto hacia esas personas y hacia el espacio compartido.",
       "El paseo responsable empieza con dos cosas: correa siempre puesta y STOPee siempre a la mano. Así garantizamos seguridad y limpieza en cada cuadra.",
-    ],
+    ].join("\n\n"),
   },
   {
     slug: "protocolos-de-acercamiento-canino",
@@ -45,13 +51,13 @@ export const BLOG_POSTS: BlogPost[] = [
     readingMinutes: 3,
     content: [
       "Ver a otro perro en la banqueta no siempre significa que ambos quieren o pueden saludarse. Algunos perros están en entrenamiento, se están recuperando de una cirugía, tienen ansiedad o simplemente no disfrutan la interacción con otros perros, aunque se vean tranquilos.",
-      "La buena práctica de convivencia es simple: antes de acercar a tu perro a otro, pregunta en voz alta al tutor del otro perro si su perro puede saludar. Un \"¿se puede acercar?\" evita la gran mayoría de los incidentes entre perros en espacios públicos.",
+      'La buena práctica de convivencia es simple: antes de acercar a tu perro a otro, pregunta en voz alta al tutor del otro perro si su perro puede saludar. Un "¿se puede acercar?" evita la gran mayoría de los incidentes entre perros en espacios públicos.',
       "Si la respuesta es no, respétala sin insistir. Mantén a tu perro con la correa corta y continúa el paseo con normalidad. No es un rechazo personal, es una decisión responsable del otro tutor sobre el bienestar de su perro.",
       "Estas pequeñas señales de respeto construyen colonias donde pasear con perro es una experiencia segura y agradable para todos, con o sin correa larga, con o sin ganas de socializar ese día.",
-    ],
+    ].join("\n\n"),
   },
   {
-    slug: "por-que-la-orina-daña-el-mobiliario-urbano",
+    slug: "por-que-la-orina-dana-el-mobiliario-urbano",
     title: "Por qué la orina daña el mobiliario urbano (y cómo la biotecnología lo resuelve)",
     excerpt:
       "El ácido úrico ataca directamente concreto, metal y cantera. Te explicamos la ciencia detrás del deterioro urbano y cómo STOPee lo neutraliza.",
@@ -62,10 +68,39 @@ export const BLOG_POSTS: BlogPost[] = [
       "A diferencia de un limpiador tradicional que solo enmascara el olor temporalmente con fragancia, STOPee actúa mediante biotecnología activa: Bacillus subtilis, un microorganismo benéfico, junto con ricinoleato de zinc, trabajan en conjunto para degradar los compuestos orgánicos de la orina desde su raíz molecular, no solo en la superficie.",
       "El resultado es una neutralización real del olor, no un enmascaramiento, y una reducción directa del desgaste químico sobre el mobiliario urbano: postes, banquetas, muros y fachadas de comercios y vecinos.",
       "Cuidar el mobiliario urbano es cuidar el patrimonio compartido de la colonia. Cada aplicación de STOPee después del paseo es una contribución directa a calles más duraderas y agradables para todos.",
-    ],
+    ].join("\n\n"),
   },
 ];
 
-export function getBlogPostBySlug(slug: string) {
-  return BLOG_POSTS.find((post) => post.slug === slug) ?? null;
+async function main() {
+  await mongoose.connect(MONGODB_URI);
+  const collection = mongoose.connection.collection("blogposts");
+
+  for (const post of POSTS) {
+    const exists = await collection.findOne({ slug: post.slug });
+    if (exists) {
+      console.log(`Ya existe, se omite: ${post.slug}`);
+      continue;
+    }
+    const now = new Date();
+    await collection.insertOne({
+      title: post.title,
+      slug: post.slug,
+      excerpt: post.excerpt,
+      content: post.content,
+      imageUrl: "",
+      readingMinutes: post.readingMinutes,
+      publishedAt: new Date(post.publishedAt),
+      createdAt: now,
+      updatedAt: now,
+    });
+    console.log(`Creado: ${post.slug}`);
+  }
+
+  await mongoose.disconnect();
 }
+
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

@@ -8,7 +8,7 @@ import { FluidWaves } from "~/components/ui/FluidWaves";
 import { ScrollytellingSection } from "~/components/scrollytelling/ScrollytellingSection";
 import { PrelaunchLanding } from "~/components/prelaunch/PrelaunchLanding";
 import { PRODUCT_LIST } from "~/data/products";
-import { BLOG_POSTS } from "~/data/blogPosts";
+import { BlogPostModel } from "~/models/blogPost.server";
 import { getCart } from "~/lib/cart.server";
 import { getSiteSettings } from "~/models/siteSettings.server";
 import { connectDB } from "~/lib/db.server";
@@ -32,11 +32,21 @@ export async function loader({ request }: LoaderFunctionArgs) {
     return json({ isStoreActive: false as const });
   }
 
-  const [cart, heroBanner] = await Promise.all([getCart(request), getActiveHeroBanner()]);
+  await connectDB();
+  const [cart, heroBanner, recentPosts] = await Promise.all([
+    getCart(request),
+    getActiveHeroBanner(),
+    BlogPostModel.find({ publishedAt: { $lte: new Date() } })
+      .sort({ publishedAt: -1 })
+      .limit(3)
+      .select("title slug excerpt")
+      .lean(),
+  ]);
   return json({
     isStoreActive: true as const,
     cartCount: cart.reduce((sum, item) => sum + item.quantity, 0),
     heroBanner,
+    recentPosts: recentPosts.map((p) => ({ slug: p.slug, title: p.title, excerpt: p.excerpt })),
   });
 }
 
@@ -98,15 +108,17 @@ export default function Index() {
     return <PrelaunchLanding actionData={actionData} />;
   }
 
-  return <LaunchedLanding cartCount={data.cartCount} heroBanner={data.heroBanner} />;
+  return <LaunchedLanding cartCount={data.cartCount} heroBanner={data.heroBanner} recentPosts={data.recentPosts} />;
 }
 
 function LaunchedLanding({
   cartCount,
   heroBanner,
+  recentPosts,
 }: {
   cartCount: number;
   heroBanner: HeroBanner | null;
+  recentPosts: { slug: string; title: string; excerpt: string }[];
 }) {
   const featured = PRODUCT_LIST.find((p) => p.sku === "pack-basico") ?? PRODUCT_LIST[0];
 
@@ -222,7 +234,7 @@ function LaunchedLanding({
             </div>
 
             <div className="mt-8 grid grid-cols-1 gap-6 sm:grid-cols-3">
-              {BLOG_POSTS.slice(0, 3).map((post) => (
+              {recentPosts.map((post) => (
                 <Link
                   key={post.slug}
                   to={`/blog/${post.slug}`}

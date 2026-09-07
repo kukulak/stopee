@@ -1,8 +1,11 @@
-import type { MetaFunction } from "@remix-run/node";
-import { Link } from "@remix-run/react";
+import type { LoaderFunctionArgs, MetaFunction } from "@remix-run/node";
+import { json } from "@remix-run/node";
+import { Link, useLoaderData } from "@remix-run/react";
 import { Navbar } from "~/components/layout/Navbar";
 import { Footer } from "~/components/layout/Footer";
-import { BLOG_POSTS } from "~/data/blogPosts";
+import { connectDB } from "~/lib/db.server";
+import { BlogPostModel } from "~/models/blogPost.server";
+import { getCart } from "~/lib/cart.server";
 
 export const meta: MetaFunction = () => [
   { title: "Blog Cívico STOPee — Convivencia urbana canina" },
@@ -12,10 +15,35 @@ export const meta: MetaFunction = () => [
   },
 ];
 
+export async function loader({ request }: LoaderFunctionArgs) {
+  await connectDB();
+  const [posts, cart] = await Promise.all([
+    BlogPostModel.find({ publishedAt: { $lte: new Date() } })
+      .sort({ publishedAt: -1 })
+      .select("title slug excerpt imageUrl readingMinutes publishedAt")
+      .lean(),
+    getCart(request),
+  ]);
+
+  return json({
+    posts: posts.map((p) => ({
+      slug: p.slug,
+      title: p.title,
+      excerpt: p.excerpt,
+      imageUrl: p.imageUrl || null,
+      readingMinutes: p.readingMinutes ?? 3,
+      publishedAt: p.publishedAt as unknown as string,
+    })),
+    cartCount: cart.reduce((sum, item) => sum + item.quantity, 0),
+  });
+}
+
 export default function BlogIndex() {
+  const { posts, cartCount } = useLoaderData<typeof loader>();
+
   return (
     <div className="flex min-h-screen flex-col bg-hueso">
-      <Navbar />
+      <Navbar cartCount={cartCount} />
 
       <main className="flex-1">
         <section className="mx-auto max-w-4xl px-4 py-14 text-center sm:px-6">
@@ -33,33 +61,45 @@ export default function BlogIndex() {
         </section>
 
         <section className="mx-auto max-w-4xl px-4 pb-20 sm:px-6">
-          <ul className="flex flex-col gap-6">
-            {BLOG_POSTS.map((post) => (
-              <li key={post.slug}>
-                <Link
-                  to={`/blog/${post.slug}`}
-                  className="block rounded-3xl border border-carbon/10 bg-white p-6 transition-shadow hover:shadow-lg sm:p-8"
-                >
-                  <p className="text-xs font-semibold uppercase tracking-wide text-oliva">
-                    {new Date(post.publishedAt).toLocaleDateString("es-MX", {
-                      day: "numeric",
-                      month: "long",
-                      year: "numeric",
-                      timeZone: "UTC",
-                    })}{" "}
-                    · {post.readingMinutes} min de lectura
-                  </p>
-                  <h2 className="mt-2 font-display text-2xl font-bold text-carbon">
-                    {post.title}
-                  </h2>
-                  <p className="mt-2 text-carbon/70">{post.excerpt}</p>
-                  <span className="mt-4 inline-block font-semibold text-bosque">
-                    Leer artículo →
-                  </span>
-                </Link>
-              </li>
-            ))}
-          </ul>
+          {posts.length === 0 ? (
+            <p className="text-center text-carbon/60">Muy pronto publicaremos los primeros artículos.</p>
+          ) : (
+            <ul className="flex flex-col gap-6">
+              {posts.map((post) => (
+                <li key={post.slug}>
+                  <Link
+                    to={`/blog/${post.slug}`}
+                    className="flex flex-col gap-5 rounded-3xl border border-carbon/10 bg-white p-6 transition-shadow hover:shadow-lg sm:flex-row sm:items-center sm:p-8"
+                  >
+                    {post.imageUrl && (
+                      <img
+                        src={post.imageUrl}
+                        alt=""
+                        className="h-40 w-full shrink-0 rounded-2xl object-cover sm:h-32 sm:w-48"
+                      />
+                    )}
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-wide text-oliva">
+                        {new Date(post.publishedAt).toLocaleDateString("es-MX", {
+                          day: "numeric",
+                          month: "long",
+                          year: "numeric",
+                        })}{" "}
+                        · {post.readingMinutes} min de lectura
+                      </p>
+                      <h2 className="mt-2 font-display text-2xl font-bold text-carbon">
+                        {post.title}
+                      </h2>
+                      <p className="mt-2 text-carbon/70">{post.excerpt}</p>
+                      <span className="mt-4 inline-block font-semibold text-bosque">
+                        Leer artículo →
+                      </span>
+                    </div>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
         </section>
       </main>
 
