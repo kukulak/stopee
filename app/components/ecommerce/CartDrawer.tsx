@@ -58,14 +58,14 @@ export function CartDrawer({
   discountPercent,
   discountLabel,
   coupon,
-  gift,
+  gifts,
 }: {
   lines: CartLine[];
   subtotalMxn: number;
   discountPercent: number;
   discountLabel?: string;
   coupon: { code: string; percentage: number } | null;
-  gift?: { name: string } | null;
+  gifts?: string[];
 }) {
   const checkoutFetcher = useFetcher<{ error?: string }>();
   const couponFetcher = useFetcher<{ error?: string; ok?: boolean }>();
@@ -93,10 +93,14 @@ export function CartDrawer({
             ))}
           </ul>
 
-          {gift && (
-            <div className="flex items-center gap-2 rounded-xl bg-lima/10 px-3 py-2 text-sm">
-              <span aria-hidden="true">🎁</span>
-              <span className="font-semibold text-bosque">Llévate gratis: {gift.name}</span>
+          {gifts && gifts.length > 0 && (
+            <div className="flex flex-col gap-1.5">
+              {gifts.map((name) => (
+                <div key={name} className="flex items-center gap-2 rounded-xl bg-lima/10 px-3 py-2 text-sm">
+                  <span aria-hidden="true">🎁</span>
+                  <span className="font-semibold text-bosque">Llévate gratis: {name}</span>
+                </div>
+              ))}
             </div>
           )}
 

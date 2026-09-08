@@ -119,7 +119,7 @@ export default function ProductDetail() {
                   </button>
                 </div>
 
-                <fetcher.Form method="post" className="flex-1">
+                <fetcher.Form method="post" className="min-w-0 flex-1">
                   <input type="hidden" name="sku" value={product.sku} />
                   <input type="hidden" name="quantity" value={quantity} />
                   <button

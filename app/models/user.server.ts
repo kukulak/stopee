@@ -23,6 +23,24 @@ const addressSchema = new Schema(
   { _id: false },
 );
 
+/**
+ * Recompensa ganada al completar un ciclo de lealtad, pendiente de usarse en
+ * la SIGUIENTE compra (nunca permanente) — se limpia sola en cuanto se aplica.
+ * Se copia aquí (en vez de solo referenciar la promoción) porque el ciclo en
+ * que se ganó pudo usar una configuración de recompensas distinta a la
+ * vigente hoy; así el premio ya otorgado no cambia si el admin edita la promo.
+ */
+const loyaltyRewardSchema = new Schema(
+  {
+    promotionId: { type: Schema.Types.ObjectId, ref: "Promotion" },
+    promotionName: { type: String },
+    rewardType: { type: String, enum: ["discount", "gift"], required: true },
+    percentage: { type: Number },
+    giftDescription: { type: String },
+  },
+  { _id: false },
+);
+
 const userSchema = new Schema(
   {
     email: { type: String, required: true, unique: true, lowercase: true, trim: true },
@@ -34,12 +52,14 @@ const userSchema = new Schema(
     phone: { type: String, trim: true, default: "" },
     address: { type: addressSchema, default: () => ({}) },
     dogs: { type: [dogSchema], default: [] },
-    /**
-     * Compras individuales confirmadas (no cuenta envíos de suscripción).
-     * Al llegar a LOYALTY_PURCHASES_REQUIRED se activa `loyaltyDiscountActive`.
-     */
+    /** Compras individuales confirmadas de por vida (no cuenta envíos de suscripción). */
     individualPurchaseCount: { type: Number, default: 0 },
-    loyaltyDiscountActive: { type: Boolean, default: false },
+    /** Compras dentro del ciclo actual — se reinicia a 0 cada vez que se completa un ciclo. */
+    loyaltyCycleCount: { type: Number, default: 0 },
+    /** Cuántos ciclos ha completado — determina qué recompensa de la lista le toca la próxima vez. */
+    loyaltyCyclesCompleted: { type: Number, default: 0 },
+    /** Recompensa ganada, lista para su próxima compra — null si no tiene ninguna pendiente. */
+    loyaltyPendingReward: { type: loyaltyRewardSchema, default: null },
     role: { type: String, enum: ["customer", "admin"], default: "customer" },
     /** Lifetime value: suma de netAmount de todas sus órdenes pagadas. */
     totalSpentLTV: { type: Number, default: 0 },

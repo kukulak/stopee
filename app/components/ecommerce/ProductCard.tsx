@@ -47,8 +47,8 @@ export function ProductCard({ product }: { product: Product }) {
             ${product.priceMxn} <span className="text-xs font-medium text-carbon/50">MXN</span>
           </span>
 
-          <div className="flex items-center gap-2">
-            <div className="flex items-center rounded-full border border-carbon/15">
+          <div className="flex items-center gap-1.5">
+            <div className="flex shrink-0 items-center rounded-full border border-carbon/15">
               <button
                 type="button"
                 onClick={() => setQuantity((q) => Math.max(1, q - 1))}
@@ -57,7 +57,7 @@ export function ProductCard({ product }: { product: Product }) {
               >
                 −
               </button>
-              <span className="w-6 text-center text-sm font-semibold text-carbon" aria-live="polite">
+              <span className="w-5 text-center text-sm font-semibold text-carbon" aria-live="polite">
                 {quantity}
               </span>
               <button
@@ -70,14 +70,14 @@ export function ProductCard({ product }: { product: Product }) {
               </button>
             </div>
 
-            <fetcher.Form method="post" action="/tienda" className="flex-1">
+            <fetcher.Form method="post" action="/tienda" className="min-w-0 flex-1">
               <input type="hidden" name="intent" value="add-to-cart" />
               <input type="hidden" name="sku" value={product.sku} />
               <input type="hidden" name="quantity" value={quantity} />
               <button
                 type="submit"
                 disabled={isAdding}
-                className="min-h-11 w-full rounded-full bg-carbon px-5 text-sm font-bold text-hueso transition-transform hover:scale-105 active:scale-95 disabled:opacity-60"
+                className="min-h-11 w-full rounded-full bg-carbon px-3 text-sm font-bold text-hueso transition-transform hover:scale-105 active:scale-95 disabled:opacity-60"
               >
                 {isAdding ? "Agregando…" : "Agregar"}
               </button>

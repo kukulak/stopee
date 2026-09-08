@@ -317,8 +317,12 @@ function describePromotion(p: PromotionRow): string {
       return p.buyTogether
         ? `${p.buyTogether.percentage}% al comprar juntos: ${p.buyTogether.productNames.join(" + ")}`
         : "";
-    case "loyalty":
-      return p.loyalty ? `${p.loyalty.percentage}% permanente desde la compra #${p.loyalty.purchasesRequired}` : "";
+    case "loyalty": {
+      if (!p.loyalty) return "";
+      const tiers = (p.loyalty.tiers ?? []) as { rewardType?: string; percentage?: number; giftDescription?: string }[];
+      const tierLabels = tiers.map((t) => (t.rewardType === "gift" ? t.giftDescription || "regalo" : `${t.percentage}%`));
+      return `Cada ${p.loyalty.purchasesRequired} compras, para la siguiente: ${tierLabels.join(" → ") || "sin recompensas"}`;
+    }
     case "by_requirement": {
       if (!p.byRequirement) return "";
       const { condition, targetName, minQuantity, minSpendMxn, rewardDiscountPercentage, rewardGiftName } = p.byRequirement;

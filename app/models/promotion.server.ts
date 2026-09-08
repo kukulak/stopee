@@ -18,6 +18,21 @@ const tierSchema = new Schema(
   { _id: false },
 );
 
+/**
+ * Recompensa por ciclo de lealtad: la 1ª vez que un cliente completa el
+ * ciclo puede recibir un premio distinto a la 2ª o 3ª vez (p. ej. 10% →
+ * 15% → un regalo físico). Si hay más ciclos completados que recompensas
+ * definidas, se repite la última — ver resolveLoyaltyTier.
+ */
+const loyaltyTierSchema = new Schema(
+  {
+    rewardType: { type: String, enum: ["discount", "gift"], default: "discount" },
+    percentage: { type: Number, min: 1, max: 100 },
+    giftDescription: { type: String, trim: true },
+  },
+  { _id: false },
+);
+
 const bannerSchema = new Schema(
   {
     enabled: { type: Boolean, default: false },
@@ -77,7 +92,13 @@ const promotionSchema = new Schema(
     },
     loyalty: {
       purchasesRequired: { type: Number, min: 2, default: 5 },
-      percentage: { type: Number, min: 1, max: 100, default: 10 },
+      /**
+       * Nunca es un descuento permanente: al completar el ciclo se gana la
+       * recompensa de este arreglo (según cuántas veces ya lo completó) para
+       * SU SIGUIENTE compra, y el contador se reinicia — ver
+       * app/lib/loyalty.ts#resolveLoyaltyTier.
+       */
+      tiers: { type: [loyaltyTierSchema], default: [] },
     },
     /**
      * A diferencia de `tieredSpend` (escalones sobre el gasto TOTAL del
@@ -108,16 +129,18 @@ export type PromotionDoc = InferSchemaType<typeof promotionSchema>;
 export const PromotionModel =
   (models.Promotion as Model<PromotionDoc>) ?? model<PromotionDoc>("Promotion", promotionSchema);
 
-const DEFAULT_LOYALTY = { purchasesRequired: 5, percentage: 10 };
+const DEFAULT_LOYALTY_TIER = { rewardType: "discount" as const, percentage: 10 };
+const DEFAULT_LOYALTY = { purchasesRequired: 5, tiers: [DEFAULT_LOYALTY_TIER] };
 
 /** Config de lealtad vigente — si no hay ninguna creada en el admin, usa el default histórico. */
 export async function getActiveLoyaltyConfig() {
   const promo = await PromotionModel.findOne({ type: "loyalty", isActive: true }).sort({ updatedAt: -1 }).lean();
+  const tiers = promo?.loyalty?.tiers?.length ? promo.loyalty.tiers : DEFAULT_LOYALTY.tiers;
   return {
     id: promo ? String(promo._id) : null,
     name: promo?.name ?? null,
     purchasesRequired: promo?.loyalty?.purchasesRequired ?? DEFAULT_LOYALTY.purchasesRequired,
-    percentage: promo?.loyalty?.percentage ?? DEFAULT_LOYALTY.percentage,
+    tiers,
   };
 }
 

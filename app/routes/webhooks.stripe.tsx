@@ -1,5 +1,6 @@
 import type { ActionFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
+import mongoose from "mongoose";
 import type Stripe from "stripe";
 import { stripe } from "~/lib/stripe.server";
 import { connectDB } from "~/lib/db.server";
@@ -10,6 +11,7 @@ import { LeadModel } from "~/models/lead.server";
 import { PRODUCTS } from "~/data/products";
 import type { ProductSku } from "~/data/products";
 import { getActiveLoyaltyConfig, PromotionModel } from "~/models/promotion.server";
+import { resolveLoyaltyTier } from "~/lib/loyalty";
 
 const WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET;
 
@@ -88,13 +90,37 @@ async function markLeadConverted(email: string) {
   await LeadModel.findOneAndUpdate({ email, status: "pending" }, { status: "converted" });
 }
 
-async function bumpUserLoyaltyAndLTV(user: InstanceType<typeof UserModel>, netAmount: number, countsTowardLoyalty: boolean) {
+/**
+ * El premio de lealtad nunca es permanente: se gana para la SIGUIENTE compra
+ * y se limpia en cuanto se usa (usedLoyaltyReward). El contador del ciclo se
+ * reinicia cada vez que se completa, y la recompensa que le toca depende de
+ * cuántos ciclos ya completó — ver resolveLoyaltyTier.
+ */
+async function bumpUserLoyaltyAndLTV(
+  user: InstanceType<typeof UserModel>,
+  netAmount: number,
+  countsTowardLoyalty: boolean,
+  usedLoyaltyReward: boolean,
+) {
   user.totalSpentLTV = (user.totalSpentLTV ?? 0) + netAmount;
+  if (usedLoyaltyReward) {
+    user.loyaltyPendingReward = null;
+  }
   if (countsTowardLoyalty) {
     user.individualPurchaseCount += 1;
+    user.loyaltyCycleCount = (user.loyaltyCycleCount ?? 0) + 1;
     const loyalty = await getActiveLoyaltyConfig();
-    if (user.individualPurchaseCount >= loyalty.purchasesRequired) {
-      user.loyaltyDiscountActive = true;
+    if (user.loyaltyCycleCount >= loyalty.purchasesRequired) {
+      const tier = resolveLoyaltyTier(user.loyaltyCyclesCompleted ?? 0, loyalty.tiers);
+      user.loyaltyPendingReward = {
+        promotionId: loyalty.id ? new mongoose.Types.ObjectId(loyalty.id) : undefined,
+        promotionName: loyalty.name ?? "Lealtad",
+        rewardType: tier.rewardType ?? "discount",
+        percentage: tier.percentage ?? undefined,
+        giftDescription: tier.giftDescription ?? undefined,
+      };
+      user.loyaltyCyclesCompleted = (user.loyaltyCyclesCompleted ?? 0) + 1;
+      user.loyaltyCycleCount = 0;
     }
   }
   await user.save();
@@ -122,6 +148,11 @@ async function handleOneTimeCheckoutCompleted(session: Stripe.Checkout.Session) 
   if (giftSku && giftSku in PRODUCTS) {
     const gift = PRODUCTS[giftSku as ProductSku];
     items.push({ sku: giftSku, name: `🎁 ${gift.name}`, quantity: 1, unitPriceMxn: 0 });
+  }
+
+  const loyaltyGiftDescription = session.metadata?.loyaltyGiftDescription;
+  if (loyaltyGiftDescription) {
+    items.push({ sku: "loyalty-gift", name: `🎁 ${loyaltyGiftDescription}`, quantity: 1, unitPriceMxn: 0 });
   }
 
   const totalAmount = items.reduce((sum, item) => sum + item.unitPriceMxn * item.quantity, 0);
@@ -156,7 +187,10 @@ async function handleOneTimeCheckoutCompleted(session: Stripe.Checkout.Session) 
 
   await markLeadConverted(email);
   await bumpPromotionUsage(appliedPromotion?.id);
-  if (user) await bumpUserLoyaltyAndLTV(user, netAmount, true);
+  if (user) {
+    const usedLoyaltyReward = session.metadata?.usedLoyaltyReward === "true";
+    await bumpUserLoyaltyAndLTV(user, netAmount, true, usedLoyaltyReward);
+  }
 }
 
 async function handleSubscriptionCheckoutCompleted(session: Stripe.Checkout.Session) {
@@ -216,7 +250,7 @@ async function handleSubscriptionCheckoutCompleted(session: Stripe.Checkout.Sess
       { $inc: { totalOrdersGenerated: 1 } },
     );
     if (email) await markLeadConverted(email);
-    if (user) await bumpUserLoyaltyAndLTV(user, netAmount, false);
+    if (user) await bumpUserLoyaltyAndLTV(user, netAmount, false, false);
   }
 }
 

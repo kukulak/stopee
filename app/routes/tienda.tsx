@@ -14,8 +14,9 @@ import type { ProductSku } from "~/data/products";
 import { addToCart, getCart, getCartCoupon, removeFromCart, setCartCoupon, setCartQuantity } from "~/lib/cart.server";
 import { getUser } from "~/lib/session.server";
 import { getSiteSettings } from "~/models/siteSettings.server";
-import { getActiveLoyaltyConfig, getActiveBannerPromotion, findRedeemableCoupon } from "~/models/promotion.server";
+import { findRedeemableCoupon } from "~/models/promotion.server";
 import { evaluateRequirementPromotion } from "~/lib/promotionEngine.server";
+import { getActiveHeroBanner } from "~/lib/heroBanner.server";
 
 export const meta: MetaFunction = () => [
   { title: "Tienda STOPee — Higiene urbana canina" },
@@ -35,11 +36,10 @@ export async function loader({ request }: LoaderFunctionArgs) {
     throw redirect("/");
   }
 
-  const [cartItems, couponCode, loyalty, bannerPromo] = await Promise.all([
+  const [cartItems, couponCode, heroBanner] = await Promise.all([
     getCart(request),
     getCartCoupon(request),
-    getActiveLoyaltyConfig(),
-    getActiveBannerPromotion(),
+    getActiveHeroBanner(),
   ]);
 
   const lines: CartLine[] = cartItems
@@ -65,11 +65,17 @@ export async function loader({ request }: LoaderFunctionArgs) {
     lines.map((l) => ({ sku: l.sku, quantity: l.quantity })),
     isFirstPurchase,
   );
-  const gift = requirementMatch?.rewardGiftSku ? PRODUCTS[requirementMatch.rewardGiftSku] : null;
+  const requirementGift = requirementMatch?.rewardGiftSku ? PRODUCTS[requirementMatch.rewardGiftSku].name : null;
 
-  const loyaltyDiscountPercent = user?.loyaltyDiscountActive ? loyalty.percentage : 0;
-  // Prioridad: un cupón explícito del cliente gana sobre una promoción
-  // condicional, y esta a su vez gana sobre el descuento de lealtad.
+  // La recompensa de lealtad (si la tiene) es para SU SIGUIENTE compra, nunca
+  // permanente — ver app/lib/loyalty.ts y webhooks.stripe.tsx.
+  const pendingReward = user?.loyaltyPendingReward;
+  const loyaltyGift = pendingReward?.rewardType === "gift" ? pendingReward.giftDescription ?? null : null;
+  const loyaltyDiscountPercent = pendingReward?.rewardType === "discount" ? pendingReward.percentage ?? 0 : 0;
+
+  // Prioridad para el DESCUENTO: un cupón explícito del cliente gana sobre
+  // una promoción condicional, y esta a su vez gana sobre la lealtad. Los
+  // regalos (requisito + lealtad) no compiten entre sí, ambos se muestran.
   let discountPercent = 0;
   let discountLabel = "";
   if (coupon) {
@@ -80,8 +86,10 @@ export async function loader({ request }: LoaderFunctionArgs) {
     discountLabel = requirementMatch.name;
   } else if (loyaltyDiscountPercent > 0) {
     discountPercent = loyaltyDiscountPercent;
-    discountLabel = "Descuento de fidelidad";
+    discountLabel = pendingReward?.promotionName ?? "Recompensa de lealtad";
   }
+
+  const gifts = [requirementGift, loyaltyGift].filter((g): g is string => Boolean(g));
 
   return json({
     lines,
@@ -89,15 +97,15 @@ export async function loader({ request }: LoaderFunctionArgs) {
     discountPercent,
     discountLabel,
     coupon,
-    gift: gift ? { name: gift.name } : null,
+    gifts,
     isAuthenticated: Boolean(user),
     isPreview,
-    banner: bannerPromo?.banner?.enabled
+    banner: heroBanner
       ? {
-          text: bannerPromo.banner.text,
-          ctaText: bannerPromo.banner.ctaText,
-          ctaHref: bannerPromo.banner.ctaHref,
-          imageUrl: bannerPromo.banner.imageUrl || null,
+          text: heroBanner.text,
+          ctaText: heroBanner.ctaText,
+          ctaHref: heroBanner.ctaHref,
+          imageUrl: heroBanner.imageUrl,
         }
       : null,
   });
@@ -152,7 +160,7 @@ export async function action({ request }: ActionFunctionArgs) {
 }
 
 export default function Tienda() {
-  const { lines, subtotalMxn, discountPercent, discountLabel, coupon, gift, banner, isPreview } =
+  const { lines, subtotalMxn, discountPercent, discountLabel, coupon, gifts, banner, isPreview } =
     useLoaderData<typeof loader>();
 
   useEffect(() => {
@@ -204,7 +212,7 @@ export default function Tienda() {
               discountPercent={discountPercent}
               discountLabel={discountLabel}
               coupon={coupon}
-              gift={gift}
+              gifts={gifts}
             />
           </div>
         </section>

@@ -41,9 +41,9 @@ export async function createOneTimeCheckoutSession(params: {
   customerEmail?: string;
   metadata: Record<string, string>;
   discountPercent?: number;
-  giftLineItem?: { name: string };
+  giftLineItems?: { name: string }[];
 }) {
-  const { lineItems, customerEmail, metadata, discountPercent, giftLineItem } = params;
+  const { lineItems, customerEmail, metadata, discountPercent, giftLineItems } = params;
 
   let discounts: Stripe.Checkout.SessionCreateParams.Discount[] | undefined;
   if (discountPercent) {
@@ -56,11 +56,11 @@ export async function createOneTimeCheckoutSession(params: {
   }
 
   const allLineItems: Stripe.Checkout.SessionCreateParams.LineItem[] = [...lineItems];
-  if (giftLineItem) {
+  for (const gift of giftLineItems ?? []) {
     allLineItems.push({
       price_data: {
         currency: "mxn",
-        product_data: { name: `🎁 Regalo: ${giftLineItem.name}` },
+        product_data: { name: `🎁 Regalo: ${gift.name}` },
         unit_amount: 0,
       },
       quantity: 1,

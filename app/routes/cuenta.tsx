@@ -61,10 +61,15 @@ export async function loader({ request }: LoaderFunctionArgs) {
       dogs: dogs.map((d) => ({ name: d.name, birthday: d.birthday ? new Date(d.birthday).toISOString().slice(0, 10) : "" })),
     },
     loyalty: {
-      count: user.individualPurchaseCount ?? 0,
+      count: user.loyaltyCycleCount ?? 0,
       required: loyaltyConfig.purchasesRequired,
-      percentage: loyaltyConfig.percentage,
-      active: Boolean(user.loyaltyDiscountActive),
+      pendingReward: user.loyaltyPendingReward
+        ? {
+            rewardType: user.loyaltyPendingReward.rewardType,
+            percentage: user.loyaltyPendingReward.percentage ?? null,
+            giftDescription: user.loyaltyPendingReward.giftDescription ?? null,
+          }
+        : null,
     },
     orders: orders.map((o) => ({
       id: String(o._id),
@@ -323,17 +328,20 @@ export default function Cuenta() {
           {/* Fidelidad */}
           <div className="mt-8 rounded-3xl border border-lima/30 bg-bosque/5 p-6">
             <p className="font-display font-bold text-carbon">Programa de fidelidad</p>
-            {loyalty.active ? (
+            {loyalty.pendingReward ? (
               <p className="mt-1 text-sm text-bosque">
-                Tienes activo tu {loyalty.percentage}% de descuento permanente por compras
-                individuales. ¡Gracias por ser parte del cambio!
+                🎁 ¡Ya ganaste{" "}
+                {loyalty.pendingReward.rewardType === "gift"
+                  ? loyalty.pendingReward.giftDescription
+                  : `${loyalty.pendingReward.percentage}% de descuento`}{" "}
+                para tu próxima compra! Se aplica automáticamente al pagar.
               </p>
             ) : (
               <>
                 <p className="mt-1 text-sm text-carbon/70">
                   Llevas {loyalty.count} de {loyalty.required} compras individuales. Al completar
-                  tu {loyalty.required}ª compra, activas {loyalty.percentage}% de descuento
-                  permanente.
+                  tu {loyalty.required}ª compra, desbloqueas una recompensa para tu siguiente
+                  pedido.
                 </p>
                 <div className="mt-3 flex gap-1.5">
                   {Array.from({ length: loyalty.required }).map((_, i: number) => (

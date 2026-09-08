@@ -8,7 +8,7 @@ import { getUser } from "~/lib/session.server";
 import { createOneTimeCheckoutSession } from "~/lib/stripe.server";
 import { getAttribution } from "~/lib/attribution.server";
 import { logEvent, getOrCreateVisitorId } from "~/lib/tracking.server";
-import { getActiveLoyaltyConfig, findRedeemableCoupon } from "~/models/promotion.server";
+import { findRedeemableCoupon } from "~/models/promotion.server";
 import { evaluateRequirementPromotion } from "~/lib/promotionEngine.server";
 
 export async function action({ request }: ActionFunctionArgs) {
@@ -32,12 +32,16 @@ export async function action({ request }: ActionFunctionArgs) {
     quantity: item.quantity,
   }));
 
-  // Orden de prioridad para el descuento automático: un cupón explícito del
+  // Orden de prioridad para el DESCUENTO automático: un cupón explícito del
   // cliente gana sobre cualquier promoción condicional, y esta a su vez gana
-  // sobre el descuento de lealtad (el más genérico de los tres).
+  // sobre el descuento de lealtad (el más genérico de los tres). Los REGALOS
+  // no compiten entre sí — son aditivos, así que un regalo por requisito y un
+  // regalo de lealtad pueden entregarse en el mismo pedido.
   let discountPercent: number | undefined;
   let appliedPromotion: { id: string; name: string; type: string } | null = null;
   let giftSku: ProductSku | undefined;
+  let loyaltyGiftDescription: string | undefined;
+  let usedLoyaltyReward = false;
 
   if (couponCode) {
     const promo = await findRedeemableCoupon(couponCode);
@@ -61,17 +65,30 @@ export async function action({ request }: ActionFunctionArgs) {
     }
   }
 
-  if (discountPercent === undefined && user?.loyaltyDiscountActive) {
-    const loyalty = await getActiveLoyaltyConfig();
-    discountPercent = loyalty.percentage;
-    if (loyalty.id) appliedPromotion = { id: loyalty.id, name: loyalty.name ?? "Lealtad", type: "loyalty" };
+  // Recompensa de lealtad pendiente — se ganó al completar un ciclo anterior
+  // y es para ESTA compra únicamente; el webhook la limpia en cuanto se use.
+  const pendingReward = user?.loyaltyPendingReward;
+  if (pendingReward?.rewardType === "gift" && pendingReward.giftDescription) {
+    loyaltyGiftDescription = pendingReward.giftDescription;
+    usedLoyaltyReward = true;
+  } else if (pendingReward?.rewardType === "discount" && pendingReward.percentage && discountPercent === undefined) {
+    discountPercent = pendingReward.percentage;
+    appliedPromotion = {
+      id: pendingReward.promotionId ? String(pendingReward.promotionId) : "loyalty",
+      name: pendingReward.promotionName ?? "Lealtad",
+      type: "loyalty",
+    };
+    usedLoyaltyReward = true;
   }
 
   const session = await createOneTimeCheckoutSession({
     lineItems,
     customerEmail: user?.email,
     discountPercent,
-    giftLineItem: giftSku ? { name: PRODUCTS[giftSku].name } : undefined,
+    giftLineItems: [
+      giftSku ? { name: PRODUCTS[giftSku].name } : null,
+      loyaltyGiftDescription ? { name: loyaltyGiftDescription } : null,
+    ].filter((g): g is { name: string } => g !== null),
     metadata: {
       userId: user ? String(user._id) : "guest",
       cartSkus: validItems.map((i) => `${i.sku}:${i.quantity}`).join(","),
@@ -82,6 +99,8 @@ export async function action({ request }: ActionFunctionArgs) {
       promotionName: appliedPromotion?.name ?? "",
       promotionType: appliedPromotion?.type ?? "",
       giftSku: giftSku ?? "",
+      loyaltyGiftDescription: loyaltyGiftDescription ?? "",
+      usedLoyaltyReward: usedLoyaltyReward ? "true" : "false",
     },
   });
 

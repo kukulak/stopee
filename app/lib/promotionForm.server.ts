@@ -150,10 +150,28 @@ export async function buildPromotionDocFromFormData(
     }
     case "loyalty": {
       const purchasesRequired = Number(formData.get("purchasesRequired") ?? 5);
-      if (!percentage || purchasesRequired < 2) {
-        return { ok: false, error: "Define cada cuántas compras y el % de descuento.", status: 400 };
+      if (purchasesRequired < 2) {
+        return { ok: false, error: "Define cada cuántas compras se completa un ciclo.", status: 400 };
       }
-      doc.loyalty = { purchasesRequired, percentage };
+
+      const tierRewardTypes = formData.getAll("tierRewardType") as string[];
+      const tierPercentages = formData.getAll("tierPercentage") as string[];
+      const tierGiftDescriptions = formData.getAll("tierGiftDescription") as string[];
+
+      const tiers = tierRewardTypes
+        .map((rewardType, i) => {
+          if (rewardType === "gift") {
+            return { rewardType: "gift" as const, giftDescription: (tierGiftDescriptions[i] ?? "").trim() };
+          }
+          return { rewardType: "discount" as const, percentage: Number(tierPercentages[i]) || 0 };
+        })
+        .filter((t) => (t.rewardType === "gift" ? t.giftDescription : t.percentage > 0));
+
+      if (tiers.length === 0) {
+        return { ok: false, error: "Define al menos una recompensa (descuento o regalo).", status: 400 };
+      }
+
+      doc.loyalty = { purchasesRequired, tiers };
       break;
     }
     case "by_requirement": {

@@ -151,17 +151,21 @@ export async function loader({ request }: LoaderFunctionArgs) {
   }
 
   const loyaltyConfig = await getActiveLoyaltyConfig();
-  const loyaltyUsers = await UserModel.find({ individualPurchaseCount: { $gt: 0 } })
-    .select("individualPurchaseCount loyaltyDiscountActive totalSpentLTV")
+  const loyaltyUsers = await UserModel.find({
+    $or: [{ loyaltyCycleCount: { $gt: 0 } }, { loyaltyPendingReward: { $ne: null } }],
+  })
+    .select("loyaltyCycleCount loyaltyPendingReward totalSpentLTV")
     .lean();
   // Pasos previos al umbral configurado (si el umbral es la 3ª compra, se
-  // muestran los pasos 1 y 2; la 3ª ya cuenta como "desbloqueado").
+  // muestran los pasos 1 y 2; la 3ª ya cuenta como "desbloqueado"). Cuenta el
+  // avance dentro del ciclo ACTUAL, no el total histórico — la recompensa no
+  // es permanente, así que el camino se repite en cada ciclo.
   const loyaltySteps = Array.from({ length: Math.max(1, loyaltyConfig.purchasesRequired - 1) }, (_, i) => i + 1);
   const loyaltyFunnel = loyaltySteps.map((n) => ({
     step: `${n}ª compra`,
-    count: loyaltyUsers.filter((u) => u.individualPurchaseCount === n).length,
+    count: loyaltyUsers.filter((u) => u.loyaltyCycleCount === n).length,
   }));
-  const loyaltyUnlocked = loyaltyUsers.filter((u) => u.loyaltyDiscountActive).length;
+  const loyaltyUnlocked = loyaltyUsers.filter((u) => u.loyaltyPendingReward).length;
   const usersWithSpend = loyaltyUsers.filter((u) => (u.totalSpentLTV ?? 0) > 0);
   const avgLtv =
     usersWithSpend.length > 0
@@ -333,7 +337,6 @@ export async function loader({ request }: LoaderFunctionArgs) {
       unlocked: loyaltyUnlocked,
       avgLtv: Math.round(avgLtv),
       purchasesRequired: loyaltyConfig.purchasesRequired,
-      percentage: loyaltyConfig.percentage,
     },
     acquisition: {
       attributionBreakdown,
@@ -703,9 +706,7 @@ export default function AdminDashboard() {
               </div>
             ))}
             <div className="mt-2 flex items-center justify-between rounded-xl bg-lima/10 px-3 py-2 text-sm">
-              <span className="font-semibold text-bosque">
-                Con {data.loyalty.percentage}% permanente desbloqueado
-              </span>
+              <span className="font-semibold text-bosque">Con recompensa lista para su próxima compra</span>
               <span className="font-bold text-bosque">{data.loyalty.unlocked}</span>
             </div>
           </div>

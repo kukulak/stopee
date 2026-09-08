@@ -50,7 +50,10 @@ export type PromotionDefaults = {
   flashSale?: { percentage?: number } | null;
   vipEarly?: { percentage?: number; maxCustomers?: number | null } | null;
   buyTogether?: { productIds?: string[]; percentage?: number } | null;
-  loyalty?: { purchasesRequired?: number; percentage?: number } | null;
+  loyalty?: {
+    purchasesRequired?: number;
+    tiers?: { rewardType?: "discount" | "gift"; percentage?: number; giftDescription?: string }[];
+  } | null;
   byRequirement?: {
     condition?: "product_in_cart" | "product_spend" | "first_purchase";
     targetSku?: string;
@@ -80,6 +83,9 @@ export function PromotionFormFields({
   const selectedBuyTogether = new Set(defaults?.buyTogether?.productIds ?? []);
   const [requirementCondition, setRequirementCondition] = useState<"product_in_cart" | "product_spend" | "first_purchase">(
     defaults?.byRequirement?.condition ?? "product_in_cart",
+  );
+  const [loyaltyTiers, setLoyaltyTiers] = useState(
+    defaults?.loyalty?.tiers?.length ? defaults.loyalty.tiers : [{ rewardType: "discount" as const, percentage: 10 }],
   );
 
   return (
@@ -224,17 +230,92 @@ export function PromotionFormFields({
       )}
 
       {type === "loyalty" && (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <Field label="Cada cuántas compras" htmlFor="purchasesRequired">
-            <input id="purchasesRequired" name="purchasesRequired" type="number" min={2} defaultValue={defaults?.loyalty?.purchasesRequired ?? 5} required className={inputClass} />
+        <div className="flex flex-col gap-4">
+          <Field label="Cada cuántas compras se completa un ciclo" htmlFor="purchasesRequired">
+            <input
+              id="purchasesRequired"
+              name="purchasesRequired"
+              type="number"
+              min={2}
+              defaultValue={defaults?.loyalty?.purchasesRequired ?? 5}
+              required
+              className={inputClass}
+            />
           </Field>
-          <Field label="% de descuento permanente" htmlFor="percentage">
-            <input id="percentage" name="percentage" type="number" min={1} max={100} defaultValue={defaults?.loyalty?.percentage ?? 10} required className={inputClass} />
-          </Field>
-          <p className="text-xs text-carbon/50 sm:col-span-2">
-            Esto controla el "camino a la Nª compra": activa esta promoción y el dashboard/tienda
-            usarán el número y porcentaje que definas aquí.
-          </p>
+
+          <div>
+            <p className="text-sm font-semibold text-carbon">Recompensa por ciclo completado</p>
+            <p className="mt-1 text-xs text-carbon/50">
+              Nunca es permanente: al completar el ciclo, el cliente gana la recompensa de abajo
+              para SU SIGUIENTE compra y el contador se reinicia. La 1ª fila es lo que gana la
+              primera vez que completa el ciclo, la 2ª fila la segunda vez, etc. Si completa más
+              ciclos que filas definidas, se repite la última.
+            </p>
+            <div className="mt-3 flex flex-col gap-2">
+              {loyaltyTiers.map((tier, i) => (
+                <div key={i} className="flex flex-wrap items-center gap-2 rounded-xl border border-carbon/10 p-3">
+                  <span className="w-14 shrink-0 text-xs font-semibold text-carbon/50">{i + 1}ª vez</span>
+                  <select
+                    name="tierRewardType"
+                    value={tier.rewardType ?? "discount"}
+                    onChange={(e) =>
+                      setLoyaltyTiers((rows) =>
+                        rows.map((r, idx) => (idx === i ? { ...r, rewardType: e.target.value as "discount" | "gift" } : r)),
+                      )
+                    }
+                    className={inputClass}
+                  >
+                    <option value="discount">Descuento</option>
+                    <option value="gift">Regalo</option>
+                  </select>
+                  {(tier.rewardType ?? "discount") === "discount" ? (
+                    <input
+                      name="tierPercentage"
+                      type="number"
+                      min={1}
+                      max={100}
+                      placeholder="% de descuento"
+                      value={tier.percentage ?? ""}
+                      onChange={(e) =>
+                        setLoyaltyTiers((rows) => rows.map((r, idx) => (idx === i ? { ...r, percentage: Number(e.target.value) } : r)))
+                      }
+                      className={`${inputClass} flex-1`}
+                    />
+                  ) : (
+                    <input
+                      name="tierGiftDescription"
+                      type="text"
+                      placeholder="Ej. Llavero STOPee"
+                      value={tier.giftDescription ?? ""}
+                      onChange={(e) =>
+                        setLoyaltyTiers((rows) => rows.map((r, idx) => (idx === i ? { ...r, giftDescription: e.target.value } : r)))
+                      }
+                      className={`${inputClass} flex-1`}
+                    />
+                  )}
+                  {/* Campo oculto para que getAll() siempre reciba las 3 columnas alineadas por índice, aunque solo una esté visible. */}
+                  <input type="hidden" name={(tier.rewardType ?? "discount") === "discount" ? "tierGiftDescription" : "tierPercentage"} value="" />
+                  {loyaltyTiers.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => setLoyaltyTiers((rows) => rows.filter((_, idx) => idx !== i))}
+                      aria-label="Quitar recompensa"
+                      className="min-h-11 min-w-11 rounded-full text-carbon/40 hover:text-carbon"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={() => setLoyaltyTiers((rows) => [...rows, { rewardType: "discount", percentage: 10 }])}
+              className="mt-2 text-sm font-semibold text-bosque hover:underline"
+            >
+              + Agregar recompensa
+            </button>
+          </div>
         </div>
       )}
 

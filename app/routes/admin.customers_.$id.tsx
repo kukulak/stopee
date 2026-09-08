@@ -76,8 +76,14 @@ export async function loader({ params }: LoaderFunctionArgs) {
     insights: {
       ltv: Math.round(user.totalSpentLTV ?? 0),
       orderCount: revenueOrders.length,
-      individualPurchaseCount: user.individualPurchaseCount ?? 0,
-      loyaltyDiscountActive: Boolean(user.loyaltyDiscountActive),
+      loyaltyCycleCount: user.loyaltyCycleCount ?? 0,
+      loyaltyPendingReward: user.loyaltyPendingReward
+        ? {
+            rewardType: user.loyaltyPendingReward.rewardType,
+            percentage: user.loyaltyPendingReward.percentage ?? null,
+            giftDescription: user.loyaltyPendingReward.giftDescription ?? null,
+          }
+        : null,
       isSubscriptionCandidate,
       funnelStage,
     },
@@ -154,7 +160,9 @@ export default function AdminCustomerDetail() {
         <Card>
           <p className="text-xs font-semibold uppercase tracking-wide text-carbon/50">Lealtad</p>
           <p className="mt-2 text-sm font-semibold text-carbon">
-            {insights.loyaltyDiscountActive ? "Descuento activo" : `${insights.individualPurchaseCount} compras acumuladas`}
+            {insights.loyaltyPendingReward
+              ? `🎁 ${insights.loyaltyPendingReward.rewardType === "gift" ? insights.loyaltyPendingReward.giftDescription : `${insights.loyaltyPendingReward.percentage}% listo`}`
+              : `${insights.loyaltyCycleCount} compras en su ciclo actual`}
           </p>
         </Card>
         <Card>
