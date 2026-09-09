@@ -3,7 +3,16 @@ import type * as THREE from "three";
 import { Link } from "@remix-run/react";
 import { ClientOnly } from "~/components/ui/ClientOnly";
 import type { SceneRefs } from "~/components/3d/ScrollyCanvas";
-import { FluidWaves } from "~/components/ui/FluidWaves";
+import { BrandSwirls, type SwirlPlacement } from "~/components/ui/BrandSwirls";
+
+// Estáticos (speed: 0): esta sección ya tiene scroll-jacking propio (GSAP
+// pinned) para la escena 3D — un segundo paralax independiente aquí
+// competiría con ese movimiento en vez de sumar fluidez.
+const HERO_SWIRLS: SwirlPlacement[] = [
+  { src: "/elementos-design/izquierda-04.png", side: "left", top: "-4%", width: 260, speed: 0, opacity: 0.5, rotate: -8 },
+  { src: "/elementos-design/derecha-01.png", side: "right", top: "58%", width: 240, speed: 0, opacity: 0.45, rotate: 6 },
+  { src: "/elementos-design/izquierda-06.png", side: "left", top: "70%", width: 220, speed: 0, opacity: 0.4, rotate: -4 },
+];
 
 // three.js/R3F/drei son pesados (~800kB): se cargan solo en cliente, en su
 // propio chunk, y solo cuando esta sección realmente se monta.
@@ -188,7 +197,7 @@ export function ScrollytellingSection({ exploreHref = "#tienda-teaser" }: { expl
   return (
     <section ref={sectionRef} className="relative bg-carbon" style={{ height: "480vh" }}>
       <div className="sticky top-0 h-screen w-full overflow-hidden">
-        <FluidWaves tone="dark" className="absolute inset-0 h-full w-full opacity-60" />
+        <BrandSwirls swirls={HERO_SWIRLS} />
 
         <ClientOnly>
           {() => (

@@ -1,8 +1,19 @@
 import { Form, useNavigation } from "@remix-run/react";
 import { Logo } from "~/components/ui/Logo";
-import { FluidWaves } from "~/components/ui/FluidWaves";
+import { BrandSwirls, type SwirlPlacement } from "~/components/ui/BrandSwirls";
 
 type ActionData = { ok?: boolean; error?: string } | undefined;
+
+// Recorren TODA la página (hero + bondades + convivencia), no solo el hero —
+// eco de la composición vertical de remolinos de la etiqueta oficial.
+const PAGE_SWIRLS: SwirlPlacement[] = [
+  { src: "/elementos-design/izquierda-02.png", side: "left", top: "1%", width: 220, speed: 0.14, rotate: -5 },
+  { src: "/elementos-design/derecha-01.png", side: "right", top: "14%", width: 240, speed: -0.1, rotate: 6 },
+  { src: "/elementos-design/izquierda-04.png", side: "left", top: "34%", width: 280, speed: 0.18, rotate: -8 },
+  { src: "/elementos-design/derecha-05.png", side: "right", top: "52%", width: 260, speed: -0.15, rotate: 5 },
+  { src: "/elementos-design/izquierda-03.png", side: "left", top: "68%", width: 220, speed: 0.12, rotate: 4 },
+  { src: "/elementos-design/izquierda-06.png", side: "right", top: "84%", width: 240, speed: -0.16, rotate: -6 },
+];
 
 const BONDADES = [
   {
@@ -42,8 +53,9 @@ export function PrelaunchLanding({ actionData }: { actionData: ActionData }) {
   const isSubmitting = navigation.state !== "idle";
 
   return (
-    <div className="flex min-h-screen flex-col bg-carbon text-hueso">
-      <header className="mx-auto flex w-full max-w-6xl items-center justify-between px-4 py-6 sm:px-6">
+    <div className="relative flex min-h-screen flex-col overflow-hidden bg-carbon text-hueso">
+      <BrandSwirls swirls={PAGE_SWIRLS} className="opacity-70" />
+      <header className="relative mx-auto flex w-full max-w-6xl items-center justify-between px-4 py-6 sm:px-6">
         <Logo className="h-10 w-auto" />
         <a
           href="#lista-de-espera"
@@ -53,10 +65,9 @@ export function PrelaunchLanding({ actionData }: { actionData: ActionData }) {
         </a>
       </header>
 
-      <main className="flex-1">
+      <main className="relative flex-1">
         {/* HERO + CAPTURA */}
-        <section id="lista-de-espera" className="relative overflow-hidden">
-          <FluidWaves tone="dark" className="absolute inset-0 h-full w-full opacity-50" />
+        <section id="lista-de-espera" className="relative">
           <div className="relative mx-auto max-w-2xl px-4 py-16 text-center sm:px-6 sm:py-24">
             <p className="font-body text-sm font-bold uppercase tracking-widest text-lima">
               Estamos preparando el lanzamiento oficial de STOPee
@@ -174,7 +185,7 @@ export function PrelaunchLanding({ actionData }: { actionData: ActionData }) {
         </section>
       </main>
 
-      <footer className="border-t border-hueso/10 px-4 py-8 text-center text-xs text-hueso/40 sm:px-6">
+      <footer className="relative border-t border-hueso/10 bg-carbon px-4 py-8 text-center text-xs text-hueso/40 sm:px-6">
         © {new Date().getFullYear()} STOPee.com.mx — Todos los derechos reservados.
       </footer>
     </div>

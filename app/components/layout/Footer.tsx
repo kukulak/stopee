@@ -6,7 +6,7 @@ export function Footer() {
     <footer className="border-t border-hueso/10 bg-carbon text-hueso">
       <div className="mx-auto grid max-w-6xl gap-10 px-4 py-14 sm:px-6 md:grid-cols-4">
         <div className="md:col-span-2">
-          <Logo className="h-12 w-auto" withTagline />
+          <Logo className="h-16 w-auto" />
           <p className="mt-4 max-w-sm text-sm text-hueso/70">
             Concentrado biotecnológico de higiene urbana canina. 1 litro rinde 30 litros de
             solución activa. Ciudades limpias, paseos impecables.

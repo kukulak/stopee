@@ -4,7 +4,7 @@ import { Link, useActionData, useLoaderData } from "@remix-run/react";
 import { z } from "zod";
 import { Navbar } from "~/components/layout/Navbar";
 import { Footer } from "~/components/layout/Footer";
-import { FluidWaves } from "~/components/ui/FluidWaves";
+import { BrandSwirls, type SwirlPlacement } from "~/components/ui/BrandSwirls";
 import { ScrollytellingSection } from "~/components/scrollytelling/ScrollytellingSection";
 import { PrelaunchLanding } from "~/components/prelaunch/PrelaunchLanding";
 import { PRODUCT_LIST } from "~/data/products";
@@ -85,6 +85,12 @@ export async function action({ request }: ActionFunctionArgs) {
   return json({ ok: true });
 }
 
+const MANIFESTO_SWIRLS: SwirlPlacement[] = [
+  { src: "/elementos-design/izquierda-02.png", side: "left", top: "2%", width: 240, speed: 0.18, rotate: -6 },
+  { src: "/elementos-design/derecha-05.png", side: "right", top: "38%", width: 260, speed: -0.14, rotate: 8 },
+  { src: "/elementos-design/izquierda-03.png", side: "left", top: "70%", width: 220, speed: 0.16, rotate: 4 },
+];
+
 const BENEFITS = [
   {
     audience: "Para ti y tu perro",
@@ -137,7 +143,7 @@ function LaunchedLanding({
 
         {/* MANIFIESTO PSICOLÓGICO */}
         <section className="relative overflow-hidden bg-carbon py-20 text-hueso">
-          <FluidWaves tone="dark" className="absolute inset-0 h-full w-full opacity-40" />
+          <BrandSwirls swirls={MANIFESTO_SWIRLS} className="opacity-70" />
           <div className="relative mx-auto max-w-4xl px-4 text-center sm:px-6">
             <p className="font-body text-sm font-bold uppercase tracking-widest text-lima">
               El nuevo estándar cívico
