@@ -4,6 +4,7 @@ export type SwirlPlacement = {
   src: string;
   side: "left" | "right";
   top: string;
+  /** Ancho de referencia en pantallas grandes (px) — en pantallas angostas se reduce con clamp() para no recortar la forma en una franja irreconocible. */
   width: number;
   /** Multiplicador de paralax: valores más altos se mueven más al hacer scroll. Positivo o negativo según la dirección deseada. */
   speed: number;
@@ -11,15 +12,23 @@ export type SwirlPlacement = {
   opacity?: number;
 };
 
+const MIN_WIDTH_PX = 170;
+const VIEWPORT_SHARE = 42; // vw
+
 /**
  * Elementos decorativos de marca (los remolinos recortados de la etiqueta,
  * en public/elementos-design) esparcidos como fondo de una sección oscura,
- * con un paralax sutil al hacer scroll — eco de la composición de la
+ * con un paralax notorio al hacer scroll — eco de la composición de la
  * etiqueta oficial. Puramente decorativo (aria-hidden), no bloquea clics.
  */
 export function BrandSwirls({ swirls, className = "" }: { swirls: SwirlPlacement[]; className?: string }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const layerRefs = useRef<(HTMLDivElement | null)[]>([]);
+
+  function bleedTransform(s: SwirlPlacement, y = 0) {
+    const bleed = s.side === "left" ? -12 : 12;
+    return `translate3d(0, ${y.toFixed(1)}px, 0) translateX(${bleed}%) rotate(${s.rotate ?? 0}deg)`;
+  }
 
   useEffect(() => {
     const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -52,8 +61,8 @@ export function BrandSwirls({ swirls, className = "" }: { swirls: SwirlPlacement
       layerRefs.current.forEach((el, i) => {
         if (!el) return;
         const s = swirls[i];
-        const y = shift * (s.speed ?? 0) * 120;
-        el.style.transform = `translate3d(0, ${y.toFixed(1)}px, 0) rotate(${s.rotate ?? 0}deg)`;
+        const y = shift * (s.speed ?? 0) * 240;
+        el.style.transform = bleedTransform(s, y);
       });
     }
 
@@ -89,10 +98,10 @@ export function BrandSwirls({ swirls, className = "" }: { swirls: SwirlPlacement
           className="absolute"
           style={{
             top: s.top,
-            [s.side]: `${Math.round(s.width * -0.22)}px`,
-            width: s.width,
-            opacity: s.opacity ?? 1,
-            transform: `rotate(${s.rotate ?? 0}deg)`,
+            [s.side]: 0,
+            width: `clamp(${MIN_WIDTH_PX}px, ${VIEWPORT_SHARE}vw, ${s.width}px)`,
+            opacity: s.opacity ?? 0.95,
+            transform: bleedTransform(s),
             willChange: "transform",
           }}
         >

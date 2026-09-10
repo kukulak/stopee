@@ -7,12 +7,12 @@ type ActionData = { ok?: boolean; error?: string } | undefined;
 // Recorren TODA la página (hero + bondades + convivencia), no solo el hero —
 // eco de la composición vertical de remolinos de la etiqueta oficial.
 const PAGE_SWIRLS: SwirlPlacement[] = [
-  { src: "/elementos-design/izquierda-02.png", side: "left", top: "1%", width: 220, speed: 0.14, rotate: -5 },
-  { src: "/elementos-design/derecha-01.png", side: "right", top: "14%", width: 240, speed: -0.1, rotate: 6 },
-  { src: "/elementos-design/izquierda-04.png", side: "left", top: "34%", width: 280, speed: 0.18, rotate: -8 },
-  { src: "/elementos-design/derecha-05.png", side: "right", top: "52%", width: 260, speed: -0.15, rotate: 5 },
-  { src: "/elementos-design/izquierda-03.png", side: "left", top: "68%", width: 220, speed: 0.12, rotate: 4 },
-  { src: "/elementos-design/izquierda-06.png", side: "right", top: "84%", width: 240, speed: -0.16, rotate: -6 },
+  { src: "/elementos-design/izquierda-02.png", side: "left", top: "-4%", width: 760, speed: 0.26, rotate: -5, opacity: 1 },
+  { src: "/elementos-design/derecha-01.png", side: "right", top: "13%", width: 700, speed: -0.22, rotate: 6, opacity: 1 },
+  { src: "/elementos-design/izquierda-04.png", side: "left", top: "33%", width: 840, speed: 0.32, rotate: -8, opacity: 1 },
+  { src: "/elementos-design/derecha-05.png", side: "right", top: "51%", width: 780, speed: -0.28, rotate: 5, opacity: 1 },
+  { src: "/elementos-design/izquierda-03.png", side: "left", top: "67%", width: 720, speed: 0.24, rotate: 4, opacity: 1 },
+  { src: "/elementos-design/izquierda-06.png", side: "right", top: "83%", width: 760, speed: -0.3, rotate: -6, opacity: 1 },
 ];
 
 const BONDADES = [
@@ -54,7 +54,7 @@ export function PrelaunchLanding({ actionData }: { actionData: ActionData }) {
 
   return (
     <div className="relative flex min-h-screen flex-col overflow-hidden bg-carbon text-hueso">
-      <BrandSwirls swirls={PAGE_SWIRLS} className="opacity-70" />
+      <BrandSwirls swirls={PAGE_SWIRLS} />
       <header className="relative mx-auto flex w-full max-w-6xl items-center justify-between px-4 py-6 sm:px-6">
         <Logo className="h-10 w-auto" />
         <a

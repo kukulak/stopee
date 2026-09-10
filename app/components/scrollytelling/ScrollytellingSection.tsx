@@ -9,9 +9,9 @@ import { BrandSwirls, type SwirlPlacement } from "~/components/ui/BrandSwirls";
 // pinned) para la escena 3D — un segundo paralax independiente aquí
 // competiría con ese movimiento en vez de sumar fluidez.
 const HERO_SWIRLS: SwirlPlacement[] = [
-  { src: "/elementos-design/izquierda-04.png", side: "left", top: "-4%", width: 260, speed: 0, opacity: 0.5, rotate: -8 },
-  { src: "/elementos-design/derecha-01.png", side: "right", top: "58%", width: 240, speed: 0, opacity: 0.45, rotate: 6 },
-  { src: "/elementos-design/izquierda-06.png", side: "left", top: "70%", width: 220, speed: 0, opacity: 0.4, rotate: -4 },
+  { src: "/elementos-design/izquierda-04.png", side: "left", top: "-6%", width: 620, speed: 0, opacity: 0.75, rotate: -8 },
+  { src: "/elementos-design/derecha-01.png", side: "right", top: "55%", width: 560, speed: 0, opacity: 0.7, rotate: 6 },
+  { src: "/elementos-design/izquierda-06.png", side: "left", top: "72%", width: 540, speed: 0, opacity: 0.65, rotate: -4 },
 ];
 
 // three.js/R3F/drei son pesados (~800kB): se cargan solo en cliente, en su
