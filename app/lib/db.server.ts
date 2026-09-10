@@ -23,8 +23,14 @@ export async function connectDB() {
   if (cache.conn) return cache.conn;
 
   if (!cache.promise) {
-    cache.promise = mongoose.connect(MONGODB_URI as string, {
-      bufferCommands: false,
+    // Si la conexión falla (p. ej. MongoDB no estaba levantado todavía), no
+    // debe quedar la promesa rechazada cacheada para siempre — eso dejaría el
+    // proceso "roto" de forma permanente aunque la base vuelva a estar
+    // disponible. Al fallar, se limpia la caché para que el siguiente intento
+    // vuelva a conectar en vez de repetir el mismo error para siempre.
+    cache.promise = mongoose.connect(MONGODB_URI as string, { bufferCommands: false }).catch((err) => {
+      cache.promise = null;
+      throw err;
     });
   }
 
