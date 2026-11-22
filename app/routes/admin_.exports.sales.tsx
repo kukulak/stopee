@@ -1,4 +1,4 @@
-import type { LoaderFunctionArgs } from "@remix-run/node";
+import type { LoaderFunctionArgs } from "react-router";
 import { requireAdmin } from "~/lib/session.server";
 import { connectDB } from "~/lib/db.server";
 import { csvCell } from "~/lib/csv";

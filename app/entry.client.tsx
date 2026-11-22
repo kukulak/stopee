@@ -1,4 +1,4 @@
-import { RemixBrowser } from "@remix-run/react";
+import { HydratedRouter } from "react-router/dom";
 import { startTransition, StrictMode } from "react";
 import { hydrateRoot } from "react-dom/client";
 import { NonceContext } from "~/lib/nonce";
@@ -10,7 +10,7 @@ startTransition(() => {
     document,
     <StrictMode>
       <NonceContext.Provider value="">
-        <RemixBrowser />
+        <HydratedRouter />
       </NonceContext.Provider>
     </StrictMode>,
   );

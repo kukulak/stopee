@@ -1,7 +1,7 @@
 import { isStaff } from "~/lib/roles";
-import type { ActionFunctionArgs, LoaderFunctionArgs, MetaFunction } from "@remix-run/node";
-import { json, redirect } from "@remix-run/node";
-import { Form, Link, useActionData, useLoaderData, useNavigation } from "@remix-run/react";
+import type { ActionFunctionArgs, LoaderFunctionArgs, MetaFunction } from "react-router";
+import { data, redirect } from "react-router";
+import { Form, Link, useActionData, useLoaderData, useNavigation } from "react-router";
 import { useState } from "react";
 import { z } from "zod";
 import { Navbar } from "~/components/layout/Navbar";
@@ -62,7 +62,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
       : []
   ) as { name: string; birthday: string | Date | null }[];
 
-  return json({
+  return data({
     user: {
       name: user.name,
       email: user.email,
@@ -131,7 +131,7 @@ export async function action({ request }: ActionFunctionArgs) {
       addressPostalCode: formData.get("addressPostalCode"),
     });
     if (!parsed.success) {
-      return json(
+      return data(
         { ok: false, savedIntent: "update-profile" as const, error: parsed.error.issues[0]?.message ?? "Revisa los datos." },
         { status: 400 },
       );
@@ -152,47 +152,47 @@ export async function action({ request }: ActionFunctionArgs) {
       .filter((d) => d.name);
 
     await UserModel.findByIdAndUpdate(userId, { phone: parsed.data.phone, address, dogs });
-    return json({ ok: true, savedIntent: "update-profile" as const, error: null as string | null });
+    return data({ ok: true, savedIntent: "update-profile" as const, error: null as string | null });
   }
 
   if (intent === "resend-verification") {
     const user = await UserModel.findById(userId);
-    if (!user) return json({ ok: false, savedIntent: "resend-verification" as const, error: "No se encontró tu cuenta." }, { status: 404 });
+    if (!user) return data({ ok: false, savedIntent: "resend-verification" as const, error: "No se encontró tu cuenta." }, { status: 404 });
     if (user.emailVerifiedAt) {
-      return json({ ok: true, savedIntent: "resend-verification" as const, error: null as string | null });
+      return data({ ok: true, savedIntent: "resend-verification" as const, error: null as string | null });
     }
     const limit = checkRateLimit(`resend-verification:${userId}`, { max: 3, windowMs: 60 * 60 * 1000 });
     if (!limit.allowed) {
-      return json({ ok: false, savedIntent: "resend-verification" as const, error: rateLimitMessage(limit.retryAfterSeconds) }, { status: 429 });
+      return data({ ok: false, savedIntent: "resend-verification" as const, error: rateLimitMessage(limit.retryAfterSeconds) }, { status: 429 });
     }
     const { result } = await sendVerificationEmail(user);
     if (!result.ok && !result.skipped) {
-      return json(
+      return data(
         { ok: false, savedIntent: "resend-verification" as const, error: "No pudimos enviar el correo en este momento. Intenta de nuevo en unos minutos." },
         { status: 502 },
       );
     }
-    return json({ ok: true, savedIntent: "resend-verification" as const, error: null as string | null });
+    return data({ ok: true, savedIntent: "resend-verification" as const, error: null as string | null });
   }
 
   if (intent === "delete-account") {
     const user = await UserModel.findById(userId);
     if (!user || isStaff(user.role)) {
-      return json({ ok: false, savedIntent: "delete-account" as const, error: "No se pudo eliminar la cuenta." }, { status: 400 });
+      return data({ ok: false, savedIntent: "delete-account" as const, error: "No se pudo eliminar la cuenta." }, { status: 400 });
     }
 
     // Pedir la contraseña evita que alguien con acceso momentáneo a una sesión
     // abierta (computadora compartida, teléfono prestado) borre la cuenta.
     const passwordLimit = checkRateLimit(`delete-account:${userId}`, { max: 5, windowMs: 15 * 60 * 1000 });
     if (!passwordLimit.allowed) {
-      return json(
+      return data(
         { ok: false, savedIntent: "delete-account" as const, error: rateLimitMessage(passwordLimit.retryAfterSeconds) },
         { status: 429 },
       );
     }
     const password = String(formData.get("password") ?? "");
     if (!(await verifyPassword(password, user.passwordHash))) {
-      return json(
+      return data(
         { ok: false, savedIntent: "delete-account" as const, error: "La contraseña no es correcta. Vuelve a intentarlo." },
         { status: 400 },
       );
@@ -206,7 +206,7 @@ export async function action({ request }: ActionFunctionArgs) {
       status: { $in: ["active", "paused", "past_due"] },
     });
     if (hasLiveSubscription) {
-      return json({
+      return data({
         ok: false,
         savedIntent: "delete-account" as const,
         error: "Tienes una suscripción activa. Cancélala primero desde \"Gestionar método de pago\" y vuelve a intentarlo.",
@@ -225,14 +225,14 @@ export async function action({ request }: ActionFunctionArgs) {
   if (intent === "billing-portal") {
     const user = await UserModel.findById(userId);
     if (!user?.stripeCustomerId) {
-      return json({ ok: false, savedIntent: null, error: "Aún no tienes un método de pago registrado." }, { status: 400 });
+      return data({ ok: false, savedIntent: null, error: "Aún no tienes un método de pago registrado." }, { status: 400 });
     }
     const portalSession = await createBillingPortalSession(user.stripeCustomerId);
     return redirect(portalSession.url);
   }
 
   if (!subscription) {
-    return json({ ok: false, savedIntent: null, error: "Suscripción no encontrada." }, { status: 404 });
+    return data({ ok: false, savedIntent: null, error: "Suscripción no encontrada." }, { status: 404 });
   }
 
   if (intent === "pause-subscription") {
@@ -251,7 +251,7 @@ export async function action({ request }: ActionFunctionArgs) {
     const frequency = String(formData.get("frequency"));
     // Se permite conservar la frecuencia actual aunque ya no se ofrezca; cambiar a otra exige que esté vigente.
     if (frequency !== subscription.frequency && !isOfferedFrequency(await getSubscriptionConfig(), frequency)) {
-      return json({ ok: false, savedIntent: null, error: "Esa frecuencia ya no está disponible. Elige otra." }, { status: 400 });
+      return data({ ok: false, savedIntent: null, error: "Esa frecuencia ya no está disponible. Elige otra." }, { status: 400 });
     }
     await updateSubscriptionFrequency(
       subscription.stripeSubscriptionId,
@@ -262,7 +262,7 @@ export async function action({ request }: ActionFunctionArgs) {
     await subscription.save();
   }
 
-  return json({ ok: true, savedIntent: null, error: null as string | null });
+  return data({ ok: true, savedIntent: null, error: null as string | null });
 }
 
 export default function Cuenta() {

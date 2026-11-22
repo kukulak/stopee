@@ -1,7 +1,7 @@
-import type { LoaderFunctionArgs } from "@remix-run/node";
-import type { ActionFunctionArgs, MetaFunction } from "@remix-run/node";
-import { json } from "@remix-run/node";
-import { Form, useActionData, useLoaderData, useNavigation } from "@remix-run/react";
+import type { LoaderFunctionArgs } from "react-router";
+import type { ActionFunctionArgs, MetaFunction } from "react-router";
+import { data } from "react-router";
+import { Form, useActionData, useLoaderData, useNavigation } from "react-router";
 import { useState } from "react";
 import { z } from "zod";
 import { connectDB } from "~/lib/db.server";
@@ -24,7 +24,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     ProductModel.find().sort({ createdAt: -1 }).lean(),
     getCurrentStarName(),
   ]);
-  return json({
+  return data({
     currentStarName,
     products: products.map((p) => ({
       id: String(p._id),
@@ -83,7 +83,7 @@ export async function action({ request }: ActionFunctionArgs) {
     });
 
     if (!parsed.success) {
-      return json({ ok: false as const, error: parsed.error.issues[0]?.message ?? "Datos inválidos." }, { status: 400 });
+      return data({ ok: false as const, error: parsed.error.issues[0]?.message ?? "Datos inválidos." }, { status: 400 });
     }
 
     const id = String(formData.get("id") ?? "");
@@ -92,7 +92,7 @@ export async function action({ request }: ActionFunctionArgs) {
       ...(id ? { _id: { $ne: id } } : {}),
     });
     if (exists) {
-      return json({ ok: false as const, error: "Ya existe un producto con ese SKU." }, { status: 409 });
+      return data({ ok: false as const, error: "Ya existe un producto con ese SKU." }, { status: 409 });
     }
 
     const isIndividuallySellable = formData.get("isIndividuallySellable") === "on";
@@ -103,22 +103,22 @@ export async function action({ request }: ActionFunctionArgs) {
 
     if (intent === "update-product") {
       await ProductModel.findByIdAndUpdate(id, { ...parsed.data, isIndividuallySellable, isFeatured, isSubscribable });
-      return json({ ok: true as const, error: null });
+      return data({ ok: true as const, error: null });
     }
 
     const { images, videos } = collectMediaFromForm(formData);
     await ProductModel.create({ ...parsed.data, images, videos, isIndividuallySellable, isFeatured, isSubscribable });
-    return json({ ok: true as const, error: null });
+    return data({ ok: true as const, error: null });
   }
 
   if (intent === "add-media-product") {
     const id = String(formData.get("id"));
     const { images, videos } = collectMediaFromForm(formData);
     if (images.length === 0 && videos.length === 0) {
-      return json({ ok: false as const, error: "Elige al menos un archivo o pega una URL." }, { status: 400 });
+      return data({ ok: false as const, error: "Elige al menos un archivo o pega una URL." }, { status: 400 });
     }
     await ProductModel.findByIdAndUpdate(id, { $push: { images: { $each: images }, videos: { $each: videos } } });
-    return json({ ok: true as const, error: null });
+    return data({ ok: true as const, error: null });
   }
 
   if (intent === "remove-media-product") {
@@ -130,27 +130,27 @@ export async function action({ request }: ActionFunctionArgs) {
     } else {
       await ProductModel.findByIdAndUpdate(id, { $pull: { videos: { url: value } } });
     }
-    return json({ ok: true as const, error: null });
+    return data({ ok: true as const, error: null });
   }
 
   if (intent === "add-usage-images-product") {
     const id = String(formData.get("id"));
     const { images } = collectMediaFromForm(formData);
     if (images.length === 0) {
-      return json({ ok: false as const, error: "Elige al menos una foto." }, { status: 400 });
+      return data({ ok: false as const, error: "Elige al menos una foto." }, { status: 400 });
     }
     await ProductModel.findByIdAndUpdate(id, { $push: { usageImages: { $each: images } } });
-    return json({ ok: true as const, error: null });
+    return data({ ok: true as const, error: null });
   }
 
   if (intent === "remove-usage-image-product") {
     await ProductModel.findByIdAndUpdate(String(formData.get("id")), { $pull: { usageImages: String(formData.get("value")) } });
-    return json({ ok: true as const, error: null });
+    return data({ ok: true as const, error: null });
   }
 
   if (intent === "toggle-product-featured") {
     await toggleFeatured("product", String(formData.get("id")));
-    return json({ ok: true as const, error: null });
+    return data({ ok: true as const, error: null });
   }
 
   if (intent === "toggle-product-available") {
@@ -159,15 +159,15 @@ export async function action({ request }: ActionFunctionArgs) {
       product.isAvailable = !product.isAvailable;
       await product.save();
     }
-    return json({ ok: true as const, error: null });
+    return data({ ok: true as const, error: null });
   }
 
   if (intent === "delete-product") {
     await ProductModel.findByIdAndDelete(String(formData.get("id")));
-    return json({ ok: true as const, error: null });
+    return data({ ok: true as const, error: null });
   }
 
-  return json({ ok: false as const, error: "Acción no reconocida." }, { status: 400 });
+  return data({ ok: false as const, error: "Acción no reconocida." }, { status: 400 });
 }
 
 type Product = ReturnType<typeof useLoaderData<typeof loader>>["products"][number];

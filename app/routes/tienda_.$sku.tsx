@@ -1,7 +1,7 @@
 import { requireStoreAccess } from "~/lib/storeAccess.server";
-import type { ActionFunctionArgs, LoaderFunctionArgs, MetaFunction } from "@remix-run/node";
-import { json } from "@remix-run/node";
-import { Link, useFetcher, useLoaderData } from "@remix-run/react";
+import type { ActionFunctionArgs, LoaderFunctionArgs, MetaFunction } from "react-router";
+import { data } from "react-router";
+import { Link, useFetcher, useLoaderData } from "react-router";
 import { useEffect, useRef, useState } from "react";
 import { Navbar } from "~/components/layout/Navbar";
 import { getSubscriptionConfig } from "~/models/subscriptionSettings.server";
@@ -42,7 +42,7 @@ export async function loader({ params, request }: LoaderFunctionArgs) {
 
   const [testimonials, subscriptionConfig] = await Promise.all([getTestimonialsForSku(product.sku), getSubscriptionConfig()]);
 
-  return json({
+  return data({
     testimonials: testimonials.map((t) => ({
       id: String(t._id),
       customerName: t.customerName,
@@ -95,20 +95,20 @@ export async function action({ request }: ActionFunctionArgs) {
   const sku = formData.get("sku");
   const item = typeof sku === "string" ? await getCatalogItemBySku(sku) : null;
   if (typeof sku !== "string" || !item) {
-    return json({ error: "Producto no válido." }, { status: 400 });
+    return data({ error: "Producto no válido." }, { status: 400 });
   }
   const requestedQuantity = Number(formData.get("quantity") ?? 1);
   const quantity = Number.isFinite(requestedQuantity) && requestedQuantity > 0 ? Math.floor(requestedQuantity) : 1;
 
   // Tope por existencia, contando lo que el cliente ya lleva en el carrito.
-  if (item.stock <= 0) return json({ error: soldOutMessage(item.name) }, { status: 400 });
+  if (item.stock <= 0) return data({ error: soldOutMessage(item.name) }, { status: 400 });
   const inCart = (await getCart(request)).find((line) => line.sku === sku)?.quantity ?? 0;
   const room = remainingToAdd(item.stock, inCart);
   if (room <= 0) {
-    return json({ error: `Ya tienes en tu carrito todas las unidades disponibles (${item.stock}).` }, { status: 400 });
+    return data({ error: `Ya tienes en tu carrito todas las unidades disponibles (${item.stock}).` }, { status: 400 });
   }
   const { cookie } = await addToCart(request, sku, Math.min(quantity, room));
-  return json(
+  return data(
     { ok: true, notice: quantity > room ? `Solo quedaban ${room} más; agregamos ${room}.` : undefined },
     { headers: { "Set-Cookie": cookie } },
   );

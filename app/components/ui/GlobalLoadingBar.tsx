@@ -1,4 +1,4 @@
-import { useNavigation } from "@remix-run/react";
+import { useNavigation } from "react-router";
 
 /** Barra de progreso indeterminada arriba de la página durante la navegación entre rutas — Remix no muestra nada por defecto, así que un click sin feedback inmediato se siente roto (Doherty Threshold, ver CLAUDE.md). */
 export function GlobalLoadingBar() {

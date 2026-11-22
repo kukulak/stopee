@@ -1,7 +1,7 @@
-import type { LoaderFunctionArgs } from "@remix-run/node";
-import { json } from "@remix-run/node";
+import type { LoaderFunctionArgs } from "react-router";
+import { data } from "react-router";
 import { useEffect, useState } from "react";
-import { Form, NavLink, Outlet, useLoaderData, useLocation } from "@remix-run/react";
+import { Form, NavLink, Outlet, useLoaderData, useLocation } from "react-router";
 import { requireAdmin } from "~/lib/session.server";
 import { getSiteSettings } from "~/models/siteSettings.server";
 import { ContactMessageModel } from "~/models/contactMessage.server";
@@ -49,7 +49,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     getSiteSettings(),
     ContactMessageModel.countDocuments({ isRead: false }),
   ]);
-  return json({ adminEmail: admin.email as string, isStoreActive: settings.isStoreActive, unreadMessages });
+  return data({ adminEmail: admin.email as string, isStoreActive: settings.isStoreActive, unreadMessages });
 }
 
 export default function AdminLayout() {

@@ -1,5 +1,5 @@
 import { isStaff } from "~/lib/roles";
-import { json, redirect } from "@remix-run/node";
+import { data, redirect } from "react-router";
 import { getSiteSettings } from "~/models/siteSettings.server";
 import { getUser } from "~/lib/session.server";
 
@@ -24,6 +24,6 @@ export async function requireStoreAccess(request: Request) {
 /** Para endpoints (checkout, suscripción…): responde 403 en JSON en vez de redirigir. */
 export async function requireStoreAccessApi(request: Request) {
   if (!(await canAccessStore(request))) {
-    throw json({ error: "La tienda todavía no está disponible." }, { status: 403 });
+    throw data({ error: "La tienda todavía no está disponible." }, { status: 403 });
   }
 }

@@ -1,7 +1,7 @@
-import type { LoaderFunctionArgs } from "@remix-run/node";
-import type { MetaFunction } from "@remix-run/node";
-import { json } from "@remix-run/node";
-import { Link, useLoaderData } from "@remix-run/react";
+import type { LoaderFunctionArgs } from "react-router";
+import type { MetaFunction } from "react-router";
+import { data } from "react-router";
+import { Link, useLoaderData } from "react-router";
 import { connectDB } from "~/lib/db.server";
 import { UserModel } from "~/models/user.server";
 import { OrderModel } from "~/models/order.server";
@@ -125,7 +125,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
       })),
   ).sort((a, b) => a.day - b.day);
 
-  return json({
+  return data({
     counts: {
       registeredNoPurchase: registeredNoPurchase.length,
       customersWithPurchase: customersWithPurchase.length,

@@ -3,7 +3,7 @@ import {
   useFetcher,
   useRouteLoaderData,
   type FetcherWithComponents
-} from '@remix-run/react'
+} from 'react-router'
 import type { action } from '~/routes/_index'
 import type { loader as RootLoader } from '~/root'
 import { EditableLogo } from '~/components/ui/EditableLogo'

@@ -1,7 +1,7 @@
-import type { LoaderFunctionArgs } from "@remix-run/node";
-import type { ActionFunctionArgs, MetaFunction } from "@remix-run/node";
-import { json } from "@remix-run/node";
-import { Form, useLoaderData } from "@remix-run/react";
+import type { LoaderFunctionArgs } from "react-router";
+import type { ActionFunctionArgs, MetaFunction } from "react-router";
+import { data } from "react-router";
+import { Form, useLoaderData } from "react-router";
 import { connectDB } from "~/lib/db.server";
 import { ContactMessageModel } from "~/models/contactMessage.server";
 import { requireAdmin } from "~/lib/session.server";
@@ -12,7 +12,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   await requireAdmin(request);
   await connectDB();
   const messages = await ContactMessageModel.find().sort({ createdAt: -1 }).lean();
-  return json({
+  return data({
     messages: messages.map((m) => ({
       id: String(m._id),
       name: m.name,
@@ -33,15 +33,15 @@ export async function action({ request }: ActionFunctionArgs) {
 
   if (intent === "mark-read") {
     await ContactMessageModel.findByIdAndUpdate(id, { isRead: true });
-    return json({ ok: true });
+    return data({ ok: true });
   }
 
   if (intent === "delete") {
     await ContactMessageModel.findByIdAndDelete(id);
-    return json({ ok: true });
+    return data({ ok: true });
   }
 
-  return json({ ok: false, error: "Acción no reconocida." }, { status: 400 });
+  return data({ ok: false, error: "Acción no reconocida." }, { status: 400 });
 }
 
 export default function AdminMessages() {

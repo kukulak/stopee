@@ -1,4 +1,4 @@
-import { createCookieSessionStorage, redirect } from "@remix-run/node";
+import { createCookieSessionStorage, redirect } from "react-router";
 import { connectDB } from "~/lib/db.server";
 import { cookieSecret } from "~/lib/secrets.server";
 import { UserModel } from "~/models/user.server";

@@ -1,6 +1,6 @@
-import type { LoaderFunctionArgs, MetaFunction } from "@remix-run/node";
-import { json } from "@remix-run/node";
-import { useLoaderData } from "@remix-run/react";
+import type { LoaderFunctionArgs, MetaFunction } from "react-router";
+import { data } from "react-router";
+import { useLoaderData } from "react-router";
 import { connectDB } from "~/lib/db.server";
 import { OrderModel } from "~/models/order.server";
 import { LeadModel } from "~/models/lead.server";
@@ -14,7 +14,7 @@ import { resolveDateRange, percentChange } from "~/lib/dateRange.server";
 import { monthlyEquivalent } from "~/lib/mrr.server";
 import { TYPE_LABELS } from "~/components/admin/PromotionFormFields";
 import { formatPresentation } from "~/lib/productUnit";
-import { useSearchParams } from "@remix-run/react";
+import { useSearchParams } from "react-router";
 import {
   ResponsiveContainer,
   AreaChart,
@@ -305,7 +305,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     return `${Math.round(days)} días`;
   }
 
-  return json({
+  return data({
     range: { key: range.key, from: range.from.toISOString(), to: range.to.toISOString() },
     audience,
     kpis: {

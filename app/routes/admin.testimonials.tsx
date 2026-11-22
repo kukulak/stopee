@@ -1,7 +1,7 @@
-import type { LoaderFunctionArgs } from "@remix-run/node";
-import type { ActionFunctionArgs, MetaFunction } from "@remix-run/node";
-import { json } from "@remix-run/node";
-import { Form, useActionData, useLoaderData, useNavigation } from "@remix-run/react";
+import type { LoaderFunctionArgs } from "react-router";
+import type { ActionFunctionArgs, MetaFunction } from "react-router";
+import { data } from "react-router";
+import { Form, useActionData, useLoaderData, useNavigation } from "react-router";
 import { useState } from "react";
 import { z } from "zod";
 import { connectDB } from "~/lib/db.server";
@@ -23,7 +23,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     ProductModel.find().sort({ name: 1 }).select("name sku").lean(),
     BundleModel.find().sort({ name: 1 }).select("name sku").lean(),
   ]);
-  return json({
+  return data({
     // Todo lo que se puede etiquetar (incluye pausados, para no perder etiquetas al editar).
     taggable: [...products, ...bundles].map((item) => ({ sku: item.sku, name: item.name })),
     testimonials: testimonials.map((t) => ({
@@ -57,7 +57,7 @@ export async function action({ request }: ActionFunctionArgs) {
       rating: formData.get("rating"),
     });
     if (!parsed.success) {
-      return json({ ok: false, error: parsed.error.issues[0]?.message ?? "Revisa los datos." }, { status: 400 });
+      return data({ ok: false, error: parsed.error.issues[0]?.message ?? "Revisa los datos." }, { status: 400 });
     }
     const isPublished = formData.get("isPublished") === "on";
     const productSkus = formData.getAll("productSkus").map(String).filter(Boolean);
@@ -69,26 +69,26 @@ export async function action({ request }: ActionFunctionArgs) {
       const existing = await TestimonialModel.findById(id);
       const photoUrl = uploadedPhotoUrl ?? (removePhoto ? "" : existing?.photoUrl ?? "");
       await TestimonialModel.findByIdAndUpdate(id, { ...parsed.data, photoUrl, isPublished, productSkus });
-      return json({ ok: true, error: null as string | null });
+      return data({ ok: true, error: null as string | null });
     }
 
     await TestimonialModel.create({ ...parsed.data, photoUrl: uploadedPhotoUrl ?? "", isPublished, productSkus });
-    return json({ ok: true, error: null as string | null });
+    return data({ ok: true, error: null as string | null });
   }
 
   if (intent === "toggle-published") {
     const id = String(formData.get("id"));
     const isPublished = formData.get("isPublished") === "true";
     await TestimonialModel.findByIdAndUpdate(id, { isPublished });
-    return json({ ok: true, error: null as string | null });
+    return data({ ok: true, error: null as string | null });
   }
 
   if (intent === "delete") {
     await TestimonialModel.findByIdAndDelete(String(formData.get("id")));
-    return json({ ok: true, error: null as string | null });
+    return data({ ok: true, error: null as string | null });
   }
 
-  return json({ ok: false, error: "Acción no reconocida." }, { status: 400 });
+  return data({ ok: false, error: "Acción no reconocida." }, { status: 400 });
 }
 
 type Testimonial = ReturnType<typeof useLoaderData<typeof loader>>["testimonials"][number];

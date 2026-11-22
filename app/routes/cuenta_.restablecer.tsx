@@ -1,6 +1,6 @@
-import type { ActionFunctionArgs, LoaderFunctionArgs, MetaFunction } from "@remix-run/node";
-import { json, redirect } from "@remix-run/node";
-import { Form, Link, useActionData, useLoaderData, useNavigation } from "@remix-run/react";
+import type { ActionFunctionArgs, LoaderFunctionArgs, MetaFunction } from "react-router";
+import { data, redirect } from "react-router";
+import { Form, Link, useActionData, useLoaderData, useNavigation } from "react-router";
 import { useState } from "react";
 import { Logo } from "~/components/ui/Logo";
 import { PasswordField } from "~/components/ui/PasswordField";
@@ -19,13 +19,13 @@ export async function loader({ request }: LoaderFunctionArgs) {
   await connectDB();
   const valid = Boolean(await peekToken(token, "reset"));
   // La página lleva el token en la URL: que no viaje a terceros en el Referer.
-  return json({ valid, token: valid ? token : null }, { headers: { "Referrer-Policy": "no-referrer" } });
+  return data({ valid, token: valid ? token : null }, { headers: { "Referrer-Policy": "no-referrer" } });
 }
 
 export async function action({ request }: ActionFunctionArgs) {
   const limit = checkRateLimit(`restablecer:${getClientIp(request)}`, { max: 10, windowMs: 15 * 60 * 1000 });
   if (!limit.allowed) {
-    return json({ error: rateLimitMessage(limit.retryAfterSeconds), expired: false }, { status: 429 });
+    return data({ error: rateLimitMessage(limit.retryAfterSeconds), expired: false }, { status: 429 });
   }
 
   const formData = await request.formData();
@@ -35,22 +35,22 @@ export async function action({ request }: ActionFunctionArgs) {
 
   await connectDB();
   const peeked = await peekToken(token, "reset");
-  if (!peeked) return json({ error: null, expired: true }, { status: 400 });
+  if (!peeked) return data({ error: null, expired: true }, { status: 400 });
 
   const user = await UserModel.findById(peeked.userId);
-  if (!user) return json({ error: null, expired: true }, { status: 400 });
+  if (!user) return data({ error: null, expired: true }, { status: 400 });
 
   // Primero se valida la contraseña y luego se gasta el enlace: así un error de
   // captura no obliga a pedir otro correo.
   const problem = passwordProblem(password, user.email);
-  if (problem) return json({ error: problem, expired: false }, { status: 400 });
+  if (problem) return data({ error: problem, expired: false }, { status: 400 });
   if (password !== confirmPassword) {
-    return json({ error: "Las contraseñas no coinciden.", expired: false }, { status: 400 });
+    return data({ error: "Las contraseñas no coinciden.", expired: false }, { status: 400 });
   }
 
   const consumed = await consumeToken(token, "reset");
   if (!consumed || consumed.userId !== String(user._id)) {
-    return json({ error: null, expired: true }, { status: 400 });
+    return data({ error: null, expired: true }, { status: 400 });
   }
 
   user.passwordHash = await hashPassword(password);

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useLocation } from "@remix-run/react";
+import { useLocation } from "react-router";
 
 const HIDDEN_PREFIXES = ["/admin", "/cuenta"];
 const SHOW_AFTER_PX = 480;

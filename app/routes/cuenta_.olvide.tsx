@@ -1,6 +1,6 @@
-import type { ActionFunctionArgs, LoaderFunctionArgs, MetaFunction } from "@remix-run/node";
-import { json, redirect } from "@remix-run/node";
-import { Form, Link, useActionData, useNavigation } from "@remix-run/react";
+import type { ActionFunctionArgs, LoaderFunctionArgs, MetaFunction } from "react-router";
+import { data, redirect } from "react-router";
+import { Form, Link, useActionData, useNavigation } from "react-router";
 import { z } from "zod";
 import { Logo } from "~/components/ui/Logo";
 import { connectDB } from "~/lib/db.server";
@@ -13,7 +13,7 @@ export const meta: MetaFunction = () => [{ title: "Recuperar contraseña — STO
 
 export async function loader({ request }: LoaderFunctionArgs) {
   if (await getUserId(request)) return redirect("/cuenta");
-  return json({});
+  return data({});
 }
 
 const emailSchema = z.string().trim().toLowerCase().email().max(254);
@@ -26,13 +26,13 @@ export async function action({ request }: ActionFunctionArgs) {
   const ip = getClientIp(request);
   const ipLimit = checkRateLimit(`olvide:${ip}`, { max: 5, windowMs: 60 * 60 * 1000 });
   if (!ipLimit.allowed) {
-    return json({ error: rateLimitMessage(ipLimit.retryAfterSeconds), sentTo: null }, { status: 429 });
+    return data({ error: rateLimitMessage(ipLimit.retryAfterSeconds), sentTo: null }, { status: 429 });
   }
 
   const formData = await request.formData();
   const parsed = emailSchema.safeParse(formData.get("email"));
   if (!parsed.success) {
-    return json({ error: "Ingresa un correo válido.", sentTo: null }, { status: 400 });
+    return data({ error: "Ingresa un correo válido.", sentTo: null }, { status: 400 });
   }
   const email = parsed.data;
 
@@ -52,7 +52,7 @@ export async function action({ request }: ActionFunctionArgs) {
   }
 
   // Misma respuesta exista o no la cuenta (o se haya llegado al tope): no se revela qué correos están registrados.
-  return json({ error: null, sentTo: email });
+  return data({ error: null, sentTo: email });
 }
 
 export default function Olvide() {

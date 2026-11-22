@@ -1,6 +1,6 @@
 import { isStaff } from "~/lib/roles";
-import type { LinksFunction, LoaderFunctionArgs, MetaFunction } from "@remix-run/node";
-import { json, redirect } from "@remix-run/node";
+import type { LinksFunction, LoaderFunctionArgs, MetaFunction } from "react-router";
+import { data, redirect } from "react-router";
 import {
   Links,
   Meta,
@@ -12,7 +12,7 @@ import {
   useNavigation,
   useRouteError,
   useRouteLoaderData,
-} from "@remix-run/react";
+} from "react-router";
 import tailwind from "~/tailwind.css?url";
 import { getSiteSettingsCached } from "~/models/siteSettings.server";
 import { getSubscriptionConfigCached } from "~/models/subscriptionSettings.server";
@@ -120,7 +120,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     // La tienda se ve (menú, carrito, pie de página) si ya está activa o si
     // quien navega es admin revisándola — para el público sigue oculta.
     const storeVisible = settings.isStoreActive || isStaff((await getUser(request))?.role);
-    return json(
+    return data(
       {
         storeVisible,
         // Defensa extra: aunque la base tenga un valor viejo o alterado, solo se imprime si tiene el formato exacto.
@@ -150,7 +150,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
       { headers },
     );
   } catch {
-    return json(
+    return data(
       {
         storeVisible: false,
         googlePixelId: "",

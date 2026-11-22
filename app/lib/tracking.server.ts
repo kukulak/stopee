@@ -1,4 +1,4 @@
-import { createCookie } from "@remix-run/node";
+import { createCookie } from "react-router";
 import { randomUUID } from "node:crypto";
 import { connectDB } from "~/lib/db.server";
 import { AnalyticsEventModel } from "~/models/analyticsEvent.server";

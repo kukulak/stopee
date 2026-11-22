@@ -1,7 +1,7 @@
-import type { LoaderFunctionArgs } from "@remix-run/node";
-import type { ActionFunctionArgs, MetaFunction } from "@remix-run/node";
-import { json } from "@remix-run/node";
-import { Form, useActionData, useLoaderData, useNavigation } from "@remix-run/react";
+import type { LoaderFunctionArgs } from "react-router";
+import type { ActionFunctionArgs, MetaFunction } from "react-router";
+import { data } from "react-router";
+import { Form, useActionData, useLoaderData, useNavigation } from "react-router";
 import { connectDB } from "~/lib/db.server";
 import { PasswordGateModel } from "~/models/passwordGate.server";
 import { DEFAULT_GATE_COPY } from "~/lib/passwordGateCopy";
@@ -28,7 +28,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     getCatalogItems({ includeUnavailable: true }),
   ]);
 
-  return json({
+  return data({
     gate: gate
       ? {
           isActive: gate.isActive,
@@ -96,7 +96,7 @@ export async function action({ request }: ActionFunctionArgs) {
     await PasswordGateModel.create(doc);
   }
 
-  return json({ ok: true, error: null as string | null });
+  return data({ ok: true, error: null as string | null });
 }
 
 export default function AdminPasswordGate() {

@@ -1,4 +1,4 @@
-import { Link } from "@remix-run/react";
+import { Link } from "react-router";
 import { ArrowIcon, type ArrowDirection } from "~/components/ui/Icons";
 
 /**

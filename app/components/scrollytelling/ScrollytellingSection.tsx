@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import type * as THREE from 'three'
-import { Link } from '@remix-run/react'
+import { Link } from 'react-router'
 import { ClientOnly } from '~/components/ui/ClientOnly'
 import type { SceneRefs } from '~/components/3d/ScrollyCanvas'
 import { ArrowIcon } from "~/components/ui/Icons";

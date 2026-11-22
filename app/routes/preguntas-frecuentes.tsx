@@ -1,6 +1,6 @@
-import type { LoaderFunctionArgs, MetaFunction } from "@remix-run/node";
-import { json } from "@remix-run/node";
-import { useLoaderData } from "@remix-run/react";
+import type { LoaderFunctionArgs, MetaFunction } from "react-router";
+import { data } from "react-router";
+import { useLoaderData } from "react-router";
 import DOMPurify from "isomorphic-dompurify";
 import { Navbar } from "~/components/layout/Navbar";
 import { Footer } from "~/components/layout/Footer";
@@ -81,7 +81,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     },
   ];
 
-  return json({
+  return data({
     cartCount: cart.reduce((sum, item) => sum + item.quantity, 0),
     faqs,
     origin: siteOrigin(request),

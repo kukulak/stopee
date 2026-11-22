@@ -1,5 +1,5 @@
-import type { ActionFunctionArgs } from "@remix-run/node";
-import { json } from "@remix-run/node";
+import type { ActionFunctionArgs } from "react-router";
+import { data } from "react-router";
 import mongoose from "mongoose";
 import type Stripe from "stripe";
 import { stripe } from "~/lib/stripe.server";
@@ -21,14 +21,14 @@ const WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET;
 
 export async function action({ request }: ActionFunctionArgs) {
   if (!WEBHOOK_SECRET) {
-    return json({ error: "STRIPE_WEBHOOK_SECRET no configurado." }, { status: 500 });
+    return data({ error: "STRIPE_WEBHOOK_SECRET no configurado." }, { status: 500 });
   }
 
   const signature = request.headers.get("stripe-signature");
   const payload = await request.text();
 
   if (!signature) {
-    return json({ error: "Falta la firma de Stripe." }, { status: 400 });
+    return data({ error: "Falta la firma de Stripe." }, { status: 400 });
   }
 
   let event: Stripe.Event;
@@ -43,7 +43,7 @@ export async function action({ request }: ActionFunctionArgs) {
     // dejarían de confirmarse en silencio.
     logError("stripe-webhook-signature", err, { message });
     // El detalle queda en los registros del servidor; a quien llama no se le explica por qué falló.
-    return json({ error: "Webhook inválido." }, { status: 400 });
+    return data({ error: "Webhook inválido." }, { status: 400 });
   }
 
   await connectDB();
@@ -120,7 +120,7 @@ export async function action({ request }: ActionFunctionArgs) {
       break;
   }
 
-  return json({ received: true });
+  return data({ received: true });
 }
 
 function readAttribution(metadata: Stripe.Metadata | null) {

@@ -1,7 +1,7 @@
-import type { LoaderFunctionArgs } from "@remix-run/node";
-import type { ActionFunctionArgs, MetaFunction } from "@remix-run/node";
-import { json } from "@remix-run/node";
-import { Form, Link, useActionData, useLoaderData, useNavigation } from "@remix-run/react";
+import type { LoaderFunctionArgs } from "react-router";
+import type { ActionFunctionArgs, MetaFunction } from "react-router";
+import { data } from "react-router";
+import { Form, Link, useActionData, useLoaderData, useNavigation } from "react-router";
 import { useEffect, useState } from "react";
 import { getLegalSettings, updateLegalSettings } from "~/models/legalSettings.server";
 import { applyLegalVariables, type LegalBusinessData } from "~/lib/legalTemplate";
@@ -15,7 +15,7 @@ export const meta: MetaFunction = () => [{ title: "Legal (ARCO) — Admin STOPee
 export async function loader({ request }: LoaderFunctionArgs) {
   await requireAdmin(request);
   const [settings, subscriptionConfig] = await Promise.all([getLegalSettings(), getSubscriptionConfig()]);
-  return json({
+  return data({
     ...subscriptionLegalVariables(subscriptionConfig),
     razonSocial: settings.razonSocial ?? "",
     direccionFiscal: settings.direccionFiscal ?? "",
@@ -35,28 +35,28 @@ export async function action({ request }: ActionFunctionArgs) {
   if (intent === "save-privacy") {
     const privacyPolicyMarkdown = String(formData.get("privacyPolicyMarkdown") ?? "");
     if (!privacyPolicyMarkdown.trim()) {
-      return json(
+      return data(
         { ok: false, savedIntent: "save-privacy", error: "El aviso de privacidad no puede quedar vacío." as string | null },
         { status: 400 },
       );
     }
     await updateLegalSettings({ privacyPolicyMarkdown });
-    return json({ ok: true, savedIntent: "save-privacy", error: null as string | null });
+    return data({ ok: true, savedIntent: "save-privacy", error: null as string | null });
   }
 
   if (intent === "save-terms") {
     const termsMarkdown = String(formData.get("termsMarkdown") ?? "");
     if (!termsMarkdown.trim()) {
-      return json(
+      return data(
         { ok: false, savedIntent: "save-terms", error: "Los términos no pueden quedar vacíos." as string | null },
         { status: 400 },
       );
     }
     await updateLegalSettings({ termsMarkdown });
-    return json({ ok: true, savedIntent: "save-terms", error: null as string | null });
+    return data({ ok: true, savedIntent: "save-terms", error: null as string | null });
   }
 
-  return json(
+  return data(
     { ok: false, savedIntent: "unknown", error: "Acción no reconocida." as string | null },
     { status: 400 },
   );

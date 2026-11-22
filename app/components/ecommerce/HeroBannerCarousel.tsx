@@ -1,4 +1,4 @@
-import { Link } from "@remix-run/react";
+import { Link } from "react-router";
 import { useEffect, useRef, useState } from "react";
 import { trackEvent } from "~/lib/trackClient";
 import { ChevronIcon } from "~/components/ui/Icons";

@@ -1,14 +1,9 @@
-import {
-  unstable_createFileUploadHandler,
-  unstable_composeUploadHandlers,
-  unstable_createMemoryUploadHandler,
-  unstable_parseMultipartFormData,
-  NodeOnDiskFile,
-} from "@remix-run/node";
-import type { UploadHandler } from "@remix-run/node";
+import { parseFormData } from "@mjackson/form-data-parser";
+import type { FileUpload, FileUploadHandler } from "@mjackson/form-data-parser";
 import { Storage } from "@google-cloud/storage";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
+import { createWriteStream } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import sharp from "sharp";
 import { Readable } from "node:stream";
@@ -43,11 +38,19 @@ const ALLOWED_UPLOAD_TYPES: Record<string, string[]> = {
   ".pdf": ["application/pdf"],
 };
 
-function isAllowedUpload(filename: string, contentType: string): boolean {
+export function isAllowedUpload(filename: string, contentType: string): boolean {
   const ext = path.extname(filename).toLowerCase();
   const allowedContentTypes = ALLOWED_UPLOAD_TYPES[ext];
   return Boolean(allowedContentTypes && allowedContentTypes.includes(contentType));
 }
+
+/** Direcciones que este módulo entrega para archivos guardados en disco (desarrollo): /uploads/<uuid>.<ext permitida>. */
+const LOCAL_UPLOAD_URL = new RegExp(
+  `^/uploads/[0-9a-f-]{36}\\.(${Object.keys(ALLOWED_UPLOAD_TYPES)
+    .map((ext) => ext.slice(1))
+    .join("|")})$`,
+  "i",
+);
 
 let storageClient: Storage | null = null;
 
@@ -73,32 +76,40 @@ async function optimizeImage(buffer: Buffer): Promise<Buffer | null> {
   }
 }
 
-async function readLimited(data: AsyncIterable<Uint8Array>, maxBytes: number): Promise<Buffer> {
-  const chunks: Buffer[] = [];
+/** Los bytes de un archivo subido, por partes (sin tenerlo completo en memoria), con tope de tamaño. */
+async function* chunksOf(upload: FileUpload, maxBytes: number): AsyncGenerator<Uint8Array> {
+  const reader = upload.stream().getReader();
   let bytes = 0;
-  for await (const chunk of data) {
-    bytes += chunk.byteLength;
-    if (bytes > maxBytes) throw new Error("El archivo es demasiado grande.");
-    chunks.push(Buffer.from(chunk));
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) return;
+      bytes += value.byteLength;
+      if (bytes > maxBytes) throw new Error("El archivo es demasiado grande.");
+      yield value;
+    }
+  } finally {
+    reader.releaseLock();
   }
+}
+
+async function readLimited(upload: FileUpload, maxBytes: number): Promise<Buffer> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of chunksOf(upload, maxBytes)) chunks.push(Buffer.from(chunk));
   return Buffer.concat(chunks);
 }
 
 /**
  * Imágenes PNG/JPG: se leen completas (máx. 8 MB), se convierten a WebP y se
  * guardan en el bucket (producción) o en public/uploads (desarrollo). Devuelve
- * la URL pública como texto, igual que el manejador de Cloud Storage.
+ * la URL pública como texto.
  */
-const imageUploadHandler: UploadHandler = async ({ filename, contentType, data }) => {
-  if (!filename || !OPTIMIZABLE_IMAGE_TYPES.has(contentType) || !isAllowedUpload(filename, contentType)) {
-    return undefined;
-  }
-
-  const original = await readLimited(data, MAX_IMAGE_BYTES);
+async function saveOptimizedImage(upload: FileUpload): Promise<string> {
+  const original = await readLimited(upload, MAX_IMAGE_BYTES);
   const optimized = await optimizeImage(original);
   const body = optimized ?? original;
-  const ext = optimized ? ".webp" : path.extname(filename).toLowerCase();
-  const outType = optimized ? "image/webp" : contentType;
+  const ext = optimized ? ".webp" : path.extname(upload.name).toLowerCase();
+  const outType = optimized ? "image/webp" : upload.type;
   const name = `${randomUUID()}${ext}`;
 
   if (GCS_BUCKET) {
@@ -114,43 +125,47 @@ const imageUploadHandler: UploadHandler = async ({ filename, contentType, data }
   await mkdir(UPLOADS_DIR, { recursive: true });
   await writeFile(path.join(UPLOADS_DIR, name), body);
   return `/uploads/${name}`;
-};
-
+}
 
 /** Sube el archivo a Cloud Storage en streaming y devuelve su URL pública (las credenciales vienen de la cuenta de servicio de Cloud Run). */
-const gcsUploadHandler: UploadHandler = async ({ filename, contentType, data }) => {
-  if (!GCS_BUCKET || !filename || !isAllowedUpload(filename, contentType)) return undefined;
-
+async function saveToBucket(upload: FileUpload): Promise<string> {
   storageClient ??= new Storage();
-  const objectName = `uploads/${randomUUID()}${path.extname(filename).toLowerCase()}`;
-  const target = storageClient.bucket(GCS_BUCKET).file(objectName);
-
-  let bytes = 0;
-  async function* limited() {
-    for await (const chunk of data) {
-      bytes += chunk.byteLength;
-      if (bytes > MAX_VIDEO_BYTES) throw new Error("El archivo es demasiado grande.");
-      yield chunk;
-    }
-  }
+  const objectName = `uploads/${randomUUID()}${path.extname(upload.name).toLowerCase()}`;
+  const target = storageClient!.bucket(GCS_BUCKET!).file(objectName);
 
   await pipeline(
-    Readable.from(limited()),
+    Readable.from(chunksOf(upload, MAX_VIDEO_BYTES)),
     target.createWriteStream({
       resumable: false,
-      contentType,
+      contentType: upload.type,
       metadata: { cacheControl: "public, max-age=31536000, immutable" },
     }),
   );
   return `${GCS_PUBLIC_PREFIX}${path.basename(objectName)}`;
+}
+
+/** Guarda el archivo en disco (desarrollo), bajo public/uploads y con nombre aleatorio; devuelve su dirección. */
+async function saveToDisk(upload: FileUpload): Promise<string> {
+  await mkdir(UPLOADS_DIR, { recursive: true });
+  const name = `${randomUUID()}${path.extname(upload.name).toLowerCase()}`;
+  await pipeline(Readable.from(chunksOf(upload, MAX_VIDEO_BYTES)), createWriteStream(path.join(UPLOADS_DIR, name)));
+  return `/uploads/${name}`;
+}
+
+/**
+ * Qué hacer con cada archivo del formulario. Devuelve la URL pública (texto) de lo que se guardó, o
+ * `null` para descartarlo: sin nombre (el campo de archivo venía vacío), o de un tipo no permitido.
+ * En ningún caso se conserva el archivo en memoria dentro del FormData.
+ */
+const uploadHandler: FileUploadHandler = async (upload) => {
+  if (!upload.name || !isAllowedUpload(upload.name, upload.type)) return null;
+  if (OPTIMIZABLE_IMAGE_TYPES.has(upload.type)) return saveOptimizedImage(upload);
+  return GCS_BUCKET ? saveToBucket(upload) : saveToDisk(upload);
 };
 
 /**
- * Guarda archivos subidos directamente en disco, bajo public/uploads, con
- * nombre aleatorio para evitar colisiones. Sirve para un solo servidor con
- * disco persistente; si se despliega en una plataforma con filesystem
- * efímero (Vercel, la mayoría de serverless), hay que sustituir esto por
- * un bucket (S3/Cloudinary) sin tocar el resto del formulario de admin.
+ * Lee el formulario del panel (con archivos o sin ellos). Los archivos se guardan según lo anterior y en
+ * el FormData queda, para cada campo de archivo, la URL pública (texto) — ver uploadedFileToPublicUrl.
  */
 export async function parseCatalogFormData(request: Request) {
   // Los botones de acción rápida (pausar, eliminar, activar/desactivar) envían
@@ -162,44 +177,21 @@ export async function parseCatalogFormData(request: Request) {
     return request.formData();
   }
 
-  if (!GCS_BUCKET) await mkdir(UPLOADS_DIR, { recursive: true });
-
-  const uploadHandler = unstable_composeUploadHandlers(
-    imageUploadHandler,
-    gcsUploadHandler,
-    unstable_createFileUploadHandler({
-      directory: UPLOADS_DIR,
-      file: ({ filename }) => `${randomUUID()}${path.extname(filename ?? "")}`,
-      filter: ({ filename, contentType: partContentType }) =>
-        isAllowedUpload(filename, partContentType),
-      maxPartSize: MAX_VIDEO_BYTES,
-    }),
-    unstable_createMemoryUploadHandler({ maxPartSize: MAX_IMAGE_BYTES }),
-  );
-
-  return unstable_parseMultipartFormData(request, uploadHandler);
+  // maxFileSize: tope por parte (el de los videos); las imágenes se limitan a 8 MB al leerlas.
+  return parseFormData(request, { maxFileSize: MAX_VIDEO_BYTES, maxFiles: 20 }, uploadHandler);
 }
 
 /**
- * Convierte un archivo subido en su URL pública: /uploads/… (disco, desarrollo) o la URL del bucket (producción).
+ * Convierte el valor de un campo de archivo en su URL pública: /uploads/… (disco, desarrollo) o la URL del
+ * bucket (producción).
  *
- * Solo confía en archivos que de verdad se escribieron a disco
- * (NodeOnDiskFile). Cuando el filtro de tipo de archivo rechaza una subida,
- * unstable_composeUploadHandlers cae al manejador de memoria como
- * respaldo — sin este chequeo, uploadedFileToPublicUrl construiría una URL
- * a partir de ese archivo en memoria (que nunca se guardó) y el registro
- * quedaría apuntando a una imagen rota.
+ * Solo se confía en las direcciones que entregó uploadHandler: texto con la forma exacta de nuestro bucket
+ * o de nuestra carpeta de subidas. Un archivo "en bruto" (un File) nunca se acepta, ni un texto
+ * cualquiera que alguien escriba en el campo: así un formulario manipulado no puede hacer que el
+ * registro apunte a una dirección ajena.
  */
 export function uploadedFileToPublicUrl(file: File | string | null): string | null {
-  // En producción el manejador de Cloud Storage entrega directamente la URL
-  // pública (string); solo se acepta si apunta a NUESTRO bucket.
-  if (typeof file === "string") {
-    if (GCS_PUBLIC_PREFIX) return file.startsWith(GCS_PUBLIC_PREFIX) ? file : null;
-    // Desarrollo: el manejador de imágenes entrega "/uploads/<uuid>.<ext>".
-    return /^\/uploads\/[0-9a-f-]{36}\.(webp|png|jpe?g)$/i.test(file) ? file : null;
-  }
-  if (!file || file.size === 0) return null;
-  if (!(file instanceof NodeOnDiskFile)) return null;
-  const anyFile = file as unknown as { name: string };
-  return `/uploads/${path.basename(anyFile.name)}`;
+  if (typeof file !== "string") return null;
+  if (GCS_PUBLIC_PREFIX) return file.startsWith(GCS_PUBLIC_PREFIX) ? file : null;
+  return LOCAL_UPLOAD_URL.test(file) ? file : null;
 }

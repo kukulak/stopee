@@ -1,6 +1,6 @@
-import type { ActionFunctionArgs, LoaderFunctionArgs, MetaFunction } from "@remix-run/node";
-import { json } from "@remix-run/node";
-import { Form, Link, useActionData, useLoaderData, useNavigation } from "@remix-run/react";
+import type { ActionFunctionArgs, LoaderFunctionArgs, MetaFunction } from "react-router";
+import { data } from "react-router";
+import { Form, Link, useActionData, useLoaderData, useNavigation } from "react-router";
 import QRCode from "qrcode";
 import { useState } from "react";
 import { Logo } from "~/components/ui/Logo";
@@ -19,12 +19,12 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const headers = { "Cache-Control": "private, no-store" };
 
   if (admin.twoFactorEnabled) {
-    return json({ enabled: true as const, recoveryCodesLeft: admin.recoveryCodesLeft }, { headers });
+    return data({ enabled: true as const, recoveryCodesLeft: admin.recoveryCodesLeft }, { headers });
   }
 
   const secret = await getOrCreatePendingSecret(admin._id);
   const qr = await QRCode.toDataURL(otpauthUri(secret, admin.email as string), { margin: 1, width: 224 });
-  return json({ enabled: false as const, qr, secret: formatSecretForHumans(secret) }, { headers });
+  return data({ enabled: false as const, qr, secret: formatSecretForHumans(secret) }, { headers });
 }
 
 export async function action({ request }: ActionFunctionArgs) {
@@ -34,29 +34,29 @@ export async function action({ request }: ActionFunctionArgs) {
   const code = String(formData.get("code") ?? "");
 
   const limit = checkRateLimit(`admin-2fa-setup:${String(admin._id)}`, { max: 8, windowMs: 10 * 60 * 1000 });
-  if (!limit.allowed) return json({ error: rateLimitMessage(limit.retryAfterSeconds) }, { status: 429 });
-  if (!code.trim()) return json({ error: "Escribe el código de 6 dígitos." }, { status: 400 });
+  if (!limit.allowed) return data({ error: rateLimitMessage(limit.retryAfterSeconds) }, { status: 429 });
+  if (!code.trim()) return data({ error: "Escribe el código de 6 dígitos." }, { status: 400 });
 
   if (intent === "enable") {
     const recoveryCodes = await confirmEnrollment(admin._id, code);
     if (!recoveryCodes) {
-      return json({ error: "Ese código no coincide. Revisa que sea el más reciente de tu app y vuelve a intentar." }, { status: 400 });
+      return data({ error: "Ese código no coincide. Revisa que sea el más reciente de tu app y vuelve a intentar." }, { status: 400 });
     }
     logAudit("2fa.enabled", { userId: String(admin._id) });
     // Quien acaba de demostrar que tiene la app sigue dentro: su sesión pasa a contar como verificada.
-    return json({ recoveryCodes }, { headers: { "Set-Cookie": await sessionCookieWithSecondFactor(request) } });
+    return data({ recoveryCodes }, { headers: { "Set-Cookie": await sessionCookieWithSecondFactor(request) } });
   }
 
   if (intent === "regenerate") {
     const recoveryCodes = await regenerateRecoveryCodes(admin._id, code);
     if (!recoveryCodes) {
-      return json({ error: "Ese código no coincide. Escribe el que muestra tu app ahora mismo." }, { status: 400 });
+      return data({ error: "Ese código no coincide. Escribe el que muestra tu app ahora mismo." }, { status: 400 });
     }
     logAudit("2fa.recovery_regenerated", { userId: String(admin._id) });
-    return json({ recoveryCodes });
+    return data({ recoveryCodes });
   }
 
-  return json({ error: "Acción no válida." }, { status: 400 });
+  return data({ error: "Acción no válida." }, { status: 400 });
 }
 
 function RecoveryCodes({ codes }: { codes: string[] }) {

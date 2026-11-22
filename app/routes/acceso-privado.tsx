@@ -1,6 +1,6 @@
-import type { ActionFunctionArgs, LoaderFunctionArgs, MetaFunction } from "@remix-run/node";
-import { json, redirect } from "@remix-run/node";
-import { Form, useActionData, useLoaderData, useNavigation } from "@remix-run/react";
+import type { ActionFunctionArgs, LoaderFunctionArgs, MetaFunction } from "react-router";
+import { data, redirect } from "react-router";
+import { Form, useActionData, useLoaderData, useNavigation } from "react-router";
 import { useState } from "react";
 import { connectDB } from "~/lib/db.server";
 import { getPasswordGateConfig, isGateWindowActive } from "~/models/passwordGate.server";
@@ -28,7 +28,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     throw redirect(redirectTo);
   }
 
-  return json({
+  return data({
     redirectTo,
     kicker: config.kicker,
     title: config.title,
@@ -44,7 +44,7 @@ export async function action({ request }: ActionFunctionArgs) {
   // el código es una frase de campaña, no algo con entropía de verdad.
   const rateLimit = checkRateLimit(`gate:${ip}`, { max: 10, windowMs: 10 * 60 * 1000 });
   if (!rateLimit.allowed) {
-    return json({ error: rateLimitMessage(rateLimit.retryAfterSeconds) }, { status: 429 });
+    return data({ error: rateLimitMessage(rateLimit.retryAfterSeconds) }, { status: 429 });
   }
 
   await connectDB();
@@ -60,7 +60,7 @@ export async function action({ request }: ActionFunctionArgs) {
 
   const expected = config.password.trim();
   if (!expected || submitted.toLowerCase() !== expected.toLowerCase()) {
-    return json({ error: config.errorMessage }, { status: 401 });
+    return data({ error: config.errorMessage }, { status: 401 });
   }
 
   const headers = new Headers();

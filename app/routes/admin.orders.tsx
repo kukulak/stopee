@@ -1,7 +1,7 @@
-import type { ActionFunctionArgs, LoaderFunctionArgs, MetaFunction } from "@remix-run/node";
-import { json } from "@remix-run/node";
+import type { ActionFunctionArgs, LoaderFunctionArgs, MetaFunction } from "react-router";
+import { data } from "react-router";
 import mongoose from "mongoose";
-import { Form, useLoaderData, useSearchParams } from "@remix-run/react";
+import { Form, useLoaderData, useSearchParams } from "react-router";
 import { connectDB } from "~/lib/db.server";
 import { OrderModel } from "~/models/order.server";
 import { requireAdmin } from "~/lib/session.server";
@@ -44,7 +44,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const countByStatus = Object.fromEntries(counts.map((c) => [c._id, c.count]));
   const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
 
-  return json({
+  return data({
     orders: orders.map((o) => ({
       id: String(o._id),
       email: o.email,
@@ -86,7 +86,7 @@ export async function action({ request }: ActionFunctionArgs) {
   const id = String(formData.get("id"));
 
   if (!mongoose.isValidObjectId(id)) {
-    return json({ error: "Pedido no válido." }, { status: 400 });
+    return data({ error: "Pedido no válido." }, { status: 400 });
   }
 
   if (intent === "update-status" || intent === "save-tracking") {
@@ -95,7 +95,7 @@ export async function action({ request }: ActionFunctionArgs) {
     if (intent === "update-status") {
       const status = String(formData.get("status"));
       if (!ORDER_STATUSES.includes(status)) {
-        return json({ error: "Estado no válido." }, { status: 400 });
+        return data({ error: "Estado no válido." }, { status: 400 });
       }
       await OrderModel.findByIdAndUpdate(id, { status }, { runValidators: true });
     } else {
@@ -127,10 +127,10 @@ export async function action({ request }: ActionFunctionArgs) {
       logError("orders.shipped-notify", error, { orderId: id });
     }
 
-    return json({ ok: true });
+    return data({ ok: true });
   }
 
-  return json({ ok: false, error: "Acción no reconocida." }, { status: 400 });
+  return data({ ok: false, error: "Acción no reconocida." }, { status: 400 });
 }
 
 const TYPE_LABELS: Record<string, string> = {

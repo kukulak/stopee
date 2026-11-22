@@ -1,6 +1,6 @@
 import { requireStoreAccessApi } from "~/lib/storeAccess.server";
-import type { ActionFunctionArgs } from "@remix-run/node";
-import { json, redirect } from "@remix-run/node";
+import type { ActionFunctionArgs } from "react-router";
+import { data, redirect } from "react-router";
 import { getUser } from "~/lib/session.server";
 import { createSubscriptionCheckoutSession } from "~/lib/stripe.server";
 import { getCatalogItemBySku } from "~/lib/catalog.server";
@@ -14,7 +14,7 @@ export async function action({ request }: ActionFunctionArgs) {
   const ip = getClientIp(request);
   const rateLimit = checkRateLimit(`checkout:${ip}`, { max: 20, windowMs: 10 * 60 * 1000 });
   if (!rateLimit.allowed) {
-    return json({ error: rateLimitMessage(rateLimit.retryAfterSeconds) }, { status: 429 });
+    return data({ error: rateLimitMessage(rateLimit.retryAfterSeconds) }, { status: 429 });
   }
 
   const user = await getUser(request);
@@ -30,7 +30,7 @@ export async function action({ request }: ActionFunctionArgs) {
   const config = await getSubscriptionConfig();
 
   if (typeof frequency !== "string" || !isOfferedFrequency(config, frequency)) {
-    return json({ error: "Elige una frecuencia válida." }, { status: 400 });
+    return data({ error: "Elige una frecuencia válida." }, { status: 400 });
   }
 
   const skus = formData.getAll("sku") as string[];
@@ -40,7 +40,7 @@ export async function action({ request }: ActionFunctionArgs) {
     .filter((r) => r.sku && r.quantity > 0);
 
   if (requestedRows.length === 0) {
-    return json({ error: "Elige al menos un producto para tu caja." }, { status: 400 });
+    return data({ error: "Elige al menos un producto para tu caja." }, { status: 400 });
   }
 
   // Nunca se confía en el precio que venga del formulario — se resuelve cada
@@ -56,7 +56,7 @@ export async function action({ request }: ActionFunctionArgs) {
   const items = resolved.filter((i): i is NonNullable<typeof i> => i !== null);
 
   if (items.length === 0) {
-    return json({ error: "Los productos elegidos ya no están disponibles para auto-envío." }, { status: 400 });
+    return data({ error: "Los productos elegidos ya no están disponibles para auto-envío." }, { status: 400 });
   }
 
   const attribution = await getAttribution(request);
@@ -64,7 +64,7 @@ export async function action({ request }: ActionFunctionArgs) {
   // Stripe rechaza metadatos de más de 500 caracteres; se avisa claro en vez de un error genérico.
   const subscriptionItemsMetadata = items.map((i) => `${i.sku}:${i.quantity}:${i.unitPriceMxn}`).join(",");
   if (subscriptionItemsMetadata.length > 480) {
-    return json({ error: "Tu caja tiene demasiados productos distintos. Quita alguno para continuar." }, { status: 400 });
+    return data({ error: "Tu caja tiene demasiados productos distintos. Quita alguno para continuar." }, { status: 400 });
   }
 
   const session = await createSubscriptionCheckoutSession({
@@ -86,7 +86,7 @@ export async function action({ request }: ActionFunctionArgs) {
   });
 
   if (!session.url) {
-    return json(
+    return data(
       { error: "No se pudo iniciar la suscripción. Intenta de nuevo." },
       { status: 502 },
     );

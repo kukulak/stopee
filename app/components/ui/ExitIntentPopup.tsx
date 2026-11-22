@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useLocation } from "@remix-run/react";
+import { useLocation } from "react-router";
 import { CloseIcon } from "~/components/ui/Icons";
 
 const HIDDEN_PREFIXES = ["/admin", "/cuenta"];

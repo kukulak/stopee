@@ -1,7 +1,7 @@
 import { isStaff } from "~/lib/roles";
-import type { ActionFunctionArgs, LoaderFunctionArgs, MetaFunction } from "@remix-run/node";
-import { json, redirect } from "@remix-run/node";
-import { Form, useActionData, useNavigation, useSearchParams } from "@remix-run/react";
+import type { ActionFunctionArgs, LoaderFunctionArgs, MetaFunction } from "react-router";
+import { data, redirect } from "react-router";
+import { Form, useActionData, useNavigation, useSearchParams } from "react-router";
 import { connectDB } from "~/lib/db.server";
 import { PasswordField } from "~/components/ui/PasswordField";
 import { UserModel, verifyPassword } from "~/models/user.server";
@@ -22,7 +22,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   // redirect de admin.tsx.
   const session = await getSession(request);
   const userId = session.get("userId");
-  if (typeof userId !== "string") return json({});
+  if (typeof userId !== "string") return data({});
 
   await connectDB();
   const user = await UserModel.findById(userId);
@@ -33,14 +33,14 @@ export async function loader({ request }: LoaderFunctionArgs) {
     // queda aquí para pasar por el código (si no, rebotaría entre /admin y esta página).
     const secondFactorOk = !user.twoFactor?.enabledAt || session.get("mfa") === true;
     if (isStaff(user.role) && user.emailVerifiedAt && isFreshAdminSession(session) && secondFactorOk) return redirect("/admin");
-    return json({});
+    return data({});
   }
 
   // La cookie apunta a un usuario que ya no existe (p. ej. la base de datos
   // se reseteó o reseedeó) — admin.tsx redirige aquí al no encontrarlo, y
   // sin esto se generaría un ciclo infinito (ERR_TOO_MANY_REDIRECTS). Se
   // limpia la sesión inválida en vez de seguir rebotando.
-  return json(
+  return data(
     {},
     { headers: { "Set-Cookie": await sessionStorage.destroySession(session) } },
   );
@@ -53,7 +53,7 @@ export async function action({ request }: ActionFunctionArgs) {
   const ip = getClientIp(request);
   const rateLimit = checkRateLimit(`admin-login:${ip}`, { max: 8, windowMs: 10 * 60 * 1000 });
   if (!rateLimit.allowed) {
-    return json({ error: rateLimitMessage(rateLimit.retryAfterSeconds) }, { status: 429 });
+    return data({ error: rateLimitMessage(rateLimit.retryAfterSeconds) }, { status: 429 });
   }
 
   const formData = await request.formData();
@@ -62,25 +62,25 @@ export async function action({ request }: ActionFunctionArgs) {
   const redirectTo = safeRedirectTarget(String(formData.get("redirectTo") ?? ""), "/admin");
 
   if (!email || !password) {
-    return json({ error: "Ingresa tu correo y contraseña." }, { status: 400 });
+    return data({ error: "Ingresa tu correo y contraseña." }, { status: 400 });
   }
 
   // Además del límite por IP: un atacante que rota de IP seguiría probando
   // contraseñas contra la misma cuenta sin este tope por correo.
   const emailLimit = checkRateLimit(`admin-login-email:${email}`, { max: 10, windowMs: 15 * 60 * 1000 });
   if (!emailLimit.allowed) {
-    return json({ error: rateLimitMessage(emailLimit.retryAfterSeconds) }, { status: 429 });
+    return data({ error: rateLimitMessage(emailLimit.retryAfterSeconds) }, { status: 429 });
   }
 
   await connectDB();
   const user = await UserModel.findOne({ email });
 
   if (!(await verifyPassword(password, user?.passwordHash)) || !user) {
-    return json({ error: "Correo o contraseña incorrectos." }, { status: 401 });
+    return data({ error: "Correo o contraseña incorrectos." }, { status: 401 });
   }
 
   if (!isStaff(user.role)) {
-    return json(
+    return data(
       { error: "Esta cuenta no tiene permisos de administrador." },
       { status: 403 },
     );

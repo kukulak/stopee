@@ -1,7 +1,7 @@
 import { isStaff } from "~/lib/roles";
-import type { LoaderFunctionArgs, MetaFunction } from "@remix-run/node";
-import { json } from "@remix-run/node";
-import { Link, useLoaderData, useRouteLoaderData } from "@remix-run/react";
+import type { LoaderFunctionArgs, MetaFunction } from "react-router";
+import { data } from "react-router";
+import { Link, useLoaderData, useRouteLoaderData } from "react-router";
 import type { loader as RootLoader } from "~/root";
 import { Navbar } from "~/components/layout/Navbar";
 import { Footer } from "~/components/layout/Footer";
@@ -50,7 +50,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     )
   ).filter((p): p is { sku: string; name: string } => p !== null);
 
-  return json({
+  return data({
     post: {
       title: post.title,
       excerpt: post.excerpt,

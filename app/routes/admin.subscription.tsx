@@ -1,6 +1,6 @@
-import type { ActionFunctionArgs, LoaderFunctionArgs, MetaFunction } from "@remix-run/node";
-import { json } from "@remix-run/node";
-import { Form, useActionData, useLoaderData, useNavigation } from "@remix-run/react";
+import type { ActionFunctionArgs, LoaderFunctionArgs, MetaFunction } from "react-router";
+import { data } from "react-router";
+import { Form, useActionData, useLoaderData, useNavigation } from "react-router";
 import { useState } from "react";
 import { getSubscriptionConfig, saveSubscriptionConfig } from "~/models/subscriptionSettings.server";
 import {
@@ -18,7 +18,7 @@ export const meta: MetaFunction = () => [{ title: "Auto-envío — Admin STOPee"
 
 export async function loader({ request }: LoaderFunctionArgs) {
   await requireAdmin(request);
-  return json({ config: await getSubscriptionConfig() });
+  return data({ config: await getSubscriptionConfig() });
 }
 
 function parseFrequencies(raw: FormDataEntryValue | null): SubscriptionFrequencyConfig[] | string {
@@ -61,7 +61,7 @@ export async function action({ request }: ActionFunctionArgs) {
 
   const discountPercent = Number(String(formData.get("discountPercent") ?? "").replace(",", "."));
   if (!Number.isInteger(discountPercent) || discountPercent < 0 || discountPercent > MAX_SUBSCRIPTION_DISCOUNT_PERCENT) {
-    return json(
+    return data(
       { ok: false as const, error: `El descuento debe ser un número entero de 0 a ${MAX_SUBSCRIPTION_DISCOUNT_PERCENT}.` },
       { status: 400 },
     );
@@ -69,13 +69,13 @@ export async function action({ request }: ActionFunctionArgs) {
 
   const headline = cleanPlainText(formData.get("headline")).slice(0, 160);
   const ctaLabel = cleanPlainText(formData.get("ctaLabel")).slice(0, 60);
-  if (!headline) return json({ ok: false as const, error: "Escribe el título del bloque." }, { status: 400 });
-  if (!ctaLabel) return json({ ok: false as const, error: "Escribe el texto del botón." }, { status: 400 });
+  if (!headline) return data({ ok: false as const, error: "Escribe el título del bloque." }, { status: 400 });
+  if (!ctaLabel) return data({ ok: false as const, error: "Escribe el texto del botón." }, { status: 400 });
 
   const frequencies = parseFrequencies(formData.get("frequencies"));
-  if (typeof frequencies === "string") return json({ ok: false as const, error: frequencies }, { status: 400 });
+  if (typeof frequencies === "string") return data({ ok: false as const, error: frequencies }, { status: 400 });
   if (!frequencies.some((f) => f.isActive)) {
-    return json({ ok: false as const, error: "Deja al menos una frecuencia activa para que se pueda contratar." }, { status: 400 });
+    return data({ ok: false as const, error: "Deja al menos una frecuencia activa para que se pueda contratar." }, { status: 400 });
   }
 
   const benefits = cleanPlainText(formData.get("benefits"), { multiline: true })
@@ -95,7 +95,7 @@ export async function action({ request }: ActionFunctionArgs) {
     frequencies,
   };
   await saveSubscriptionConfig(next);
-  return json({ ok: true as const, error: null });
+  return data({ ok: true as const, error: null });
 }
 
 type FrequencyRow = SubscriptionFrequencyConfig & { rowId: number };

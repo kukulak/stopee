@@ -1,4 +1,4 @@
-import { useFetcher } from "@remix-run/react";
+import { useFetcher } from "react-router";
 import { useState } from "react";
 import type { CatalogItem } from "~/lib/catalog.server";
 import type { ShippingQuote } from "~/models/shipping.server";

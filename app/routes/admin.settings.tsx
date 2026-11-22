@@ -1,8 +1,8 @@
-import type { LoaderFunctionArgs } from "@remix-run/node";
-import type { ActionFunctionArgs, MetaFunction } from "@remix-run/node";
-import { json } from "@remix-run/node";
+import type { LoaderFunctionArgs } from "react-router";
+import type { ActionFunctionArgs, MetaFunction } from "react-router";
+import { data } from "react-router";
 import { isValidGooglePixelId, isValidMetaPixelId } from "~/lib/inputValidation";
-import { Form, useActionData, useLoaderData, useNavigation } from "@remix-run/react";
+import { Form, useActionData, useLoaderData, useNavigation } from "react-router";
 import { getSiteSettings, updateSiteSettings } from "~/models/siteSettings.server";
 import { requireAdmin } from "~/lib/session.server";
 
@@ -11,7 +11,7 @@ export const meta: MetaFunction = () => [{ title: "Configuración — Admin STOP
 export async function loader({ request }: LoaderFunctionArgs) {
   await requireAdmin(request);
   const settings = await getSiteSettings();
-  return json({
+  return data({
     isStoreActive: settings.isStoreActive,
     googlePixelId: settings.googlePixelId ?? "",
     metaPixelId: settings.metaPixelId ?? "",
@@ -28,7 +28,7 @@ export async function action({ request }: ActionFunctionArgs) {
   if (intent === "toggle-store") {
     const isStoreActive = formData.get("isStoreActive") === "true";
     await updateSiteSettings({ isStoreActive });
-    return json({ ok: true as const, savedIntent: "toggle-store" as const, error: null });
+    return data({ ok: true as const, savedIntent: "toggle-store" as const, error: null });
   }
 
   if (intent === "save-tracking") {
@@ -37,13 +37,13 @@ export async function action({ request }: ActionFunctionArgs) {
     // Estos IDs se escriben dentro de un <script> de todas las páginas: solo se
     // aceptan con el formato exacto que usan Google y Meta.
     if (googlePixelId && !isValidGooglePixelId(googlePixelId)) {
-      return json(
+      return data(
         { ok: false as const, savedIntent: undefined, error: 'El ID de Google no es válido. Debe verse como "G-XXXXXXXXXX".' },
         { status: 400 },
       );
     }
     if (metaPixelId && !isValidMetaPixelId(metaPixelId)) {
-      return json(
+      return data(
         { ok: false as const, savedIntent: undefined, error: "El ID del píxel de Meta no es válido: son solo números (de 8 a 20 dígitos)." },
         { status: 400 },
       );
@@ -54,10 +54,10 @@ export async function action({ request }: ActionFunctionArgs) {
       announcementBarText: String(formData.get("announcementBarText") ?? "").trim(),
       announcementBarActive: formData.get("announcementBarActive") === "on",
     });
-    return json({ ok: true as const, savedIntent: "save-tracking" as const, error: null });
+    return data({ ok: true as const, savedIntent: "save-tracking" as const, error: null });
   }
 
-  return json(
+  return data(
     { ok: false as const, savedIntent: undefined, error: "Acción no reconocida." },
     { status: 400 },
   );

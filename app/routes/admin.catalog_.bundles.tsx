@@ -1,7 +1,7 @@
-import type { LoaderFunctionArgs } from "@remix-run/node";
-import type { ActionFunctionArgs, MetaFunction } from "@remix-run/node";
-import { json } from "@remix-run/node";
-import { Form, useActionData, useLoaderData, useNavigation } from "@remix-run/react";
+import type { LoaderFunctionArgs } from "react-router";
+import type { ActionFunctionArgs, MetaFunction } from "react-router";
+import { data } from "react-router";
+import { Form, useActionData, useLoaderData, useNavigation } from "react-router";
 import { useMemo, useState } from "react";
 import { connectDB } from "~/lib/db.server";
 import { ProductModel } from "~/models/product.server";
@@ -28,7 +28,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     getCurrentStarName(),
   ]);
 
-  return json({
+  return data({
     currentStarName,
     products: products.map((p) => ({
       id: String(p._id),
@@ -84,12 +84,12 @@ export async function action({ request }: ActionFunctionArgs) {
   if (intent === "create-bundle" || intent === "update-bundle") {
     const name = String(formData.get("bundleName") ?? "").trim();
     if (!name) {
-      return json({ ok: false as const, error: "Ponle un nombre al paquete." }, { status: 400 });
+      return data({ ok: false as const, error: "Ponle un nombre al paquete." }, { status: 400 });
     }
 
     const selected = readBundleRows(formData);
     if (selected.length === 0) {
-      return json(
+      return data(
         { ok: false as const, error: "Selecciona al menos un producto con cantidad mayor a 0." },
         { status: 400 },
       );
@@ -118,23 +118,23 @@ export async function action({ request }: ActionFunctionArgs) {
     if (intent === "update-bundle") {
       const id = String(formData.get("id"));
       await BundleModel.findByIdAndUpdate(id, { name, bundlePrice, products: bundleProducts, isFeatured });
-      return json({ ok: true as const, error: null });
+      return data({ ok: true as const, error: null });
     }
 
     const sku = await generateUniqueBundleSku(name, slugify);
     const { images, videos } = collectMediaFromForm(formData);
     await BundleModel.create({ name, sku, bundlePrice, images, videos, products: bundleProducts, isFeatured });
-    return json({ ok: true as const, error: null });
+    return data({ ok: true as const, error: null });
   }
 
   if (intent === "add-media-bundle") {
     const id = String(formData.get("id"));
     const { images, videos } = collectMediaFromForm(formData);
     if (images.length === 0 && videos.length === 0) {
-      return json({ ok: false as const, error: "Elige al menos un archivo o pega una URL." }, { status: 400 });
+      return data({ ok: false as const, error: "Elige al menos un archivo o pega una URL." }, { status: 400 });
     }
     await BundleModel.findByIdAndUpdate(id, { $push: { images: { $each: images }, videos: { $each: videos } } });
-    return json({ ok: true as const, error: null });
+    return data({ ok: true as const, error: null });
   }
 
   if (intent === "remove-media-bundle") {
@@ -146,12 +146,12 @@ export async function action({ request }: ActionFunctionArgs) {
     } else {
       await BundleModel.findByIdAndUpdate(id, { $pull: { videos: { url: value } } });
     }
-    return json({ ok: true as const, error: null });
+    return data({ ok: true as const, error: null });
   }
 
   if (intent === "toggle-bundle-featured") {
     await toggleFeatured("bundle", String(formData.get("id")));
-    return json({ ok: true as const, error: null });
+    return data({ ok: true as const, error: null });
   }
 
   if (intent === "toggle-bundle-active") {
@@ -160,15 +160,15 @@ export async function action({ request }: ActionFunctionArgs) {
       bundle.isActive = !bundle.isActive;
       await bundle.save();
     }
-    return json({ ok: true as const, error: null });
+    return data({ ok: true as const, error: null });
   }
 
   if (intent === "delete-bundle") {
     await BundleModel.findByIdAndDelete(String(formData.get("id")));
-    return json({ ok: true as const, error: null });
+    return data({ ok: true as const, error: null });
   }
 
-  return json({ ok: false as const, error: "Acción no reconocida." }, { status: 400 });
+  return data({ ok: false as const, error: "Acción no reconocida." }, { status: 400 });
 }
 
 type LoaderProduct = { id: string; name: string; price: number };

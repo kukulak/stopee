@@ -1,4 +1,4 @@
-import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
+import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import { requireAdmin } from "~/lib/session.server";
 import { connectDB } from "~/lib/db.server";
 import { LeadModel } from "~/models/lead.server";

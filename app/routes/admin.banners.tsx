@@ -1,8 +1,8 @@
-import type { LoaderFunctionArgs } from "@remix-run/node";
-import type { ActionFunctionArgs, MetaFunction } from "@remix-run/node";
-import { json } from "@remix-run/node";
+import type { LoaderFunctionArgs } from "react-router";
+import type { ActionFunctionArgs, MetaFunction } from "react-router";
+import { data } from "react-router";
 import { LINK_TARGET_ERROR, normalizeLinkTarget } from "~/lib/inputValidation";
-import { Form, useActionData, useLoaderData, useNavigation } from "@remix-run/react";
+import { Form, useActionData, useLoaderData, useNavigation } from "react-router";
 import { useState } from "react";
 import { connectDB } from "~/lib/db.server";
 import { SiteBannerModel } from "~/models/siteBanner.server";
@@ -16,7 +16,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   await requireAdmin(request);
   await connectDB();
   const banners = await SiteBannerModel.find().sort({ createdAt: -1 }).lean();
-  return json({
+  return data({
     banners: banners.map((b) => ({
       id: String(b._id),
       name: b.name,
@@ -63,21 +63,21 @@ export async function action({ request }: ActionFunctionArgs) {
 
   if (intent === "create") {
     const result = buildBannerDoc(formData);
-    if (!result.ok) return json({ ok: false as const, error: result.error }, { status: 400 });
+    if (!result.ok) return data({ ok: false as const, error: result.error }, { status: 400 });
     const isActive = formData.get("isActive") === "on";
     await SiteBannerModel.create({ ...result.doc, isActive });
-    return json({ ok: true as const, error: null });
+    return data({ ok: true as const, error: null });
   }
 
   if (intent === "update") {
     const id = String(formData.get("id"));
     const existing = await SiteBannerModel.findById(id);
-    if (!existing) return json({ ok: false as const, error: "Banner no encontrado." }, { status: 404 });
+    if (!existing) return data({ ok: false as const, error: "Banner no encontrado." }, { status: 404 });
     const result = buildBannerDoc(formData, existing.imageUrl);
-    if (!result.ok) return json({ ok: false as const, error: result.error }, { status: 400 });
+    if (!result.ok) return data({ ok: false as const, error: result.error }, { status: 400 });
     const isActive = formData.get("isActive") === "on";
     await SiteBannerModel.findByIdAndUpdate(id, { ...result.doc, isActive });
-    return json({ ok: true as const, error: null });
+    return data({ ok: true as const, error: null });
   }
 
   if (intent === "toggle-active") {
@@ -86,15 +86,15 @@ export async function action({ request }: ActionFunctionArgs) {
       banner.isActive = !banner.isActive;
       await banner.save();
     }
-    return json({ ok: true as const, error: null });
+    return data({ ok: true as const, error: null });
   }
 
   if (intent === "delete") {
     await SiteBannerModel.findByIdAndDelete(String(formData.get("id")));
-    return json({ ok: true as const, error: null });
+    return data({ ok: true as const, error: null });
   }
 
-  return json({ ok: false as const, error: "Acción no reconocida." }, { status: 400 });
+  return data({ ok: false as const, error: "Acción no reconocida." }, { status: 400 });
 }
 
 type Banner = ReturnType<typeof useLoaderData<typeof loader>>["banners"][number];
