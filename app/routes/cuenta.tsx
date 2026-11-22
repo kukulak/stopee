@@ -28,7 +28,7 @@ import {
   programDisplayName,
 } from "~/lib/subscriptionConfig";
 import { getActiveLoyaltyConfig } from "~/models/promotion.server";
-import { ArrowIcon, CheckIcon, CloseIcon } from "~/components/ui/Icons";
+import { ArrowIcon, CloseIcon } from "~/components/ui/Icons";
 
 const ORDER_STATUS_LABELS: Record<string, string> = {
   paid: "Pagado",
@@ -54,36 +54,6 @@ export async function loader({ request }: LoaderFunctionArgs) {
   ]);
 
   if (!user) throw new Response("Usuario no encontrado", { status: 404 });
-
-  // Stripe redirige aquí justo después de un pago exitoso (ver success_url en
-  // stripe.server.ts). El webhook es la fuente de verdad para crear el
-  // pedido/suscripción — normalmente ya corrió para cuando el cliente
-  // regresa, pero por si acaso llega una fracción de segundo antes,
-  // degradamos a un mensaje genérico en vez de asumir que orders[0]/
-  // subscriptions[0] ya es el que se acaba de crear.
-  const url = new URL(request.url);
-  const justCompleted =
-    url.searchParams.get("checkout") === "success"
-      ? {
-          type: "purchase" as const,
-          order: orders[0]
-            ? {
-                items: orders[0].items as Array<{ quantity: number; name: string }>,
-                netAmount: orders[0].netAmount,
-              }
-            : null,
-        }
-      : url.searchParams.get("subscription") === "success"
-        ? {
-            type: "subscription" as const,
-            subscription: subscriptions[0]
-              ? {
-                  frequency: subscriptions[0].frequency,
-                  items: subscriptions[0].items as Array<{ quantity: number; name: string }>,
-                }
-              : null,
-          }
-        : null;
 
   const dogs = (user.dogs && user.dogs.length > 0
     ? user.dogs
@@ -133,7 +103,6 @@ export async function loader({ request }: LoaderFunctionArgs) {
       disclaimer: subscriptionConfig.disclaimer,
       frequencies: activeFrequencies(subscriptionConfig).map((f) => frequencyKey(f.weeks)),
     },
-    justCompleted,
   });
 }
 
@@ -297,7 +266,7 @@ export async function action({ request }: ActionFunctionArgs) {
 }
 
 export default function Cuenta() {
-  const { user, loyalty, orders, subscriptions, subscriptionProgram, justCompleted } = useLoaderData<typeof loader>();
+  const { user, loyalty, orders, subscriptions, subscriptionProgram } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const navigation = useNavigation();
   const isBusy = navigation.state !== "idle";
@@ -366,67 +335,6 @@ export default function Cuenta() {
               Ir al backoffice
               <ArrowIcon />
             </Link>
-          )}
-
-          {justCompleted && (
-            <div
-              className={
-                justCompleted.type === "subscription"
-                  ? "mt-6 rounded-3xl border-2 border-lima bg-gradient-to-br from-carbon to-bosque p-6 text-hueso sm:p-8"
-                  : "mt-6 rounded-3xl border-2 border-lima bg-lima/10 p-6"
-              }
-            >
-              {justCompleted.type === "purchase" ? (
-                <>
-                  <p className="font-display text-xl font-black text-carbon">¡Gracias por tu compra!</p>
-                  {justCompleted.order ? (
-                    <p className="mt-2 text-carbon/70">
-                      Pedido confirmado:{" "}
-                      <span className="font-semibold text-carbon">
-                        {justCompleted.order.items.map((i) => `${i.quantity}× ${i.name}`).join(", ")}
-                      </span>{" "}
-                      por <span className="font-semibold text-carbon">${justCompleted.order.netAmount} MXN</span>. Te
-                      avisaremos por correo en cuanto salga de nuestro almacén — puedes ver el estado
-                      aquí abajo, en "Mis pedidos".
-                    </p>
-                  ) : (
-                    <p className="mt-2 text-carbon/70">
-                      Tu pago se procesó correctamente. Estamos confirmando los últimos detalles — en
-                      unos segundos verás tu pedido en "Mis pedidos" aquí abajo.
-                    </p>
-                  )}
-                </>
-              ) : justCompleted.subscription ? (
-                <>
-                  <p className="font-body text-sm font-bold uppercase tracking-widest text-lima">Bienvenido</p>
-                  <p className="mt-1 font-display text-2xl font-black sm:text-3xl">Tu auto-envío ya está activo</p>
-                  <p className="mt-3 text-hueso/80">
-                    Tu caja quedó armada así, y te la enviaremos{" "}
-                    <span className="font-semibold text-lima">
-                      {frequencyLabel(justCompleted.subscription.frequency).toLowerCase()}
-                    </span>
-                    :
-                  </p>
-                  <ul className="mt-3 flex flex-col gap-1">
-                    {justCompleted.subscription.items.map((i) => (
-                      <li key={i.name} className="flex items-center gap-2 text-hueso/90">
-                        <CheckIcon className="h-4 w-4" />
-                        {i.quantity}× {i.name}
-                      </li>
-                    ))}
-                  </ul>
-                  <p className="mt-4 text-sm text-hueso/60">
-                    {subscriptionProgram.disclaimer ||
-                      'Pausa, cambia la frecuencia o cancela cuando quieras aquí abajo, en "Mi suscripción".'}
-                  </p>
-                </>
-              ) : (
-                <p className="mt-2 text-carbon/70">
-                  Tu pago se procesó correctamente. Estamos confirmando los últimos detalles — en
-                  unos segundos verás tu suscripción aquí abajo.
-                </p>
-              )}
-            </div>
           )}
 
           {/* Perfil: teléfono, dirección y perros */}
