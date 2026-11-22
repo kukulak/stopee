@@ -1,11 +1,12 @@
 import { createCookieSessionStorage } from "@remix-run/node";
+import { cookieSecret } from "~/lib/secrets.server";
 
 export type CartItem = {
   sku: string;
   quantity: number;
 };
 
-const CART_SECRET = process.env.SESSION_SECRET ?? "stopee-cart-dev-secret";
+const CART_SECRET = cookieSecret("cart");
 
 export const cartStorage = createCookieSessionStorage({
   cookie: {
@@ -78,9 +79,24 @@ export async function setCartCoupon(request: Request, code: string | null) {
   return cartStorage.commitSession(session);
 }
 
+/** Método de envío que el cliente eligió en el carrito (ver ~/models/shipping.server). Sin elegir, el carrito usa el primero activo. */
+export async function getCartShippingMethod(request: Request): Promise<string | null> {
+  const session = await getSession(request);
+  const method = session.get("shippingMethod");
+  return typeof method === "string" && method ? method : null;
+}
+
+export async function setCartShippingMethod(request: Request, method: string | null) {
+  const session = await getSession(request);
+  if (method) session.set("shippingMethod", method);
+  else session.unset("shippingMethod");
+  return cartStorage.commitSession(session);
+}
+
 export async function clearCart(request: Request) {
   const session = await getSession(request);
   session.unset("items");
   session.unset("couponCode");
+  session.unset("shippingMethod");
   return cartStorage.commitSession(session);
 }

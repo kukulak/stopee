@@ -12,6 +12,8 @@ const siteBannerSchema = new Schema(
   {
     name: { type: String, required: true, trim: true },
     imageUrl: { type: String, default: "", trim: true },
+    /** Si el banner no lleva texto (banner.text vacío), la imagen es el único contenido — sin esto, quedaría sin alt real para lectores de pantalla. */
+    imageAlt: { type: String, default: "", trim: true },
     text: { type: String, default: "", trim: true },
     ctaText: { type: String, default: "", trim: true },
     ctaHref: { type: String, default: "/tienda", trim: true },
@@ -27,4 +29,9 @@ export const SiteBannerModel =
 
 export async function getActiveCustomBanner() {
   return SiteBannerModel.findOne({ isActive: true }).sort({ updatedAt: -1 }).lean();
+}
+
+/** Todos los banners activos, para el carrusel del hero de /tienda (a diferencia de getActiveCustomBanner, que solo da el más reciente para el hero único del home). */
+export async function getActiveCustomBanners() {
+  return SiteBannerModel.find({ isActive: true }).sort({ updatedAt: -1 }).lean();
 }

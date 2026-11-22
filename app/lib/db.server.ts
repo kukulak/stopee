@@ -28,7 +28,17 @@ export async function connectDB() {
     // proceso "roto" de forma permanente aunque la base vuelva a estar
     // disponible. Al fallar, se limpia la caché para que el siguiente intento
     // vuelva a conectar en vez de repetir el mismo error para siempre.
-    cache.promise = mongoose.connect(MONGODB_URI as string, { bufferCommands: false }).catch((err) => {
+    cache.promise = mongoose
+      .connect(MONGODB_URI as string, {
+        bufferCommands: false,
+        // Cada instancia de Cloud Run abre su propio grupo de conexiones. Con el
+        // valor por defecto (100) unas pocas instancias agotan el límite de un
+        // clúster Atlas gratuito (500); 10 sobra para una tienda de este tamaño.
+        maxPoolSize: 10,
+        // Sin esto, una base caída deja las peticiones colgadas 30 s; así falla
+        // rápido y se ve un error claro en vez de un sitio congelado.
+        serverSelectionTimeoutMS: 8000,
+      }).catch((err) => {
       cache.promise = null;
       throw err;
     });

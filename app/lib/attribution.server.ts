@@ -6,6 +6,25 @@ export type Attribution = {
   utm_campaign: string;
 };
 
+/**
+ * Los valores utm_* vienen de la URL y la cookie no está firmada, así que se
+ * recortan: Stripe rechaza metadatos de más de 500 caracteres (un utm_campaign
+ * larguísimo haría fallar el pago de ese visitante) y no deben guardarse
+ * textos arbitrarios en los pedidos.
+ */
+function cleanUtm(value: unknown): string {
+  return typeof value === "string" ? value.replace(/[\u0000-\u001f\u007f]/g, "").trim().slice(0, 100) : "";
+}
+
+function cleanAttribution(raw: Partial<Attribution> | null): Attribution | null {
+  if (!raw || typeof raw !== "object") return null;
+  return {
+    utm_source: cleanUtm(raw.utm_source),
+    utm_medium: cleanUtm(raw.utm_medium),
+    utm_campaign: cleanUtm(raw.utm_campaign),
+  };
+}
+
 const attributionCookie = createCookie("__stopee_attribution", {
   path: "/",
   httpOnly: true,
@@ -29,9 +48,7 @@ export async function readOrCaptureAttribution(
   request: Request,
 ): Promise<{ attribution: Attribution | null; setCookieHeader: string | null }> {
   const url = new URL(request.url);
-  const existing = ((await attributionCookie.parse(
-    request.headers.get("Cookie"),
-  )) as Attribution | null) ?? null;
+  const existing = cleanAttribution(await attributionCookie.parse(request.headers.get("Cookie")));
 
   if (existing || !isAttributableEntryPoint(url.pathname)) {
     return { attribution: existing, setCookieHeader: null };
@@ -40,12 +57,12 @@ export async function readOrCaptureAttribution(
   const utmSource = url.searchParams.get("utm_source");
   let attribution: Attribution | null = null;
 
-  if (utmSource) {
-    attribution = {
-      utm_source: utmSource,
+  if (cleanUtm(utmSource)) {
+    attribution = cleanAttribution({
+      utm_source: utmSource ?? "",
       utm_medium: url.searchParams.get("utm_medium") ?? "",
       utm_campaign: url.searchParams.get("utm_campaign") ?? "",
-    };
+    });
   } else {
     // Sin parámetros de campaña: se infiere el canal por el referrer y la
     // página de entrada, en vez de dejarlo todo como "directo".
@@ -72,5 +89,5 @@ export async function readOrCaptureAttribution(
 }
 
 export async function getAttribution(request: Request): Promise<Attribution | null> {
-  return ((await attributionCookie.parse(request.headers.get("Cookie"))) as Attribution | null) ?? null;
+  return cleanAttribution(await attributionCookie.parse(request.headers.get("Cookie")));
 }

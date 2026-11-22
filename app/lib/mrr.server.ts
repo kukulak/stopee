@@ -1,11 +1,10 @@
-import { SUBSCRIPTION_FREQUENCIES, type SubscriptionFrequency } from "~/data/subscriptionFrequencies";
+import { weeksFromKey } from "~/lib/subscriptionConfig";
 
 const AVG_WEEKS_PER_MONTH = 4.345;
 
-/** Normaliza el monto de una entrega a su equivalente mensual, según el intervalo real de Stripe. */
+/** Normaliza el monto de una entrega a su equivalente mensual, según cada cuántas semanas se cobra. */
 export function monthlyEquivalent(amountMxn: number, frequency: string): number {
-  const freq = SUBSCRIPTION_FREQUENCIES[frequency as SubscriptionFrequency];
-  if (!freq) return amountMxn;
-  if (freq.interval === "month") return amountMxn / freq.intervalCount;
-  return (amountMxn * AVG_WEEKS_PER_MONTH) / freq.intervalCount;
+  const weeks = weeksFromKey(frequency);
+  if (!weeks) return amountMxn;
+  return (amountMxn * AVG_WEEKS_PER_MONTH) / weeks;
 }

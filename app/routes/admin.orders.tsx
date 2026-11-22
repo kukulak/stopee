@@ -1,8 +1,13 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs, MetaFunction } from "@remix-run/node";
 import { json } from "@remix-run/node";
+import mongoose from "mongoose";
 import { Form, useLoaderData, useSearchParams } from "@remix-run/react";
 import { connectDB } from "~/lib/db.server";
 import { OrderModel } from "~/models/order.server";
+import { requireAdmin } from "~/lib/session.server";
+import { sendEmail } from "~/lib/mail.server";
+import { orderShippedEmail } from "~/lib/emailTemplates.server";
+import { logError } from "~/lib/logger.server";
 
 export const meta: MetaFunction = () => [{ title: "Pedidos — Admin STOPee" }];
 
@@ -16,9 +21,11 @@ const STATUS_LABELS: Record<string, string> = {
   refunded: "Reembolsado",
 };
 const STATUS_FLOW = ["paid", "processing", "shipped", "delivered"] as const;
+const ORDER_STATUSES: string[] = [...STATUS_FLOW, "cancelled", "refunded"];
 const PAGE_SIZE = 20;
 
 export async function loader({ request }: LoaderFunctionArgs) {
+  await requireAdmin(request);
   await connectDB();
   const url = new URL(request.url);
   const statusFilter = url.searchParams.get("status") ?? "all";
@@ -43,6 +50,20 @@ export async function loader({ request }: LoaderFunctionArgs) {
       email: o.email,
       items: o.items,
       netAmount: o.netAmount,
+      shippingCost: o.shippingCost ?? 0,
+      shippingMethodLabel: o.shippingMethodLabel ?? "",
+      shippingFree: Boolean(o.shippingFree),
+      shippingAddress: o.shippingAddress
+        ? {
+            name: o.shippingAddress.name ?? "",
+            phone: o.shippingAddress.phone ?? "",
+            line1: o.shippingAddress.line1 ?? "",
+            line2: o.shippingAddress.line2 ?? "",
+            city: o.shippingAddress.city ?? "",
+            state: o.shippingAddress.state ?? "",
+            postalCode: o.shippingAddress.postalCode ?? "",
+          }
+        : null,
       type: o.type,
       status: o.status,
       trackingNumber: o.trackingNumber ?? "",
@@ -58,23 +79,54 @@ export async function loader({ request }: LoaderFunctionArgs) {
 }
 
 export async function action({ request }: ActionFunctionArgs) {
+  await requireAdmin(request);
   await connectDB();
   const formData = await request.formData();
   const intent = formData.get("intent");
   const id = String(formData.get("id"));
 
-  if (intent === "update-status") {
-    const status = String(formData.get("status"));
-    await OrderModel.findByIdAndUpdate(id, { status });
-    return json({ ok: true });
+  if (!mongoose.isValidObjectId(id)) {
+    return json({ error: "Pedido no válido." }, { status: 400 });
   }
 
-  if (intent === "save-tracking") {
-    const trackingNumber = String(formData.get("trackingNumber") ?? "").trim();
-    await OrderModel.findByIdAndUpdate(id, {
-      trackingNumber,
-      ...(trackingNumber ? { status: "shipped" } : {}),
-    });
+  if (intent === "update-status" || intent === "save-tracking") {
+    const before = await OrderModel.findById(id).select("status trackingNumber").lean();
+
+    if (intent === "update-status") {
+      const status = String(formData.get("status"));
+      if (!ORDER_STATUSES.includes(status)) {
+        return json({ error: "Estado no válido." }, { status: 400 });
+      }
+      await OrderModel.findByIdAndUpdate(id, { status }, { runValidators: true });
+    } else {
+      const trackingNumber = String(formData.get("trackingNumber") ?? "").trim();
+      await OrderModel.findByIdAndUpdate(id, {
+        trackingNumber: trackingNumber.slice(0, 80),
+        ...(trackingNumber ? { status: "shipped" } : {}),
+      });
+    }
+
+    // Aviso al cliente (lo prometemos en "Mi cuenta"): cuando el pedido pasa a
+    // "En tránsito" o cuando se captura/cambia el número de guía.
+    try {
+      const after = await OrderModel.findById(id).lean();
+      if (after && before) {
+        const justShipped = after.status === "shipped" && before.status !== "shipped";
+        const trackingChanged = Boolean(after.trackingNumber) && after.trackingNumber !== before.trackingNumber;
+        if (justShipped || trackingChanged) {
+          await sendEmail({
+            to: { email: after.email },
+            ...orderShippedEmail({
+              trackingNumber: after.trackingNumber || undefined,
+              items: after.items.map((i) => ({ name: i.name, quantity: i.quantity })),
+            }),
+          });
+        }
+      }
+    } catch (error) {
+      logError("orders.shipped-notify", error, { orderId: id });
+    }
+
     return json({ ok: true });
   }
 
@@ -94,7 +146,7 @@ export default function AdminOrders() {
 
   return (
     <div>
-      <h1 className="font-display text-2xl font-black text-carbon">Pedidos</h1>
+      <h1 className="font-display text-2xl font-black text-carbon sm:text-3xl">Pedidos</h1>
       <p className="mt-1 text-sm text-carbon/60">
         Operación diaria: estado, guía y seguimiento de cada pedido. {totalCount} en total.
       </p>
@@ -130,10 +182,13 @@ export default function AdminOrders() {
       ) : (
         <ul className="mt-6 flex flex-col gap-4">
           {orders.map((order) => (
-            <li key={order.id} className="rounded-3xl border border-carbon/10 bg-white p-5">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <p className="font-semibold text-carbon">{order.email}</p>
+            <li key={order.id} className="min-w-0 rounded-3xl border border-carbon/10 bg-white p-4 sm:p-5">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
+                <p className="order-first font-display text-lg font-black text-carbon sm:order-last sm:shrink-0">
+                  ${order.netAmount} MXN
+                </p>
+                <div className="min-w-0 sm:flex-1">
+                  <p className="break-all font-semibold text-carbon sm:break-words">{order.email}</p>
                   <p className="text-sm text-carbon/60">
                     {(order.items as Array<{ quantity: number; name: string }>)
                       .map((i) => `${i.quantity}× ${i.name}`)
@@ -149,23 +204,46 @@ export default function AdminOrders() {
                         <span className="font-semibold text-oliva">{order.promotionName}</span>
                       </>
                     )}
+                    {(order.shippingMethodLabel || order.shippingCost > 0) && (
+                      <>
+                        {" "}
+                        · {order.shippingMethodLabel || "Envío"}:{" "}
+                        {order.shippingFree || order.shippingCost === 0 ? "gratis" : `$${order.shippingCost} MXN`}
+                      </>
+                    )}
                   </p>
+                  {order.shippingAddress && (order.shippingAddress.line1 || order.shippingAddress.postalCode) && (
+                    <p className="mt-2 rounded-xl bg-carbon/5 px-3 py-2 text-xs text-carbon/70">
+                      <span className="font-semibold text-carbon">Entregar a:</span>{" "}
+                      {[order.shippingAddress.name, order.shippingAddress.phone && `Tel. ${order.shippingAddress.phone}`]
+                        .filter(Boolean)
+                        .join(" · ")}
+                      <br />
+                      {[
+                        order.shippingAddress.line1,
+                        order.shippingAddress.line2,
+                        order.shippingAddress.city,
+                        order.shippingAddress.state,
+                        order.shippingAddress.postalCode && `CP ${order.shippingAddress.postalCode}`,
+                      ]
+                        .filter(Boolean)
+                        .join(", ")}
+                    </p>
+                  )}
                 </div>
-                <p className="font-display text-lg font-black text-carbon">
-                  ${order.netAmount} MXN
-                </p>
               </div>
 
-              <div className="mt-4 flex flex-wrap items-center gap-3">
-                <Form method="post" className="flex items-center gap-2">
+              <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+                <Form method="post" className="flex w-full items-center gap-2 sm:w-auto">
                   <input type="hidden" name="intent" value="update-status" />
                   <input type="hidden" name="id" value={order.id} />
-                  <label className="text-xs font-semibold text-carbon/60">Estado</label>
+                  <label htmlFor={`status-${order.id}`} className="shrink-0 text-xs font-semibold text-carbon/60">Estado</label>
                   <select
+                    id={`status-${order.id}`}
                     name="status"
                     defaultValue={order.status}
                     onChange={(e) => e.currentTarget.form?.requestSubmit()}
-                    className="min-h-11 rounded-xl border border-carbon/15 px-3 text-sm focus:border-oliva focus:outline-none"
+                    className="min-h-11 min-w-0 flex-1 rounded-xl border border-carbon/15 px-3 text-sm focus:border-oliva focus:outline-none sm:flex-none"
                   >
                     {[...STATUS_FLOW, "cancelled", "refunded"].map((s) => (
                       <option key={s} value={s}>
@@ -175,19 +253,20 @@ export default function AdminOrders() {
                   </select>
                 </Form>
 
-                <Form method="post" className="flex items-center gap-2">
+                <Form method="post" className="flex w-full items-center gap-2 sm:w-auto">
                   <input type="hidden" name="intent" value="save-tracking" />
                   <input type="hidden" name="id" value={order.id} />
-                  <label className="text-xs font-semibold text-carbon/60">Guía</label>
+                  <label htmlFor={`tracking-${order.id}`} className="shrink-0 text-xs font-semibold text-carbon/60">Guía</label>
                   <input
+                    id={`tracking-${order.id}`}
                     name="trackingNumber"
                     defaultValue={order.trackingNumber}
                     placeholder="Número de guía"
-                    className="min-h-11 w-40 rounded-xl border border-carbon/15 px-3 text-sm focus:border-oliva focus:outline-none"
+                    className="min-h-11 min-w-0 flex-1 rounded-xl border border-carbon/15 px-3 text-sm focus:border-oliva focus:outline-none sm:w-40 sm:flex-none"
                   />
                   <button
                     type="submit"
-                    className="min-h-11 rounded-full border border-carbon/15 px-4 text-xs font-semibold text-carbon hover:border-carbon/30"
+                    className="min-h-11 shrink-0 rounded-full border border-carbon/15 px-4 text-xs font-semibold text-carbon hover:border-carbon/30"
                   >
                     Guardar
                   </button>
@@ -199,7 +278,7 @@ export default function AdminOrders() {
       )}
 
       {totalPages > 1 && (
-        <div className="mt-6 flex items-center justify-center gap-2">
+        <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
           {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => {
             const params = new URLSearchParams(searchParams);
             params.set("page", String(p));

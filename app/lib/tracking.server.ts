@@ -23,6 +23,22 @@ export async function getOrCreateVisitorId(
 
 export type TrackableEvent = "page_view" | "view_item" | "add_to_cart" | "begin_checkout" | "banner_click";
 
+/** Cuánto se conservan los eventos (guardan correos de personas con sesión iniciada). */
+const EVENT_RETENTION_MS = 180 * 24 * 60 * 60 * 1000;
+let lastPruneAt = 0;
+
+/**
+ * Borra los eventos que ya pasaron su plazo. Se ejecuta como máximo una vez por
+ * hora por proceso, colgado de la escritura de un evento, en vez de un índice
+ * TTL: así funciona igual en bases que ya tenían ese índice sin expiración.
+ */
+async function pruneOldEvents() {
+  const now = Date.now();
+  if (now - lastPruneAt < 60 * 60 * 1000) return;
+  lastPruneAt = now;
+  await AnalyticsEventModel.deleteMany({ createdAt: { $lt: new Date(now - EVENT_RETENTION_MS) } });
+}
+
 export async function logEvent(
   sessionId: string,
   type: TrackableEvent,
@@ -37,4 +53,6 @@ export async function logEvent(
     userId: identity?.userId || undefined,
     email: identity?.email || undefined,
   });
+  // La limpieza nunca debe hacer fallar ni retrasar el registro del evento.
+  void pruneOldEvents().catch(() => {});
 }

@@ -1,11 +1,10 @@
 import type { LoaderFunctionArgs } from "@remix-run/node";
 import { requireAdmin } from "~/lib/session.server";
 import { connectDB } from "~/lib/db.server";
+import { csvCell } from "~/lib/csv";
 import { OrderModel } from "~/models/order.server";
 
-function csvEscape(value: string) {
-  return `"${value.replace(/"/g, '""')}"`;
-}
+const csvEscape = csvCell;
 
 export async function loader({ request }: LoaderFunctionArgs) {
   await requireAdmin(request);

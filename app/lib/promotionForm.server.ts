@@ -1,8 +1,9 @@
 import { z } from "zod";
+import { LINK_TARGET_ERROR, normalizeLinkTarget } from "~/lib/inputValidation";
 import { PROMOTION_TYPES, type PromotionType } from "~/data/promotionTypes";
 import { PromotionModel } from "~/models/promotion.server";
 import { uploadedFileToPublicUrl } from "~/lib/upload.server";
-import { PRODUCTS } from "~/data/products";
+import { getCatalogItemBySku } from "~/lib/catalog.server";
 
 const baseSchema = z.object({
   name: z.string().trim().min(2, "Ponle un nombre a la promoción."),
@@ -12,6 +13,7 @@ const baseSchema = z.object({
   usageLimit: z.coerce.number().optional(),
   bannerEnabled: z.literal("on").optional(),
   bannerText: z.string().optional(),
+  bannerImageAlt: z.string().optional(),
   bannerCtaText: z.string().optional(),
   bannerCtaHref: z.string().optional(),
 });
@@ -41,6 +43,7 @@ export async function buildPromotionDocFromFormData(
     usageLimit: formData.get("usageLimit") || undefined,
     bannerEnabled: formData.get("bannerEnabled") || undefined,
     bannerText: formData.get("bannerText") || undefined,
+    bannerImageAlt: formData.get("bannerImageAlt") || undefined,
     bannerCtaText: formData.get("bannerCtaText") || undefined,
     bannerCtaHref: formData.get("bannerCtaHref") || undefined,
   });
@@ -50,6 +53,10 @@ export async function buildPromotionDocFromFormData(
   }
 
   const { type } = base.data;
+
+  const rawCtaHref = (base.data.bannerCtaHref ?? "").trim();
+  const bannerCtaHref = rawCtaHref ? normalizeLinkTarget(rawCtaHref) : "/tienda";
+  if (!bannerCtaHref) return { ok: false, error: LINK_TARGET_ERROR, status: 400 };
 
   const uploadedImageUrl = uploadedFileToPublicUrl(formData.get("bannerImage") as File | null);
   const removeImage = formData.get("removeBannerImage") === "on";
@@ -65,8 +72,9 @@ export async function buildPromotionDocFromFormData(
       enabled: base.data.bannerEnabled === "on",
       text: base.data.bannerText ?? "",
       imageUrl,
+      imageAlt: base.data.bannerImageAlt ?? "",
       ctaText: base.data.bannerCtaText ?? "",
-      ctaHref: base.data.bannerCtaHref || "/tienda",
+      ctaHref: bannerCtaHref,
     },
   };
 
@@ -86,7 +94,49 @@ export async function buildPromotionDocFromFormData(
       if (exists) {
         return { ok: false, error: "Ya existe un cupón con ese código.", status: 409 };
       }
-      doc.coupon = { code, percentage };
+
+      // Reglas opcionales del cupón (ver ~/lib/couponRules).
+      const emailsRaw = String(formData.get("couponAllowedEmails") ?? "");
+      const allowedEmails = [
+        ...new Set(
+          emailsRaw
+            .split(/[\s,;]+/)
+            .map((e) => e.trim().toLowerCase())
+            .filter(Boolean),
+        ),
+      ];
+      const badEmail = allowedEmails.find((e) => !z.string().email().safeParse(e).success);
+      if (badEmail) {
+        return { ok: false, error: `"${badEmail}" no parece un correo válido. Sepáralos con coma o salto de línea.`, status: 400 };
+      }
+      if (allowedEmails.length > 500) {
+        return { ok: false, error: "Máximo 500 correos por cupón.", status: 400 };
+      }
+
+      const requiredSkus = [...new Set((formData.getAll("couponRequiredSkus") as string[]).filter(Boolean))];
+      for (const sku of requiredSkus) {
+        if (!(await getCatalogItemBySku(sku, { includeUnavailable: true }))) {
+          return { ok: false, error: "Uno de los productos requeridos ya no existe en el catálogo.", status: 400 };
+        }
+      }
+
+      const minSpendMxn = Number(formData.get("couponMinSpendMxn") ?? 0);
+      const minQuantity = Number(formData.get("couponMinQuantity") ?? 0);
+      if (!Number.isFinite(minSpendMxn) || minSpendMxn < 0 || !Number.isFinite(minQuantity) || minQuantity < 0) {
+        return { ok: false, error: "La compra mínima no puede ser negativa.", status: 400 };
+      }
+
+      doc.coupon = {
+        code,
+        percentage,
+        oncePerCustomer: formData.get("couponOncePerCustomer") === "on",
+        firstPurchaseOnly: formData.get("couponFirstPurchaseOnly") === "on",
+        stackable: formData.get("couponStackable") === "on",
+        allowedEmails,
+        requiredSkus,
+        minSpendMxn: minSpendMxn || undefined,
+        minQuantity: Math.floor(minQuantity) || undefined,
+      };
       break;
     }
     case "bogo": {
@@ -185,7 +235,7 @@ export async function buildPromotionDocFromFormData(
       if (!rewardDiscountPercentage && !rewardGiftSku) {
         return { ok: false, error: "Define al menos una recompensa: % de descuento o producto de regalo.", status: 400 };
       }
-      if (rewardGiftSku && !(rewardGiftSku in PRODUCTS)) {
+      if (rewardGiftSku && !(await getCatalogItemBySku(rewardGiftSku, { includeUnavailable: true }))) {
         return { ok: false, error: "El producto de regalo no es válido.", status: 400 };
       }
 
@@ -193,7 +243,7 @@ export async function buildPromotionDocFromFormData(
 
       if (condition !== "first_purchase") {
         const targetSku = String(formData.get("requirementTargetSku") ?? "");
-        if (!targetSku || !(targetSku in PRODUCTS)) {
+        if (!targetSku || !(await getCatalogItemBySku(targetSku, { includeUnavailable: true }))) {
           return { ok: false, error: "Elige el producto o paquete requerido.", status: 400 };
         }
         byRequirement.targetSku = targetSku;

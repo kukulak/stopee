@@ -30,6 +30,9 @@ const analyticsEventSchema = new Schema(
   { timestamps: false },
 );
 
+// Consultas del embudo y de carritos abandonados: por tipo y rango de fechas.
+analyticsEventSchema.index({ type: 1, createdAt: -1 });
+
 export type AnalyticsEventDoc = InferSchemaType<typeof analyticsEventSchema>;
 
 export const AnalyticsEventModel =

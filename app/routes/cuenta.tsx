@@ -1,12 +1,16 @@
+import { isStaff } from "~/lib/roles";
 import type { ActionFunctionArgs, LoaderFunctionArgs, MetaFunction } from "@remix-run/node";
 import { json, redirect } from "@remix-run/node";
-import { Form, useActionData, useLoaderData, useNavigation } from "@remix-run/react";
+import { Form, Link, useActionData, useLoaderData, useNavigation } from "@remix-run/react";
 import { useState } from "react";
+import { z } from "zod";
 import { Navbar } from "~/components/layout/Navbar";
 import { Footer } from "~/components/layout/Footer";
 import { connectDB } from "~/lib/db.server";
-import { requireUserId } from "~/lib/session.server";
-import { UserModel } from "~/models/user.server";
+import { requireUserId, logout } from "~/lib/session.server";
+import { UserModel, verifyPassword } from "~/models/user.server";
+import { checkRateLimit, rateLimitMessage } from "~/lib/rateLimit.server";
+import { sendVerificationEmail } from "~/lib/accountEmails.server";
 import { OrderModel } from "~/models/order.server";
 import { SubscriptionModel } from "~/models/subscription.server";
 import {
@@ -15,11 +19,16 @@ import {
   resumeSubscription,
   updateSubscriptionFrequency,
 } from "~/lib/stripe.server";
+import { getSubscriptionConfig } from "~/models/subscriptionSettings.server";
 import {
-  SUBSCRIPTION_FREQUENCIES,
-  type SubscriptionFrequency,
-} from "~/data/subscriptionFrequencies";
+  activeFrequencies,
+  frequencyKey,
+  frequencyLabel,
+  isOfferedFrequency,
+  programDisplayName,
+} from "~/lib/subscriptionConfig";
 import { getActiveLoyaltyConfig } from "~/models/promotion.server";
+import { ArrowIcon, CheckIcon, CloseIcon } from "~/components/ui/Icons";
 
 const ORDER_STATUS_LABELS: Record<string, string> = {
   paid: "Pagado",
@@ -36,14 +45,45 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const userId = await requireUserId(request);
   await connectDB();
 
-  const [user, orders, subscriptions, loyaltyConfig] = await Promise.all([
+  const [user, orders, subscriptions, loyaltyConfig, subscriptionConfig] = await Promise.all([
     UserModel.findById(userId).lean(),
     OrderModel.find({ user: userId }).sort({ createdAt: -1 }).lean(),
     SubscriptionModel.find({ user: userId }).sort({ createdAt: -1 }).lean(),
     getActiveLoyaltyConfig(),
+    getSubscriptionConfig(),
   ]);
 
   if (!user) throw new Response("Usuario no encontrado", { status: 404 });
+
+  // Stripe redirige aquí justo después de un pago exitoso (ver success_url en
+  // stripe.server.ts). El webhook es la fuente de verdad para crear el
+  // pedido/suscripción — normalmente ya corrió para cuando el cliente
+  // regresa, pero por si acaso llega una fracción de segundo antes,
+  // degradamos a un mensaje genérico en vez de asumir que orders[0]/
+  // subscriptions[0] ya es el que se acaba de crear.
+  const url = new URL(request.url);
+  const justCompleted =
+    url.searchParams.get("checkout") === "success"
+      ? {
+          type: "purchase" as const,
+          order: orders[0]
+            ? {
+                items: orders[0].items as Array<{ quantity: number; name: string }>,
+                netAmount: orders[0].netAmount,
+              }
+            : null,
+        }
+      : url.searchParams.get("subscription") === "success"
+        ? {
+            type: "subscription" as const,
+            subscription: subscriptions[0]
+              ? {
+                  frequency: subscriptions[0].frequency,
+                  items: subscriptions[0].items as Array<{ quantity: number; name: string }>,
+                }
+              : null,
+          }
+        : null;
 
   const dogs = (user.dogs && user.dogs.length > 0
     ? user.dogs
@@ -56,6 +96,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
     user: {
       name: user.name,
       email: user.email,
+      emailVerified: Boolean(user.emailVerifiedAt),
+      isAdmin: isStaff(user.role),
       phone: user.phone ?? "",
       address: user.address ?? {},
       dogs: dogs.map((d) => ({ name: d.name, birthday: d.birthday ? new Date(d.birthday).toISOString().slice(0, 10) : "" })),
@@ -75,16 +117,23 @@ export async function loader({ request }: LoaderFunctionArgs) {
       id: String(o._id),
       items: o.items,
       netAmount: o.netAmount,
+      shippingCost: o.shippingCost ?? 0,
       status: o.status,
       createdAt: o.createdAt,
     })),
     subscriptions: subscriptions.map((s) => ({
       id: String(s._id),
-      stripeSubscriptionId: s.stripeSubscriptionId,
+      items: s.items as Array<{ sku: string; quantity: number; name: string }>,
       frequency: s.frequency,
       status: s.status,
       currentPeriodEnd: s.currentPeriodEnd,
     })),
+    subscriptionProgram: {
+      name: programDisplayName(subscriptionConfig),
+      disclaimer: subscriptionConfig.disclaimer,
+      frequencies: activeFrequencies(subscriptionConfig).map((f) => frequencyKey(f.weeks)),
+    },
+    justCompleted,
   });
 }
 
@@ -96,37 +145,125 @@ export async function action({ request }: ActionFunctionArgs) {
   const subscriptionId = String(formData.get("subscriptionId") ?? "");
 
   if (intent === "update-profile") {
-    const phone = String(formData.get("phone") ?? "").trim();
+    const profileSchema = z.object({
+      phone: z.string().trim().max(20),
+      addressLine1: z.string().trim().max(200),
+      addressLine2: z.string().trim().max(200),
+      addressCity: z.string().trim().max(100),
+      addressState: z.string().trim().max(100),
+      addressPostalCode: z.union([z.literal(""), z.string().trim().regex(/^\d{4,5}$/, "El código postal debe tener 4 o 5 dígitos.")]),
+    });
+    const parsed = profileSchema.safeParse({
+      phone: formData.get("phone"),
+      addressLine1: formData.get("addressLine1"),
+      addressLine2: formData.get("addressLine2"),
+      addressCity: formData.get("addressCity"),
+      addressState: formData.get("addressState"),
+      addressPostalCode: formData.get("addressPostalCode"),
+    });
+    if (!parsed.success) {
+      return json(
+        { ok: false, savedIntent: "update-profile" as const, error: parsed.error.issues[0]?.message ?? "Revisa los datos." },
+        { status: 400 },
+      );
+    }
+
     const address = {
-      line1: String(formData.get("addressLine1") ?? "").trim(),
-      line2: String(formData.get("addressLine2") ?? "").trim(),
-      city: String(formData.get("addressCity") ?? "").trim(),
-      state: String(formData.get("addressState") ?? "").trim(),
-      postalCode: String(formData.get("addressPostalCode") ?? "").trim(),
+      line1: parsed.data.addressLine1,
+      line2: parsed.data.addressLine2,
+      city: parsed.data.addressCity,
+      state: parsed.data.addressState,
+      postalCode: parsed.data.addressPostalCode,
       country: "MX",
     };
-    const dogNames = formData.getAll("dogName") as string[];
+    const dogNames = formData.getAll("mascota") as string[];
     const dogBirthdays = formData.getAll("dogBirthday") as string[];
     const dogs = dogNames
       .map((name, i) => ({ name: name.trim(), birthday: dogBirthdays[i] ? new Date(dogBirthdays[i]) : undefined }))
       .filter((d) => d.name);
 
-    await UserModel.findByIdAndUpdate(userId, { phone, address, dogs });
-    return json({ ok: true, savedIntent: "update-profile" as const });
+    await UserModel.findByIdAndUpdate(userId, { phone: parsed.data.phone, address, dogs });
+    return json({ ok: true, savedIntent: "update-profile" as const, error: null as string | null });
+  }
+
+  if (intent === "resend-verification") {
+    const user = await UserModel.findById(userId);
+    if (!user) return json({ ok: false, savedIntent: "resend-verification" as const, error: "No se encontró tu cuenta." }, { status: 404 });
+    if (user.emailVerifiedAt) {
+      return json({ ok: true, savedIntent: "resend-verification" as const, error: null as string | null });
+    }
+    const limit = checkRateLimit(`resend-verification:${userId}`, { max: 3, windowMs: 60 * 60 * 1000 });
+    if (!limit.allowed) {
+      return json({ ok: false, savedIntent: "resend-verification" as const, error: rateLimitMessage(limit.retryAfterSeconds) }, { status: 429 });
+    }
+    const { result } = await sendVerificationEmail(user);
+    if (!result.ok && !result.skipped) {
+      return json(
+        { ok: false, savedIntent: "resend-verification" as const, error: "No pudimos enviar el correo en este momento. Intenta de nuevo en unos minutos." },
+        { status: 502 },
+      );
+    }
+    return json({ ok: true, savedIntent: "resend-verification" as const, error: null as string | null });
+  }
+
+  if (intent === "delete-account") {
+    const user = await UserModel.findById(userId);
+    if (!user || isStaff(user.role)) {
+      return json({ ok: false, savedIntent: "delete-account" as const, error: "No se pudo eliminar la cuenta." }, { status: 400 });
+    }
+
+    // Pedir la contraseña evita que alguien con acceso momentáneo a una sesión
+    // abierta (computadora compartida, teléfono prestado) borre la cuenta.
+    const passwordLimit = checkRateLimit(`delete-account:${userId}`, { max: 5, windowMs: 15 * 60 * 1000 });
+    if (!passwordLimit.allowed) {
+      return json(
+        { ok: false, savedIntent: "delete-account" as const, error: rateLimitMessage(passwordLimit.retryAfterSeconds) },
+        { status: 429 },
+      );
+    }
+    const password = String(formData.get("password") ?? "");
+    if (!(await verifyPassword(password, user.passwordHash))) {
+      return json(
+        { ok: false, savedIntent: "delete-account" as const, error: "La contraseña no es correcta. Vuelve a intentarlo." },
+        { status: 400 },
+      );
+    }
+
+    // No se puede borrar una cuenta con una suscripción todavía viva en
+    // Stripe — cancelarla primero evita dejar un cobro recurrente activo sin
+    // nadie que lo vea ni pueda detenerlo desde la tienda.
+    const hasLiveSubscription = await SubscriptionModel.exists({
+      user: userId,
+      status: { $in: ["active", "paused", "past_due"] },
+    });
+    if (hasLiveSubscription) {
+      return json({
+        ok: false,
+        savedIntent: "delete-account" as const,
+        error: "Tienes una suscripción activa. Cancélala primero desde \"Gestionar método de pago\" y vuelve a intentarlo.",
+      }, { status: 400 });
+    }
+
+    // Los pedidos SÍ se conservan (obligación contable/fiscal) — solo se
+    // desvincula la referencia al usuario, igual que un pedido de invitado.
+    await OrderModel.updateMany({ user: userId }, { $set: { user: null } });
+    await UserModel.findByIdAndDelete(userId);
+
+    return logout(request);
   }
 
   const subscription = await SubscriptionModel.findOne({ _id: subscriptionId, user: userId });
   if (intent === "billing-portal") {
     const user = await UserModel.findById(userId);
     if (!user?.stripeCustomerId) {
-      return json({ error: "Aún no tienes un método de pago registrado." }, { status: 400 });
+      return json({ ok: false, savedIntent: null, error: "Aún no tienes un método de pago registrado." }, { status: 400 });
     }
     const portalSession = await createBillingPortalSession(user.stripeCustomerId);
     return redirect(portalSession.url);
   }
 
   if (!subscription) {
-    return json({ error: "Suscripción no encontrada." }, { status: 404 });
+    return json({ ok: false, savedIntent: null, error: "Suscripción no encontrada." }, { status: 404 });
   }
 
   if (intent === "pause-subscription") {
@@ -143,27 +280,38 @@ export async function action({ request }: ActionFunctionArgs) {
 
   if (intent === "update-frequency") {
     const frequency = String(formData.get("frequency"));
-    if (!(frequency in SUBSCRIPTION_FREQUENCIES)) {
-      return json({ error: "Frecuencia no válida." }, { status: 400 });
+    // Se permite conservar la frecuencia actual aunque ya no se ofrezca; cambiar a otra exige que esté vigente.
+    if (frequency !== subscription.frequency && !isOfferedFrequency(await getSubscriptionConfig(), frequency)) {
+      return json({ ok: false, savedIntent: null, error: "Esa frecuencia ya no está disponible. Elige otra." }, { status: 400 });
     }
     await updateSubscriptionFrequency(
       subscription.stripeSubscriptionId,
-      frequency as SubscriptionFrequency,
+      frequency,
+      subscription.items ?? [],
     );
-    subscription.frequency = frequency as SubscriptionFrequency;
+    subscription.frequency = frequency;
     await subscription.save();
   }
 
-  return json({ ok: true });
+  return json({ ok: true, savedIntent: null, error: null as string | null });
 }
 
 export default function Cuenta() {
-  const { user, loyalty, orders, subscriptions } = useLoaderData<typeof loader>();
+  const { user, loyalty, orders, subscriptions, subscriptionProgram, justCompleted } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const navigation = useNavigation();
   const isBusy = navigation.state !== "idle";
   const isSavingProfile = isBusy && navigation.formData?.get("intent") === "update-profile";
   const [showProfileForm, setShowProfileForm] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const isResendingVerification = isBusy && navigation.formData?.get("intent") === "resend-verification";
+  const resendResult =
+    actionData && "savedIntent" in actionData && actionData.savedIntent === "resend-verification" ? actionData : null;
+  const isDeletingAccount = isBusy && navigation.formData?.get("intent") === "delete-account";
+  const deleteError =
+    actionData && "savedIntent" in actionData && actionData.savedIntent === "delete-account"
+      ? actionData.error
+      : null;
   const [dogRows, setDogRows] = useState(
     user.dogs.length > 0 ? user.dogs : [{ name: "", birthday: "" }],
   );
@@ -179,9 +327,107 @@ export default function Cuenta() {
           </p>
           <h1 className="mt-2 font-display text-3xl font-black text-carbon">
             Hola{user.name ? `, ${user.name}` : ""}
-            {user.dogs[0]?.name ? ` y ${user.dogs[0].name}` : ""} 👋
+            {user.dogs[0]?.name ? ` y ${user.dogs[0].name}` : ""}
           </h1>
           <p className="mt-1 text-carbon/60">{user.email}</p>
+
+          {!user.emailVerified && (
+            <div className="mt-5 rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950">
+              <p className="font-bold">Confirma tu correo</p>
+              <p className="mt-1">
+                Te mandamos un enlace a <span className="break-all font-semibold">{user.email}</span>. Con el correo
+                confirmado puedes usar cupones personales.
+              </p>
+              {resendResult?.ok ? (
+                <p role="status" className="mt-2 font-semibold text-bosque">
+                  Listo, te enviamos un enlace nuevo. Revisa tu bandeja (y el spam).
+                </p>
+              ) : (
+                <Form method="post" className="mt-2">
+                  <input type="hidden" name="intent" value="resend-verification" />
+                  <button
+                    type="submit"
+                    disabled={isResendingVerification}
+                    className="min-h-11 rounded-full bg-carbon px-5 text-sm font-bold text-hueso disabled:opacity-60"
+                  >
+                    {isResendingVerification ? "Enviando…" : "Reenviar enlace"}
+                  </button>
+                  {resendResult?.error && <p className="mt-2 font-semibold text-red-700">{resendResult.error}</p>}
+                </Form>
+              )}
+            </div>
+          )}
+
+          {user.isAdmin && (
+            <Link
+              to="/admin"
+              className="mt-5 inline-flex min-h-11 items-center gap-2 rounded-full bg-carbon px-6 text-sm font-bold text-hueso transition-colors hover:bg-bosque"
+            >
+              Ir al backoffice
+              <ArrowIcon />
+            </Link>
+          )}
+
+          {justCompleted && (
+            <div
+              className={
+                justCompleted.type === "subscription"
+                  ? "mt-6 rounded-3xl border-2 border-lima bg-gradient-to-br from-carbon to-bosque p-6 text-hueso sm:p-8"
+                  : "mt-6 rounded-3xl border-2 border-lima bg-lima/10 p-6"
+              }
+            >
+              {justCompleted.type === "purchase" ? (
+                <>
+                  <p className="font-display text-xl font-black text-carbon">¡Gracias por tu compra!</p>
+                  {justCompleted.order ? (
+                    <p className="mt-2 text-carbon/70">
+                      Pedido confirmado:{" "}
+                      <span className="font-semibold text-carbon">
+                        {justCompleted.order.items.map((i) => `${i.quantity}× ${i.name}`).join(", ")}
+                      </span>{" "}
+                      por <span className="font-semibold text-carbon">${justCompleted.order.netAmount} MXN</span>. Te
+                      avisaremos por correo en cuanto salga de nuestro almacén — puedes ver el estado
+                      aquí abajo, en "Mis pedidos".
+                    </p>
+                  ) : (
+                    <p className="mt-2 text-carbon/70">
+                      Tu pago se procesó correctamente. Estamos confirmando los últimos detalles — en
+                      unos segundos verás tu pedido en "Mis pedidos" aquí abajo.
+                    </p>
+                  )}
+                </>
+              ) : justCompleted.subscription ? (
+                <>
+                  <p className="font-body text-sm font-bold uppercase tracking-widest text-lima">Bienvenido</p>
+                  <p className="mt-1 font-display text-2xl font-black sm:text-3xl">Tu auto-envío ya está activo</p>
+                  <p className="mt-3 text-hueso/80">
+                    Tu caja quedó armada así, y te la enviaremos{" "}
+                    <span className="font-semibold text-lima">
+                      {frequencyLabel(justCompleted.subscription.frequency).toLowerCase()}
+                    </span>
+                    :
+                  </p>
+                  <ul className="mt-3 flex flex-col gap-1">
+                    {justCompleted.subscription.items.map((i) => (
+                      <li key={i.name} className="flex items-center gap-2 text-hueso/90">
+                        <CheckIcon className="h-4 w-4" />
+                        {i.quantity}× {i.name}
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="mt-4 text-sm text-hueso/60">
+                    {subscriptionProgram.disclaimer ||
+                      'Pausa, cambia la frecuencia o cancela cuando quieras aquí abajo, en "Mi suscripción".'}
+                  </p>
+                </>
+              ) : (
+                <p className="mt-2 text-carbon/70">
+                  Tu pago se procesó correctamente. Estamos confirmando los últimos detalles — en
+                  unos segundos verás tu suscripción aquí abajo.
+                </p>
+              )}
+            </div>
+          )}
 
           {/* Perfil: teléfono, dirección y perros */}
           <div className="mt-8 rounded-3xl border border-carbon/10 bg-white p-6">
@@ -190,7 +436,7 @@ export default function Cuenta() {
                 <p className="font-display font-bold text-carbon">Mi perfil</p>
                 <p className="mt-1 text-sm text-carbon/60">
                   Teléfono, dirección de envío y tus perros — para tus pedidos y para no perdernos
-                  su cumpleaños 🎂.
+                  su cumpleaños.
                 </p>
               </div>
               <button
@@ -203,7 +449,11 @@ export default function Cuenta() {
             </div>
 
             {actionData && "savedIntent" in actionData && actionData.savedIntent === "update-profile" && (
-              <p className="mt-3 text-sm font-semibold text-bosque">Perfil actualizado.</p>
+              actionData.ok ? (
+                <p className="mt-3 text-sm font-semibold text-bosque">Perfil actualizado.</p>
+              ) : (
+                <p className="mt-3 text-sm font-semibold text-red-600">{actionData.error}</p>
+              )
             )}
 
             {!showProfileForm ? (
@@ -219,7 +469,7 @@ export default function Cuenta() {
                 <p className="text-carbon/70 sm:col-span-2">
                   <span className="font-semibold text-carbon">Perros: </span>
                   {user.dogs.length > 0
-                    ? user.dogs.map((d) => (d.birthday ? `${d.name} (🎂 ${d.birthday})` : d.name)).join(", ")
+                    ? user.dogs.map((d) => (d.birthday ? `${d.name} (cumpleaños ${d.birthday})` : d.name)).join(", ")
                     : "sin registrar"}
                 </p>
               </div>
@@ -282,7 +532,8 @@ export default function Cuenta() {
                     {dogRows.map((dog, i) => (
                       <div key={i} className="flex flex-wrap items-center gap-2">
                         <input
-                          name="dogName"
+                          name="mascota"
+                          autoComplete="off"
                           placeholder="Nombre"
                           defaultValue={dog.name}
                           className="min-h-11 flex-1 rounded-xl border border-carbon/15 px-4 focus:border-oliva focus:outline-none"
@@ -300,7 +551,7 @@ export default function Cuenta() {
                           aria-label="Quitar perro"
                           className="min-h-11 min-w-11 rounded-full text-carbon/40 hover:text-carbon"
                         >
-                          ✕
+                          <CloseIcon className="mx-auto block h-4 w-4" />
                         </button>
                       </div>
                     ))}
@@ -330,7 +581,7 @@ export default function Cuenta() {
             <p className="font-display font-bold text-carbon">Programa de fidelidad</p>
             {loyalty.pendingReward ? (
               <p className="mt-1 text-sm text-bosque">
-                🎁 ¡Ya ganaste{" "}
+                ¡Ya ganaste{" "}
                 {loyalty.pendingReward.rewardType === "gift"
                   ? loyalty.pendingReward.giftDescription
                   : `${loyalty.pendingReward.percentage}% de descuento`}{" "}
@@ -362,9 +613,9 @@ export default function Cuenta() {
             <h2 className="font-display text-xl font-black text-carbon">Mi suscripción</h2>
             {subscriptions.length === 0 ? (
               <p className="mt-2 text-sm text-carbon/60">
-                Aún no tienes un auto-envío activo. Actívalo desde la{" "}
-                <a href="/tienda#suscripcion" className="font-semibold text-bosque hover:underline">
-                  tienda
+                Aún no tienes un auto-envío activo. Actívalo desde{" "}
+                <a href="/suscripcion" className="font-semibold text-bosque hover:underline">
+                  {subscriptionProgram.name}
                 </a>
                 .
               </p>
@@ -378,11 +629,10 @@ export default function Cuenta() {
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <div>
                         <p className="font-display font-bold text-carbon">
-                          STOPee Concentrado 1L —{" "}
-                          {SUBSCRIPTION_FREQUENCIES[sub.frequency as SubscriptionFrequency]?.label}
+                          {sub.items.map((i) => `${i.quantity}× ${i.name}`).join(" + ")}
                         </p>
                         <p className="text-sm text-carbon/60">
-                          Estado:{" "}
+                          {frequencyLabel(sub.frequency)} · Estado:{" "}
                           <span className="font-semibold capitalize">
                             {sub.status === "active"
                               ? "Activa"
@@ -447,9 +697,12 @@ export default function Cuenta() {
                         defaultValue={sub.frequency}
                         className="min-h-11 rounded-xl border border-carbon/15 px-3 text-sm"
                       >
-                        {Object.entries(SUBSCRIPTION_FREQUENCIES).map(([value, freq]) => (
+                        {(subscriptionProgram.frequencies.includes(sub.frequency)
+                          ? subscriptionProgram.frequencies
+                          : [sub.frequency, ...subscriptionProgram.frequencies]
+                        ).map((value) => (
                           <option key={value} value={value}>
-                            {freq.label}
+                            {frequencyLabel(value)}
                           </option>
                         ))}
                       </select>
@@ -488,6 +741,7 @@ export default function Cuenta() {
                       <p className="text-xs text-carbon/50">
                         {new Date(order.createdAt).toLocaleDateString("es-MX")} ·{" "}
                         {ORDER_STATUS_LABELS[order.status] ?? order.status}
+                        {order.shippingCost > 0 && ` · Incluye envío $${order.shippingCost} MXN`}
                       </p>
                     </div>
                     <p className="font-display font-bold text-carbon">${order.netAmount} MXN</p>
@@ -502,6 +756,58 @@ export default function Cuenta() {
               Cerrar sesión
             </button>
           </Form>
+
+          <div className="mt-10 rounded-3xl border border-red-200 bg-red-50/50 p-6">
+            <p className="font-display font-bold text-red-900">Eliminar mi cuenta</p>
+            <p className="mt-1 text-sm text-red-900/70">
+              Se borra tu perfil (datos de contacto, mascotas, dirección) de forma permanente. Tus
+              pedidos ya pagados se conservan como comprobante, sin ligarlos a tu nombre.
+            </p>
+
+            {deleteError && <p className="mt-3 text-sm font-semibold text-red-700">{deleteError}</p>}
+
+            {!confirmingDelete ? (
+              <button
+                type="button"
+                onClick={() => setConfirmingDelete(true)}
+                className="mt-4 min-h-11 rounded-full border border-red-300 px-5 text-sm font-semibold text-red-700 hover:bg-red-100"
+              >
+                Eliminar mi cuenta
+              </button>
+            ) : (
+              <Form method="post" className="mt-4 max-w-sm">
+                <input type="hidden" name="intent" value="delete-account" />
+                <label htmlFor="delete-account-password" className="block text-sm font-semibold text-red-900">
+                  Escribe tu contraseña para confirmar
+                </label>
+                <input
+                  id="delete-account-password"
+                  name="password"
+                  type="password"
+                  required
+                  autoFocus
+                  autoComplete="current-password"
+                  className="mt-2 min-h-11 w-full rounded-xl border border-red-300 bg-white px-4 text-base text-carbon focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-200"
+                />
+                <div className="mt-3 flex flex-wrap items-center gap-3">
+                  <button
+                    type="submit"
+                    disabled={isDeletingAccount}
+                    className="min-h-11 rounded-full bg-red-600 px-5 text-sm font-bold text-white hover:bg-red-700 disabled:opacity-60"
+                  >
+                    {isDeletingAccount ? "Eliminando…" : "Sí, eliminar mi cuenta"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setConfirmingDelete(false)}
+                    className="min-h-11 rounded-full border border-carbon/15 px-5 text-sm font-semibold text-carbon hover:border-carbon/30"
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              </Form>
+            )}
+          </div>
         </section>
       </main>
 

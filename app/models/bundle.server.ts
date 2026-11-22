@@ -28,12 +28,16 @@ const bundleItemSchema = new Schema(
 const bundleSchema = new Schema(
   {
     name: { type: String, required: true, trim: true },
+    /** Generado del nombre al crear el paquete — es lo que identifica al paquete en el carrito, checkout y promociones (igual que `sku` en Product). */
+    sku: { type: String, required: true, unique: true, trim: true, lowercase: true },
     products: { type: [bundleItemSchema], required: true },
     /** Calculado automáticamente a partir de `products` — ver `computeBundlePrice`. */
     bundlePrice: { type: Number, required: true, min: 0 },
     images: { type: [String], default: [] },
     videos: { type: [videoSchema], default: [] },
     isActive: { type: Boolean, default: true },
+    /** Se muestra destacado ("glorificador") arriba del resto del catálogo en /tienda. */
+    isFeatured: { type: Boolean, default: false },
   },
   { timestamps: true },
 );

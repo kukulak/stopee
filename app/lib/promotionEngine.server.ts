@@ -1,13 +1,12 @@
-import { PRODUCTS, type ProductSku } from "~/data/products";
 import { PromotionModel } from "~/models/promotion.server";
 
-export type EngineCartLine = { sku: ProductSku; quantity: number };
+export type EngineCartLine = { sku: string; quantity: number; unitPriceMxn: number };
 
 export type RequirementMatch = {
   id: string;
   name: string;
   rewardDiscountPercentage?: number;
-  rewardGiftSku?: ProductSku;
+  rewardGiftSku?: string;
 };
 
 /**
@@ -45,19 +44,16 @@ export async function evaluateRequirementPromotion(
       matches = Boolean(line && line.quantity >= (req.minQuantity ?? 1));
     } else if (req.condition === "product_spend") {
       const line = cartLines.find((l) => l.sku === req.targetSku);
-      const unitPrice = line ? PRODUCTS[line.sku]?.priceMxn ?? 0 : 0;
-      const spend = line ? unitPrice * line.quantity : 0;
+      const spend = line ? line.unitPriceMxn * line.quantity : 0;
       matches = spend >= (req.minSpendMxn ?? 0);
     }
 
     if (matches) {
-      const rewardGiftSku =
-        req.rewardGiftSku && req.rewardGiftSku in PRODUCTS ? (req.rewardGiftSku as ProductSku) : undefined;
       return {
         id: String(promo._id),
         name: promo.name,
         rewardDiscountPercentage: req.rewardDiscountPercentage ?? undefined,
-        rewardGiftSku,
+        rewardGiftSku: req.rewardGiftSku ?? undefined,
       };
     }
   }

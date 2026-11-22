@@ -1,6 +1,6 @@
 import type { LoaderFunctionArgs, MetaFunction } from "@remix-run/node";
 import { json } from "@remix-run/node";
-import { Link, useLoaderData } from "@remix-run/react";
+import { useLoaderData } from "@remix-run/react";
 import { connectDB } from "~/lib/db.server";
 import { OrderModel } from "~/models/order.server";
 import { LeadModel } from "~/models/lead.server";
@@ -12,8 +12,6 @@ import { getSiteSettings } from "~/models/siteSettings.server";
 import { getActiveLoyaltyConfig } from "~/models/promotion.server";
 import { resolveDateRange, percentChange } from "~/lib/dateRange.server";
 import { monthlyEquivalent } from "~/lib/mrr.server";
-import { SUBSCRIPTION_UNIT_AMOUNT_MXN_CENTS } from "~/lib/stripe.server";
-import { PRODUCTS } from "~/data/products";
 import { TYPE_LABELS } from "~/components/admin/PromotionFormFields";
 import { formatPresentation } from "~/lib/productUnit";
 import { useSearchParams } from "@remix-run/react";
@@ -31,6 +29,8 @@ import {
   Cell,
   CartesianGrid,
 } from "recharts";
+import { ArrowLink } from "~/components/ui/ArrowLink";
+import { requireAdmin } from "~/lib/session.server";
 
 export const meta: MetaFunction = () => [{ title: "Dashboard — Admin STOPee" }];
 
@@ -39,6 +39,7 @@ const AUDIENCES = ["all", "new", "recurring", "subscribers"] as const;
 type Audience = (typeof AUDIENCES)[number];
 
 export async function loader({ request }: LoaderFunctionArgs) {
+  await requireAdmin(request);
   await connectDB();
   const url = new URL(request.url);
   const range = resolveDateRange(url);
@@ -104,7 +105,11 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
   const activeSubs = await SubscriptionModel.find({ status: "active" }).lean();
   const mrr = activeSubs.reduce((sum, s) => {
-    const base = (SUBSCRIPTION_UNIT_AMOUNT_MXN_CENTS / 100) * (1 - (s.discountPercent ?? 10) / 100);
+    // Cada suscripción arma su propia caja (varios productos y cantidades
+    // distintas) — el ingreso base es la suma real de SU caja, no un precio
+    // único asumido para todas.
+    const boxTotal = (s.items ?? []).reduce((itemSum, item) => itemSum + item.unitPriceMxn * item.quantity, 0);
+    const base = boxTotal * (1 - (s.discountPercent ?? 10) / 100);
     return sum + monthlyEquivalent(base, s.frequency);
   }, 0);
 
@@ -119,7 +124,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     }
   }
   const bundleMatrix = Array.from(skuPerformance.entries())
-    .map(([sku, v]) => ({ sku, name: PRODUCTS[sku as keyof typeof PRODUCTS]?.name ?? v.name, quantity: v.quantity, revenue: Math.round(v.revenue) }))
+    .map(([sku, v]) => ({ sku, name: v.name, quantity: v.quantity, revenue: Math.round(v.revenue) }))
     .sort((a, b) => b.revenue - a.revenue);
 
   const eventCounts = await AnalyticsEventModel.aggregate([
@@ -377,7 +382,7 @@ const AUDIENCE_OPTIONS = [
 
 function Card({ children, className = "" }: { children: React.ReactNode; className?: string }) {
   return (
-    <div className={`rounded-3xl border border-carbon/10 bg-white p-5 ${className}`}>{children}</div>
+    <div className={`min-w-0 rounded-3xl border border-carbon/10 bg-white p-4 sm:p-5 ${className}`}>{children}</div>
   );
 }
 
@@ -407,14 +412,14 @@ export default function AdminDashboard() {
   }
 
   return (
-    <div className="flex flex-col gap-8">
+    <div className="flex min-w-0 flex-col gap-6 sm:gap-8">
       <div>
-        <h1 className="font-display text-2xl font-black text-carbon">Dashboard</h1>
+        <h1 className="font-display text-2xl font-black sm:text-3xl text-carbon">Dashboard</h1>
         <p className="mt-1 text-sm text-carbon/60">Inteligencia de negocio en tiempo real.</p>
       </div>
 
       {/* Controles globales */}
-      <div className="flex flex-wrap items-center justify-between gap-4">
+      <div className="flex flex-col gap-4 lg:flex-row lg:flex-wrap lg:items-center lg:justify-between">
         <div className="flex flex-wrap gap-2">
           {RANGE_OPTIONS.map((opt) => (
             <button
@@ -447,22 +452,22 @@ export default function AdminDashboard() {
           ))}
         </div>
 
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <a
             href="/admin/exports/sales"
-            className="min-h-11 rounded-full border border-carbon/15 px-4 py-2.5 text-sm font-semibold text-carbon hover:border-carbon/30"
+            className="flex min-h-11 items-center rounded-full border border-carbon/15 px-4 text-sm font-semibold text-carbon hover:border-carbon/30"
           >
             Exportar ventas
           </a>
           <a
             href="/admin/exports/subscribers"
-            className="min-h-11 rounded-full border border-carbon/15 px-4 py-2.5 text-sm font-semibold text-carbon hover:border-carbon/30"
+            className="flex min-h-11 items-center rounded-full border border-carbon/15 px-4 text-sm font-semibold text-carbon hover:border-carbon/30"
           >
             Exportar suscriptores
           </a>
           <a
             href="/admin/leads/csv"
-            className="min-h-11 rounded-full border border-carbon/15 px-4 py-2.5 text-sm font-semibold text-carbon hover:border-carbon/30"
+            className="flex min-h-11 items-center rounded-full border border-carbon/15 px-4 text-sm font-semibold text-carbon hover:border-carbon/30"
           >
             Exportar leads
           </a>
@@ -470,7 +475,7 @@ export default function AdminDashboard() {
       </div>
 
       {/* ===== Capa 1: Pulso operativo ===== */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
         <Card>
           <p className="text-xs font-semibold uppercase tracking-wide text-carbon/50">Ingresos netos</p>
           <p className="mt-2 font-display text-2xl font-black text-carbon">
@@ -540,9 +545,9 @@ export default function AdminDashboard() {
           ) : (
             <div className="mt-4 h-64">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={data.bundleMatrix} layout="vertical" margin={{ left: 24 }}>
+                <BarChart data={data.bundleMatrix} layout="vertical" margin={{ left: 0, right: 8 }}>
                   <XAxis type="number" hide />
-                  <YAxis type="category" dataKey="name" width={140} tick={{ fontSize: 11 }} />
+                  <YAxis type="category" dataKey="name" width={110} tick={{ fontSize: 11 }} />
                   <Tooltip formatter={(v) => `$${v}`} />
                   <Bar dataKey="revenue" fill="#7A9330" radius={[0, 6, 6, 0]} />
                 </BarChart>
@@ -581,7 +586,7 @@ export default function AdminDashboard() {
 
         <Card className="lg:col-span-2">
           <h2 className="font-display text-lg font-bold text-carbon">Compra única vs. suscripción</h2>
-          <div className="mt-4 flex items-center gap-8">
+          <div className="mt-4 flex flex-col items-start gap-4 sm:flex-row sm:items-center sm:gap-8">
             <div className="h-40 w-40 shrink-0">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
@@ -617,11 +622,11 @@ export default function AdminDashboard() {
 
       {/* ===== Efectividad de promociones ===== */}
       <Card>
-        <div className="flex items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
           <h2 className="font-display text-lg font-bold text-carbon">Efectividad de promociones</h2>
-          <a href="/admin/discounts" className="text-sm font-semibold text-bosque hover:underline">
-            Administrar →
-          </a>
+          <ArrowLink href="/admin/discounts" className="text-sm">
+            Administrar
+          </ArrowLink>
         </div>
         {data.promotionEffectiveness.length === 0 ? (
           <p className="mt-3 text-sm text-carbon/60">
@@ -705,7 +710,7 @@ export default function AdminDashboard() {
                 <span className="font-bold text-carbon">{f.count} clientes</span>
               </div>
             ))}
-            <div className="mt-2 flex items-center justify-between rounded-xl bg-lima/10 px-3 py-2 text-sm">
+            <div className="mt-2 flex items-center justify-between gap-3 rounded-xl bg-lima/10 px-3 py-2 text-sm">
               <span className="font-semibold text-bosque">Con recompensa lista para su próxima compra</span>
               <span className="font-bold text-bosque">{data.loyalty.unlocked}</span>
             </div>
@@ -720,11 +725,11 @@ export default function AdminDashboard() {
       {/* ===== Capa 4: Adquisición ===== */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <Card>
-          <div className="flex items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
             <h2 className="font-display text-lg font-bold text-carbon">Perfil de clientes</h2>
-            <Link to="/admin/customers" className="text-sm font-semibold text-bosque hover:underline">
-              Ver todos →
-            </Link>
+            <ArrowLink to="/admin/customers" className="text-sm">
+              Ver todos
+            </ArrowLink>
           </div>
           <div className="mt-3 flex flex-col gap-2 text-sm">
             <div className="flex justify-between"><span className="text-carbon/60">Cuentas totales</span><span className="font-bold text-carbon">{data.customerProfile.totalUsers}</span></div>
@@ -740,7 +745,7 @@ export default function AdminDashboard() {
           ) : (
             <ul className="mt-3 flex flex-col gap-2">
               {data.acquisition.attributionBreakdown.map((a) => (
-                <li key={a.source} className="flex items-center justify-between text-sm">
+                <li key={a.source} className="flex items-center justify-between gap-3 text-sm">
                   <span className="capitalize text-carbon/70">{a.source.replace("_", " ")}</span>
                   <span className="font-semibold text-carbon">
                     ${a.revenue.toLocaleString("es-MX")} · {a.orders} pedidos
@@ -756,7 +761,7 @@ export default function AdminDashboard() {
           <p className="mt-2 text-sm text-carbon/70">
             {data.acquisition.leadVelocityPerDay} correos/día en este periodo.
           </p>
-          <div className="mt-4 flex gap-4 text-sm">
+          <div className="mt-4 flex flex-wrap gap-x-4 gap-y-2 text-sm">
             <div className="flex items-center gap-2">
               <span className={`h-2.5 w-2.5 rounded-full ${data.acquisition.pixelStatus.google ? "bg-lima" : "bg-carbon/20"}`} />
               Google configurado
@@ -795,15 +800,15 @@ export default function AdminDashboard() {
         </p>
         <div className="mt-2 flex flex-col gap-2">
           {data.inventory.lowestStock.map((p) => (
-            <div key={p.id} className="flex items-center justify-between rounded-xl border border-carbon/10 px-4 py-3 text-sm">
-              <div>
+            <div key={p.id} className="flex items-center justify-between gap-3 rounded-xl border border-carbon/10 px-4 py-3 text-sm">
+              <div className="min-w-0">
                 <p className="font-semibold text-carbon">
                   {p.name}
                   {p.presentation && <span className="ml-1 font-normal text-carbon/50">({p.presentation})</span>}
                 </p>
                 <p className="text-carbon/50">{p.soldLast30} vendidas en 30 días</p>
               </div>
-              <div className="text-right">
+              <div className="shrink-0 text-right">
                 <p className="font-display text-lg font-black text-carbon">{p.stock}</p>
                 <p className="text-xs text-carbon/50">se agota en {p.runwayLabel}</p>
               </div>

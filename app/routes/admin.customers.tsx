@@ -1,3 +1,4 @@
+import type { LoaderFunctionArgs } from "@remix-run/node";
 import type { MetaFunction } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import { Link, useLoaderData } from "@remix-run/react";
@@ -6,18 +7,22 @@ import { UserModel } from "~/models/user.server";
 import { OrderModel } from "~/models/order.server";
 import { LeadModel } from "~/models/lead.server";
 import { AnalyticsEventModel } from "~/models/analyticsEvent.server";
+import { ArrowLabel } from "~/components/ui/Icons";
+import { requireAdmin } from "~/lib/session.server";
+import { isStaff, isSuperAdmin, ROLE_LABELS, type UserRole } from "~/lib/roles";
 
 export const meta: MetaFunction = () => [{ title: "Clientes — Admin STOPee" }];
 
 const REVENUE_STATUSES = ["paid", "processing", "shipped", "delivered"];
 const ABANDONED_LOOKBACK_DAYS = 14;
 
-export async function loader() {
+export async function loader({ request }: LoaderFunctionArgs) {
+  const viewer = await requireAdmin(request);
   await connectDB();
 
   const [users, leads, purchasedUserIds, guestOrders] = await Promise.all([
     UserModel.find()
-      .select("email name dogName dogs totalSpentLTV individualPurchaseCount createdAt")
+      .select("email name dogName dogs totalSpentLTV individualPurchaseCount createdAt role")
       .sort({ createdAt: -1 })
       .lean(),
     LeadModel.find().lean(),
@@ -44,8 +49,13 @@ export async function loader() {
     }))
     .sort((a, b) => b.ltv - a.ltv);
 
+  const staff = users
+    .filter((u) => isStaff(u.role))
+    .map((u) => ({ id: String(u._id), email: u.email, name: u.name ?? "", role: u.role as UserRole }));
+
+  // El equipo no es "gente que se registró y no ha comprado": va en su propia sección.
   const registeredNoPurchase = users
-    .filter((u) => !purchasedIds.has(String(u._id)))
+    .filter((u) => !purchasedIds.has(String(u._id)) && !isStaff(u.role))
     .map((u) => ({
       id: String(u._id),
       email: u.email,
@@ -125,6 +135,8 @@ export async function loader() {
       pendingLeads,
     },
     registeredNoPurchase,
+    staff,
+    viewerIsSuper: isSuperAdmin(viewer.role),
     customersWithPurchase,
     anonymousBuyers,
     abandonedCarts,
@@ -135,7 +147,7 @@ export async function loader() {
 }
 
 function Card({ children, className = "" }: { children: React.ReactNode; className?: string }) {
-  return <div className={`rounded-3xl border border-carbon/10 bg-white p-5 ${className}`}>{children}</div>;
+  return <div className={`min-w-0 rounded-3xl border border-carbon/10 bg-white p-4 sm:p-5 ${className}`}>{children}</div>;
 }
 
 function StatCard({ label, value, hint }: { label: string; value: number | string; hint?: string }) {
@@ -159,16 +171,24 @@ export default function AdminCustomers() {
   const data = useLoaderData<typeof loader>();
 
   return (
-    <div className="flex flex-col gap-8">
-      <div>
-        <h1 className="font-display text-2xl font-black text-carbon">Clientes</h1>
-        <p className="mt-1 text-sm text-carbon/60">
-          El recorrido completo: quién tiene cuenta pero no ha comprado, quién ya es cliente, quién
-          compró sin registrarse y quién dejó el carrito a medias.
-        </p>
+    <div className="flex min-w-0 flex-col gap-6 sm:gap-8">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="min-w-0">
+          <h1 className="font-display text-2xl font-black sm:text-3xl text-carbon">Clientes</h1>
+          <p className="mt-1 max-w-2xl text-sm text-carbon/60">
+            El recorrido completo: quién tiene cuenta pero no ha comprado, quién ya es cliente, quién
+            compró sin registrarse y quién dejó el carrito a medias.
+          </p>
+        </div>
+        <Link
+          to="/admin/customers/new"
+          className="inline-flex min-h-11 items-center rounded-full bg-carbon px-6 text-sm font-bold text-hueso transition-colors hover:bg-bosque"
+        >
+          Nuevo usuario
+        </Link>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
         <StatCard label="Registrados sin compra" value={data.counts.registeredNoPurchase} />
         <StatCard label="Clientes con cuenta" value={data.counts.customersWithPurchase} />
         <StatCard label="Compradores anónimos" value={data.counts.anonymousBuyers} hint="Compraron sin crear cuenta" />
@@ -177,14 +197,42 @@ export default function AdminCustomers() {
           value={data.counts.abandonedCarts}
           hint={`Con sesión iniciada, últimos ${data.abandonedLookbackDays} días`}
         />
-        <Link to="/admin/leads" className="block">
+        <Link to="/admin/leads" className="group block">
           <Card className="h-full transition-shadow hover:shadow-lg">
             <p className="text-xs font-semibold uppercase tracking-wide text-carbon/50">Lista de espera</p>
             <p className="mt-2 font-display text-2xl font-black text-carbon">{data.counts.totalLeads}</p>
-            <p className="mt-1 text-xs text-carbon/50">{data.counts.pendingLeads} pendientes · Administrar →</p>
+            <p className="mt-1 text-xs text-carbon/50">{data.counts.pendingLeads} pendientes ·{" "}
+              <ArrowLabel className="font-semibold text-bosque">Administrar</ArrowLabel>
+            </p>
           </Card>
         </Link>
       </div>
+
+      <Card>
+        <h2 className="font-display text-lg font-bold text-carbon">Equipo</h2>
+        <p className="mt-1 text-sm text-carbon/60">
+          Cuentas con acceso a este panel.
+          {data.viewerIsSuper
+            ? " Abre una para cambiarle el rol."
+            : " Solo un super administrador puede crear administradores o cambiar roles."}
+        </p>
+        <ul className="mt-3 divide-y divide-carbon/5">
+          {data.staff.map((m) => (
+            <li key={m.id}>
+              <Link
+                to={`/admin/customers/${m.id}`}
+                className="flex min-h-11 flex-wrap items-center justify-between gap-x-4 gap-y-1 py-2 text-sm hover:bg-carbon/5"
+              >
+                <span className="min-w-0 break-all font-semibold text-carbon">{m.name || m.email}</span>
+                <span className="text-carbon/60">
+                  {m.name ? `${m.email} · ` : ""}
+                  {ROLE_LABELS[m.role]}
+                </span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      </Card>
 
       <Card>
         <h2 className="font-display text-lg font-bold text-carbon">Carritos abandonados</h2>
@@ -230,7 +278,7 @@ export default function AdminCustomers() {
 
       {data.dogBirthdaysThisMonth.length > 0 && (
         <Card>
-          <h2 className="font-display text-lg font-bold text-carbon">🎂 Cumpleaños este mes</h2>
+          <h2 className="font-display text-lg font-bold text-carbon">Cumpleaños este mes</h2>
           <p className="mt-1 text-sm text-carbon/60">
             Buena oportunidad para un mensaje o un descuento extra en su mes.
           </p>
@@ -256,7 +304,7 @@ export default function AdminCustomers() {
           {data.registeredNoPurchase.length === 0 ? (
             <p className="mt-4 text-sm text-carbon/60">Todos los registrados ya compraron al menos una vez.</p>
           ) : (
-            <div className="mt-4 max-h-96 overflow-y-auto">
+            <div className="mt-4 max-h-96 overflow-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="text-left text-xs font-semibold uppercase tracking-wide text-carbon/50">
@@ -291,7 +339,7 @@ export default function AdminCustomers() {
           {data.anonymousBuyers.length === 0 ? (
             <p className="mt-4 text-sm text-carbon/60">Todas las compras vienen de cuentas registradas.</p>
           ) : (
-            <div className="mt-4 max-h-96 overflow-y-auto">
+            <div className="mt-4 max-h-96 overflow-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="text-left text-xs font-semibold uppercase tracking-wide text-carbon/50">

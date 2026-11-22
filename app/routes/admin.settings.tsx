@@ -1,11 +1,15 @@
+import type { LoaderFunctionArgs } from "@remix-run/node";
 import type { ActionFunctionArgs, MetaFunction } from "@remix-run/node";
 import { json } from "@remix-run/node";
+import { isValidGooglePixelId, isValidMetaPixelId } from "~/lib/inputValidation";
 import { Form, useActionData, useLoaderData, useNavigation } from "@remix-run/react";
 import { getSiteSettings, updateSiteSettings } from "~/models/siteSettings.server";
+import { requireAdmin } from "~/lib/session.server";
 
 export const meta: MetaFunction = () => [{ title: "Configuración — Admin STOPee" }];
 
-export async function loader() {
+export async function loader({ request }: LoaderFunctionArgs) {
+  await requireAdmin(request);
   const settings = await getSiteSettings();
   return json({
     isStoreActive: settings.isStoreActive,
@@ -17,6 +21,7 @@ export async function loader() {
 }
 
 export async function action({ request }: ActionFunctionArgs) {
+  await requireAdmin(request);
   const formData = await request.formData();
   const intent = formData.get("intent");
 
@@ -27,9 +32,25 @@ export async function action({ request }: ActionFunctionArgs) {
   }
 
   if (intent === "save-tracking") {
+    const googlePixelId = String(formData.get("googlePixelId") ?? "").trim();
+    const metaPixelId = String(formData.get("metaPixelId") ?? "").trim();
+    // Estos IDs se escriben dentro de un <script> de todas las páginas: solo se
+    // aceptan con el formato exacto que usan Google y Meta.
+    if (googlePixelId && !isValidGooglePixelId(googlePixelId)) {
+      return json(
+        { ok: false as const, savedIntent: undefined, error: 'El ID de Google no es válido. Debe verse como "G-XXXXXXXXXX".' },
+        { status: 400 },
+      );
+    }
+    if (metaPixelId && !isValidMetaPixelId(metaPixelId)) {
+      return json(
+        { ok: false as const, savedIntent: undefined, error: "El ID del píxel de Meta no es válido: son solo números (de 8 a 20 dígitos)." },
+        { status: 400 },
+      );
+    }
     await updateSiteSettings({
-      googlePixelId: String(formData.get("googlePixelId") ?? "").trim(),
-      metaPixelId: String(formData.get("metaPixelId") ?? "").trim(),
+      googlePixelId,
+      metaPixelId,
       announcementBarText: String(formData.get("announcementBarText") ?? "").trim(),
       announcementBarActive: formData.get("announcementBarActive") === "on",
     });
@@ -58,8 +79,8 @@ export default function AdminSettings() {
     navigation.state !== "idle" && navigation.formData?.get("intent") === "save-tracking";
 
   return (
-    <div className="max-w-2xl">
-      <h1 className="font-display text-2xl font-black text-carbon">Configuración</h1>
+    <div className="w-full min-w-0 max-w-2xl">
+      <h1 className="font-display text-2xl sm:text-3xl font-black text-carbon">Configuración</h1>
       <p className="mt-1 text-sm text-carbon/60">
         Controla el interruptor de la tienda y el rastreo del sitio. Las alertas de inventario
         ahora se configuran por producto en{" "}
@@ -70,9 +91,9 @@ export default function AdminSettings() {
       </p>
 
       {/* Interruptor maestro */}
-      <div className="mt-6 rounded-3xl border border-carbon/10 bg-white p-6">
+      <div className="mt-6 rounded-3xl border border-carbon/10 bg-white p-4 sm:p-6">
         <div className="flex items-center justify-between gap-4">
-          <div>
+          <div className="min-w-0">
             <h2 className="font-display text-lg font-bold text-carbon">Tienda en línea</h2>
             <p className="mt-1 text-sm text-carbon/60">
               {isStoreActive
@@ -111,7 +132,7 @@ export default function AdminSettings() {
       {/* Rastreo y anuncio */}
       <Form
         method="post"
-        className="mt-6 flex flex-col gap-5 rounded-3xl border border-carbon/10 bg-white p-6"
+        className="mt-6 flex flex-col gap-5 rounded-3xl border border-carbon/10 bg-white p-4 sm:p-6"
       >
         <input type="hidden" name="intent" value="save-tracking" />
         <h2 className="font-display text-lg font-bold text-carbon">Rastreo y anuncio</h2>
@@ -126,7 +147,7 @@ export default function AdminSettings() {
             type="text"
             defaultValue={googlePixelId}
             placeholder="G-XXXXXXXXXX"
-            className="mt-1 w-full min-h-11 rounded-xl border border-carbon/15 px-4 focus:border-oliva focus:outline-none"
+            className="mt-1 box-border w-full min-w-0 max-w-full min-h-11 rounded-xl border border-carbon/15 px-4 focus:border-oliva focus:outline-none"
           />
         </div>
 
@@ -140,13 +161,13 @@ export default function AdminSettings() {
             type="text"
             defaultValue={metaPixelId}
             placeholder="123456789012345"
-            className="mt-1 w-full min-h-11 rounded-xl border border-carbon/15 px-4 focus:border-oliva focus:outline-none"
+            className="mt-1 box-border w-full min-w-0 max-w-full min-h-11 rounded-xl border border-carbon/15 px-4 focus:border-oliva focus:outline-none"
           />
         </div>
 
-        <div className="rounded-2xl border border-carbon/10 p-4">
-          <div className="flex items-center justify-between gap-4">
-            <label htmlFor="announcementBarActive" className="text-sm font-semibold text-carbon">
+        <div className="min-w-0 rounded-2xl border border-carbon/10 p-3 sm:p-4">
+          <div className="flex min-h-11 items-center justify-between gap-4">
+            <label htmlFor="announcementBarActive" className="min-w-0 text-sm font-semibold text-carbon">
               Mostrar barra de anuncio
             </label>
             <input
@@ -154,7 +175,7 @@ export default function AdminSettings() {
               name="announcementBarActive"
               type="checkbox"
               defaultChecked={announcementBarActive}
-              className="h-6 w-6 accent-lima"
+              className="h-6 w-6 shrink-0 accent-lima"
             />
           </div>
           <p className="mt-1 text-xs text-carbon/50">
@@ -169,24 +190,33 @@ export default function AdminSettings() {
             type="text"
             defaultValue={announcementBarText}
             placeholder="Envío gratis en pedidos mayores a $999"
-            className="mt-1 w-full min-h-11 rounded-xl border border-carbon/15 px-4 focus:border-oliva focus:outline-none"
+            className="mt-1 box-border w-full min-w-0 max-w-full min-h-11 rounded-xl border border-carbon/15 px-4 focus:border-oliva focus:outline-none"
           />
         </div>
 
         {actionData?.ok && actionData.savedIntent === "save-tracking" && (
           <p className="text-sm font-semibold text-bosque">Cambios guardados.</p>
         )}
+        {actionData && !actionData.ok && actionData.error && (
+          <p role="alert" className="text-sm font-semibold text-red-600">{actionData.error}</p>
+        )}
 
         <button
           type="submit"
           disabled={isSubmittingTracking}
-          className="min-h-11 self-start rounded-full bg-carbon px-6 text-sm font-bold text-hueso disabled:opacity-60"
+          className="min-h-11 w-full rounded-full bg-carbon px-6 text-sm font-bold text-hueso disabled:opacity-60 sm:w-auto sm:self-start"
         >
           {isSubmittingTracking ? "Guardando…" : "Guardar cambios"}
         </button>
       </Form>
 
-      {/* Umbrales de inventario */}
+      <p className="mt-6 text-sm text-carbon/50">
+        WhatsApp, redes sociales y demás datos de la empresa se editan en{" "}
+        <a href="/admin/negocio" className="underline hover:text-carbon">
+          Datos del negocio
+        </a>
+        .
+      </p>
     </div>
   );
 }

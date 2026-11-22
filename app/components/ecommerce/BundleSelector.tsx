@@ -1,42 +1,58 @@
-import { useState } from "react";
-import { PRODUCT_LIST } from "~/data/products";
+import type { CatalogItem } from "~/lib/catalog.server";
 import { ProductCard } from "~/components/ecommerce/ProductCard";
+import { FeaturedProductShowcase } from "~/components/ecommerce/FeaturedProductShowcase";
 
-const TABS = [
-  { id: "individuales", label: "Productos individuales" },
-  { id: "packs", label: "Paquetes" },
-] as const;
-
-export function BundleSelector() {
-  const [tab, setTab] = useState<(typeof TABS)[number]["id"]>("individuales");
-
-  const individuales = PRODUCT_LIST.filter((p) => !p.bundle);
-  const packs = PRODUCT_LIST.filter((p) => p.bundle);
-  const visible = tab === "individuales" ? individuales : packs;
+function CatalogSection({
+  title,
+  items,
+  onAdded,
+  inCart,
+}: {
+  title: string;
+  items: CatalogItem[];
+  onAdded?: (name: string) => void;
+  inCart: Record<string, number>;
+}) {
+  if (items.length === 0) return null;
 
   return (
     <div>
-      <div className="inline-flex rounded-full bg-carbon/5 p-1">
-        {TABS.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            onClick={() => setTab(t.id)}
-            className={`min-h-11 rounded-full px-5 text-sm font-bold transition-colors ${
-              tab === t.id ? "bg-carbon text-hueso" : "text-carbon/60 hover:text-carbon"
-            }`}
-            aria-pressed={tab === t.id}
-          >
-            {t.label}
-          </button>
+      <h2 className="font-display text-xl font-black text-carbon">{title}</h2>
+      <div className="mt-4 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+        {items.map((product) => (
+          <ProductCard key={product.sku} product={product} onAdded={onAdded} inCartQuantity={inCart[product.sku] ?? 0} />
         ))}
       </div>
+    </div>
+  );
+}
 
-      <div className="mt-6 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
-        {visible.map((product) => (
-          <ProductCard key={product.sku} product={product} />
-        ))}
-      </div>
+export function BundleSelector({
+  products,
+  onAdded,
+  inCart = {},
+}: {
+  products: CatalogItem[];
+  onAdded?: (name: string) => void;
+  /** Unidades por SKU que ya están en el carrito (para respetar la existencia al agregar más). */
+  inCart?: Record<string, number>;
+}) {
+  if (products.length === 0) {
+    return <p className="text-sm text-carbon/60">Todavía no hay productos disponibles en la tienda.</p>;
+  }
+
+  // El "glorificador": el producto/paquete marcado como estrella en el admin
+  // se destaca primero y no se repite en su sección normal.
+  const featured = products.find((p) => p.isFeatured);
+  const rest = featured ? products.filter((p) => p.sku !== featured.sku) : products;
+  const individuales = rest.filter((p) => p.kind === "product");
+  const paquetes = rest.filter((p) => p.kind === "bundle");
+
+  return (
+    <div className="flex flex-col gap-12">
+      {featured && <FeaturedProductShowcase product={featured} onAdded={onAdded} inCartQuantity={inCart[featured.sku] ?? 0} />}
+      <CatalogSection title="Productos" items={individuales} onAdded={onAdded} inCart={inCart} />
+      <CatalogSection title="Paquetes" items={paquetes} onAdded={onAdded} inCart={inCart} />
     </div>
   );
 }

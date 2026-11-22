@@ -1,12 +1,16 @@
-import type { LoaderFunctionArgs, MetaFunction } from "@remix-run/node";
+import type { ActionFunctionArgs, LoaderFunctionArgs, MetaFunction } from "@remix-run/node";
 import { json } from "@remix-run/node";
-import { Link, useLoaderData } from "@remix-run/react";
+import { Form, useActionData, useLoaderData, useNavigation } from "@remix-run/react";
+import { isStaff, isSuperAdmin, ROLE_LABELS, type UserRole } from "~/lib/roles";
+import { logAudit } from "~/lib/logger.server";
 import { connectDB } from "~/lib/db.server";
 import { UserModel } from "~/models/user.server";
 import { OrderModel } from "~/models/order.server";
 import { SubscriptionModel } from "~/models/subscription.server";
 import { AnalyticsEventModel } from "~/models/analyticsEvent.server";
-import { PRODUCTS, type ProductSku } from "~/data/products";
+import { getCatalogItems } from "~/lib/catalog.server";
+import { ArrowLink } from "~/components/ui/ArrowLink";
+import { requireAdmin, requireSuperAdmin } from "~/lib/session.server";
 
 export const meta: MetaFunction = () => [{ title: "Cliente — Admin STOPee" }];
 
@@ -29,16 +33,50 @@ const ORDER_STATUS_LABELS: Record<string, string> = {
   refunded: "Reembolsado",
 };
 
-export async function loader({ params }: LoaderFunctionArgs) {
+/** Cambiar el rol de una cuenta: solo un super administrador, y nunca el de otro super administrador ni el propio. */
+export async function action({ request, params }: ActionFunctionArgs) {
+  const viewer = await requireSuperAdmin(request);
+  await connectDB();
+
+  const formData = await request.formData();
+  if (formData.get("intent") !== "set-role") return json({ ok: false, error: "Acción no reconocida." }, { status: 400 });
+
+  const role = formData.get("role");
+  if (role !== "customer" && role !== "admin") {
+    return json({ ok: false, error: "Elige un rol válido." }, { status: 400 });
+  }
+
+  const target = await UserModel.findById(params.id);
+  if (!target) return json({ ok: false, error: "Cuenta no encontrada." }, { status: 404 });
+  if (target.role === "superadmin") {
+    return json({ ok: false, error: "El rol de un super administrador solo se cambia desde la terminal." }, { status: 403 });
+  }
+  if (String(target._id) === String(viewer._id)) {
+    return json({ ok: false, error: "No puedes cambiar tu propio rol." }, { status: 403 });
+  }
+
+  if (target.role !== role) {
+    const previousRole = target.role;
+    target.role = role;
+    await target.save();
+    logAudit("user.role_changed", { by: String(viewer._id), userId: String(target._id), from: previousRole, to: role });
+  }
+  return json({ ok: true, error: null as string | null });
+}
+
+export async function loader({ request, params }: LoaderFunctionArgs) {
+  const viewer = await requireAdmin(request);
   await connectDB();
   const user = await UserModel.findById(params.id).lean();
   if (!user) throw new Response("Cliente no encontrado", { status: 404 });
 
-  const [orders, subscriptions, events] = await Promise.all([
+  const [orders, subscriptions, events, catalogItems] = await Promise.all([
     OrderModel.find({ user: user._id }).sort({ createdAt: -1 }).lean(),
     SubscriptionModel.find({ user: user._id }).sort({ createdAt: -1 }).lean(),
     AnalyticsEventModel.find({ userId: user._id }).sort({ createdAt: -1 }).limit(60).lean(),
+    getCatalogItems({ includeUnavailable: true }),
   ]);
+  const catalogNameBySku = new Map(catalogItems.map((item) => [item.sku, item.name]));
 
   const revenueOrders = orders.filter((o) => REVENUE_STATUSES.includes(o.status));
   const oneTimeOrders = revenueOrders.filter((o) => o.type === "one_time");
@@ -71,8 +109,9 @@ export async function loader({ params }: LoaderFunctionArgs) {
       address: user.address ?? null,
       dogs: (user.dogs ?? []).map((d) => ({ name: d.name, birthday: d.birthday as unknown as string | null })),
       registeredAt: user.createdAt,
-      role: user.role,
+      role: user.role as UserRole,
     },
+    canManageRole: isSuperAdmin(viewer.role) && user.role !== "superadmin" && String(user._id) !== String(viewer._id),
     insights: {
       ltv: Math.round(user.totalSpentLTV ?? 0),
       orderCount: revenueOrders.length,
@@ -107,39 +146,76 @@ export async function loader({ params }: LoaderFunctionArgs) {
     timeline: events.map((e) => ({
       type: e.type,
       label: EVENT_LABELS[e.type] ?? e.type,
-      productName: e.sku ? PRODUCTS[e.sku as ProductSku]?.name ?? e.sku : null,
+      productName: e.sku ? catalogNameBySku.get(e.sku) ?? e.sku : null,
       at: e.createdAt,
     })),
   });
 }
 
 function Card({ children, className = "" }: { children: React.ReactNode; className?: string }) {
-  return <div className={`rounded-3xl border border-carbon/10 bg-white p-5 ${className}`}>{children}</div>;
+  return <div className={`min-w-0 rounded-3xl border border-carbon/10 bg-white p-4 sm:p-5 ${className}`}>{children}</div>;
 }
 
 export default function AdminCustomerDetail() {
-  const { profile, insights, orders, subscriptions, timeline } = useLoaderData<typeof loader>();
+  const { profile, canManageRole, insights, orders, subscriptions, timeline } = useLoaderData<typeof loader>();
+  const actionData = useActionData<typeof action>();
+  const navigation = useNavigation();
+  const isSavingRole = navigation.state !== "idle" && navigation.formData?.get("intent") === "set-role";
 
   return (
-    <div className="flex flex-col gap-6">
-      <div>
-        <Link to="/admin/customers" className="text-sm font-semibold text-bosque hover:underline">
-          ← Clientes
-        </Link>
+    <div className="flex min-w-0 flex-col gap-6">
+      <div className="min-w-0">
+        <ArrowLink to="/admin/customers" direction="left" className="text-sm">Volver a clientes</ArrowLink>
         <div className="mt-2 flex flex-wrap items-center gap-3">
-          <h1 className="font-display text-2xl font-black text-carbon">{profile.name || profile.email}</h1>
-          {profile.role === "admin" && (
-            <span className="rounded-full bg-carbon/10 px-2.5 py-1 text-xs font-semibold text-carbon/60">Admin</span>
+          <h1 className="min-w-0 break-all font-display text-2xl font-black text-carbon sm:text-3xl">{profile.name || profile.email}</h1>
+          {isStaff(profile.role) && (
+            <span className="rounded-full bg-carbon/10 px-2.5 py-1 text-xs font-semibold text-carbon/60">{ROLE_LABELS[profile.role]}</span>
           )}
         </div>
-        <p className="mt-1 text-sm text-carbon/60">
+        <p className="mt-1 break-all text-sm text-carbon/60 sm:break-words">
           {profile.email} · Registrado el {new Date(profile.registeredAt).toLocaleDateString("es-MX")}
         </p>
       </div>
 
+      {canManageRole && (
+        <Card>
+          <h2 className="font-display text-lg font-bold text-carbon">Rol de la cuenta</h2>
+          <p className="mt-1 text-sm text-carbon/60">
+            Un administrador entra al panel y gestiona catálogo, pedidos y promociones; no puede crear cuentas ni cambiar roles.
+            Si lo bajas a cliente, pierde el acceso al panel de inmediato.
+          </p>
+          <Form method="post" className="mt-3 flex flex-wrap items-end gap-3">
+            <input type="hidden" name="intent" value="set-role" />
+            <div>
+              <label htmlFor="role" className="text-sm font-semibold text-carbon">Rol</label>
+              <select
+                id="role"
+                name="role"
+                defaultValue={profile.role}
+                className="mt-1 block min-h-11 rounded-xl border border-carbon/15 px-3 focus:border-oliva focus:outline-none"
+              >
+                <option value="customer">{ROLE_LABELS.customer}</option>
+                <option value="admin">{ROLE_LABELS.admin}</option>
+              </select>
+            </div>
+            <button
+              type="submit"
+              disabled={isSavingRole}
+              className="min-h-11 rounded-full bg-carbon px-6 text-sm font-bold text-hueso disabled:opacity-60"
+            >
+              {isSavingRole ? "Guardando…" : "Guardar rol"}
+            </button>
+          </Form>
+          {actionData?.ok && <p role="status" className="mt-2 text-sm font-semibold text-bosque">Rol actualizado.</p>}
+          {actionData && !actionData.ok && actionData.error && (
+            <p role="alert" className="mt-2 text-sm font-semibold text-red-600">{actionData.error}</p>
+          )}
+        </Card>
+      )}
+
       {insights.isSubscriptionCandidate && (
         <Card className="border-oliva/40 bg-oliva/5">
-          <p className="font-display font-bold text-carbon">💡 Candidato a suscripción</p>
+          <p className="font-display font-bold text-carbon">Candidato a suscripción</p>
           <p className="mt-1 text-sm text-carbon/70">
             Ya hizo {insights.orderCount} compras individuales pero no tiene un auto-envío activo —
             cada vez que recompra a mano, se pierde el descuento de suscripción. Buen momento para
@@ -161,7 +237,7 @@ export default function AdminCustomerDetail() {
           <p className="text-xs font-semibold uppercase tracking-wide text-carbon/50">Lealtad</p>
           <p className="mt-2 text-sm font-semibold text-carbon">
             {insights.loyaltyPendingReward
-              ? `🎁 ${insights.loyaltyPendingReward.rewardType === "gift" ? insights.loyaltyPendingReward.giftDescription : `${insights.loyaltyPendingReward.percentage}% listo`}`
+              ? `${insights.loyaltyPendingReward.rewardType === "gift" ? insights.loyaltyPendingReward.giftDescription : `${insights.loyaltyPendingReward.percentage}% listo`}`
               : `${insights.loyaltyCycleCount} compras en su ciclo actual`}
           </p>
         </Card>
@@ -176,12 +252,12 @@ export default function AdminCustomerDetail() {
           <h2 className="font-display text-lg font-bold text-carbon">Datos de contacto</h2>
           <dl className="mt-3 flex flex-col gap-2 text-sm">
             <div className="flex justify-between gap-4">
-              <dt className="text-carbon/50">Teléfono</dt>
-              <dd className="text-right text-carbon/70">{profile.phone || "sin registrar"}</dd>
+              <dt className="shrink-0 text-carbon/50">Teléfono</dt>
+              <dd className="min-w-0 break-words text-right text-carbon/70">{profile.phone || "sin registrar"}</dd>
             </div>
             <div className="flex justify-between gap-4">
-              <dt className="text-carbon/50">Dirección</dt>
-              <dd className="text-right text-carbon/70">
+              <dt className="shrink-0 text-carbon/50">Dirección</dt>
+              <dd className="min-w-0 break-words text-right text-carbon/70">
                 {profile.address?.line1
                   ? `${profile.address.line1}${profile.address.line2 ? `, ${profile.address.line2}` : ""}, ${profile.address.city ?? ""}, ${profile.address.state ?? ""} ${profile.address.postalCode ?? ""}`
                   : "sin registrar"}
@@ -196,7 +272,7 @@ export default function AdminCustomerDetail() {
               {profile.dogs.map((d, i) => (
                 <li key={i}>
                   {d.name}
-                  {d.birthday && ` — 🎂 ${new Date(d.birthday).toLocaleDateString("es-MX", { day: "numeric", month: "long" })}`}
+                  {d.birthday && ` — cumpleaños ${new Date(d.birthday).toLocaleDateString("es-MX", { day: "numeric", month: "long" })}`}
                 </li>
               ))}
             </ul>
@@ -266,8 +342,8 @@ export default function AdminCustomerDetail() {
         ) : (
           <ul className="mt-3 flex flex-col gap-2">
             {timeline.map((e, i) => (
-              <li key={i} className="flex items-center justify-between gap-4 border-t border-carbon/5 pt-2 text-sm first:border-0 first:pt-0">
-                <span className="text-carbon/70">
+              <li key={i} className="flex flex-col gap-0.5 border-t border-carbon/5 pt-2 text-sm first:border-0 first:pt-0 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+                <span className="min-w-0 break-words text-carbon/70">
                   {e.label}
                   {e.productName && `: ${e.productName}`}
                 </span>

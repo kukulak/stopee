@@ -1,6 +1,7 @@
+import type { LoaderFunctionArgs } from "@remix-run/node";
 import type { ActionFunctionArgs, MetaFunction } from "@remix-run/node";
 import { json } from "@remix-run/node";
-import { Form, Link, useActionData, useLoaderData, useNavigation } from "@remix-run/react";
+import { Form, useActionData, useLoaderData, useNavigation } from "@remix-run/react";
 import { useMemo, useState } from "react";
 import { connectDB } from "~/lib/db.server";
 import { ProductModel } from "~/models/product.server";
@@ -8,18 +9,27 @@ import { BundleModel } from "~/models/bundle.server";
 import { computeBundlePrice } from "~/lib/pricing";
 import { collectMediaFromForm } from "~/lib/media.server";
 import { parseCatalogFormData } from "~/lib/upload.server";
+import { generateUniqueBundleSku } from "~/lib/catalog.server";
+import { slugify } from "~/lib/slug";
 import { Field, inputClass, MediaGallery, AddMediaForm } from "~/components/admin/MediaFields";
+import { ArrowLink } from "~/components/ui/ArrowLink";
+import { StarNote } from "~/components/admin/StarNote";
+import { clearFeatured, getCurrentStarName, toggleFeatured } from "~/lib/featured.server";
+import { requireAdmin } from "~/lib/session.server";
 
 export const meta: MetaFunction = () => [{ title: "Paquetes — Admin STOPee" }];
 
-export async function loader() {
+export async function loader({ request }: LoaderFunctionArgs) {
+  await requireAdmin(request);
   await connectDB();
-  const [products, bundles] = await Promise.all([
+  const [products, bundles, currentStarName] = await Promise.all([
     ProductModel.find().sort({ createdAt: -1 }).lean(),
     BundleModel.find().sort({ createdAt: -1 }).populate("products.product").lean(),
+    getCurrentStarName(),
   ]);
 
   return json({
+    currentStarName,
     products: products.map((p) => ({
       id: String(p._id),
       name: p.name,
@@ -30,6 +40,7 @@ export async function loader() {
       name: b.name,
       bundlePrice: b.bundlePrice,
       isActive: b.isActive,
+      isFeatured: b.isFeatured ?? false,
       images: b.images ?? [],
       videos: (b.videos ?? []) as { url: string; source: string }[],
       products: (
@@ -65,6 +76,7 @@ function readBundleRows(formData: FormData) {
 }
 
 export async function action({ request }: ActionFunctionArgs) {
+  await requireAdmin(request);
   await connectDB();
   const formData = await parseCatalogFormData(request);
   const intent = formData.get("intent");
@@ -100,14 +112,18 @@ export async function action({ request }: ActionFunctionArgs) {
       discountPercentage: r.discountPercentage,
     }));
 
+    const isFeatured = formData.get("isFeatured") === "on";
+    if (isFeatured) await clearFeatured(intent === "update-bundle" ? String(formData.get("id")) : undefined);
+
     if (intent === "update-bundle") {
       const id = String(formData.get("id"));
-      await BundleModel.findByIdAndUpdate(id, { name, bundlePrice, products: bundleProducts });
+      await BundleModel.findByIdAndUpdate(id, { name, bundlePrice, products: bundleProducts, isFeatured });
       return json({ ok: true as const, error: null });
     }
 
+    const sku = await generateUniqueBundleSku(name, slugify);
     const { images, videos } = collectMediaFromForm(formData);
-    await BundleModel.create({ name, bundlePrice, images, videos, products: bundleProducts });
+    await BundleModel.create({ name, sku, bundlePrice, images, videos, products: bundleProducts, isFeatured });
     return json({ ok: true as const, error: null });
   }
 
@@ -130,6 +146,11 @@ export async function action({ request }: ActionFunctionArgs) {
     } else {
       await BundleModel.findByIdAndUpdate(id, { $pull: { videos: { url: value } } });
     }
+    return json({ ok: true as const, error: null });
+  }
+
+  if (intent === "toggle-bundle-featured") {
+    await toggleFeatured("bundle", String(formData.get("id")));
     return json({ ok: true as const, error: null });
   }
 
@@ -201,7 +222,7 @@ function BundleBuilder({
     <Form
       method="post"
       encType={isEdit ? undefined : "multipart/form-data"}
-      className="mt-4 flex flex-col gap-5 rounded-3xl border border-carbon/10 bg-white p-6"
+      className="mt-4 flex flex-col gap-5 rounded-3xl border border-carbon/10 bg-white p-4 sm:p-6"
     >
       <input type="hidden" name="intent" value={isEdit ? "update-bundle" : "create-bundle"} />
       {isEdit && <input type="hidden" name="id" value={defaults!.id} />}
@@ -233,13 +254,13 @@ function BundleBuilder({
           {products.map((p) => (
             <div
               key={p.id}
-              className="grid grid-cols-1 items-center gap-2 rounded-xl border border-carbon/10 px-4 py-3 sm:grid-cols-[1fr_auto_auto_auto]"
+              className="grid grid-cols-1 items-center gap-2 rounded-xl border border-carbon/10 px-4 py-3 sm:grid-cols-[minmax(0,1fr)_auto_auto_auto]"
             >
-              <span className="text-sm font-medium text-carbon">
+              <span className="min-w-0 break-words text-sm font-medium text-carbon">
                 {p.name} <span className="text-carbon/40">(${p.price})</span>
               </span>
               <input type="hidden" name="productId" value={p.id} />
-              <label className="flex items-center gap-2 text-xs text-carbon/60">
+              <label className="flex min-h-11 items-center gap-2 text-xs text-carbon/60">
                 Cant.
                 <input
                   name="quantity"
@@ -250,7 +271,7 @@ function BundleBuilder({
                   className="min-h-11 w-16 rounded-lg border border-carbon/15 px-2 text-center focus:border-oliva focus:outline-none"
                 />
               </label>
-              <label className="flex items-center gap-2 text-xs text-carbon/60">
+              <label className="flex min-h-11 items-center gap-2 text-xs text-carbon/60">
                 Desc. %
                 <input
                   name="discountPercentage"
@@ -288,11 +309,16 @@ function BundleBuilder({
         <p className="font-display text-xl font-black text-carbon">Precio final del paquete: ${total.toFixed(2)} MXN</p>
       </div>
 
-      <div className="flex items-center gap-3">
+      <label className="flex min-h-11 items-start gap-3 text-sm font-medium text-carbon">
+        <input type="checkbox" name="isFeatured" defaultChecked={defaults?.isFeatured ?? false} className="mt-0.5 h-5 w-5 shrink-0 accent-lima" />
+        Paquete estrella (destacado arriba del catálogo en /tienda; al marcarlo, la estrella actual se desmarca sola)
+      </label>
+
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
         <button
           type="submit"
           disabled={submitting}
-          className="min-h-11 self-start rounded-full bg-lima px-6 text-sm font-bold text-carbon disabled:opacity-60"
+          className="min-h-11 w-full rounded-full bg-lima px-6 text-sm font-bold text-carbon disabled:opacity-60 sm:w-auto sm:self-start"
         >
           {submitting ? "Guardando…" : isEdit ? "Guardar cambios" : "Crear paquete"}
         </button>
@@ -300,7 +326,7 @@ function BundleBuilder({
           <button
             type="button"
             onClick={onCancel}
-            className="min-h-11 rounded-full border border-carbon/15 px-6 text-sm font-semibold text-carbon hover:border-carbon/30"
+            className="min-h-11 rounded-full border border-carbon/15 px-6 text-sm font-semibold text-carbon hover:border-carbon/30 w-full sm:w-auto"
           >
             Cancelar
           </button>
@@ -311,7 +337,7 @@ function BundleBuilder({
 }
 
 export default function AdminCatalogBundles() {
-  const { products, bundles } = useLoaderData<typeof loader>();
+  const { products, bundles, currentStarName } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const navigation = useNavigation();
   const submittingIntent = navigation.state !== "idle" ? navigation.formData?.get("intent") : null;
@@ -320,13 +346,13 @@ export default function AdminCatalogBundles() {
 
   return (
     <div>
-      <Link to="/admin/catalog" className="text-sm font-semibold text-bosque hover:underline">
-        ← Catálogo
-      </Link>
-      <h1 className="mt-2 font-display text-2xl font-black text-carbon">Paquetes</h1>
+      <ArrowLink to="/admin/catalog" direction="left" className="text-sm">Volver al catálogo</ArrowLink>
+      <h1 className="mt-2 font-display text-2xl sm:text-3xl font-black text-carbon">Paquetes</h1>
       <p className="mt-1 text-sm text-carbon/60">Combina productos existentes en paquetes con precio automático.</p>
 
       {actionData?.error && <p className="mt-4 text-sm font-semibold text-red-600">{actionData.error}</p>}
+
+      <StarNote currentStarName={currentStarName} />
 
       {products.length === 0 ? (
         <p className="mt-4 text-sm text-carbon/60">Agrega al menos un producto para poder armar paquetes.</p>
@@ -339,10 +365,15 @@ export default function AdminCatalogBundles() {
       ) : (
         <ul className="mt-4 flex flex-col gap-4">
           {bundles.map((b) => (
-            <li key={b.id} className="rounded-3xl border border-carbon/10 bg-white p-5">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <p className="font-display font-bold text-carbon">{b.name}</p>
+            <li key={b.id} className="min-w-0 rounded-3xl border border-carbon/10 bg-white p-4 sm:p-5">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="min-w-0 break-words font-display font-bold text-carbon">{b.name}</p>
+                    {b.isFeatured && (
+                      <span className="rounded-full bg-lima px-2 py-0.5 text-xs font-bold text-carbon">Estrella</span>
+                    )}
+                  </div>
                   <p className="text-sm text-carbon/60">
                     {b.products
                       .map((item) => `${item.quantity}× ${item.name}${item.discountPercentage > 0 ? ` (-${item.discountPercentage}%)` : ""}`)
@@ -350,28 +381,35 @@ export default function AdminCatalogBundles() {
                   </p>
                   <p className="mt-1 text-sm font-semibold text-bosque">${b.bundlePrice.toFixed(2)} MXN — calculado automáticamente</p>
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${b.isActive ? "bg-lima/20 text-bosque" : "bg-carbon/10 text-carbon/50"}`}>
+                <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center lg:shrink-0">
+                  <span className={`col-span-2 justify-self-start sm:col-span-1 rounded-full px-2.5 py-1 text-xs font-semibold ${b.isActive ? "bg-lima/20 text-bosque" : "bg-carbon/10 text-carbon/50"}`}>
                     {b.isActive ? "Activo" : "Inactivo"}
                   </span>
                   <button
                     type="button"
                     onClick={() => setEditingId(editingId === b.id ? null : b.id)}
-                    className="min-h-11 rounded-full border border-carbon/15 px-4 text-xs font-semibold text-carbon hover:border-carbon/30"
+                    className="min-h-11 w-full rounded-full border border-carbon/15 px-4 text-xs font-semibold text-carbon hover:border-carbon/30 sm:w-auto"
                   >
                     {editingId === b.id ? "Cerrar" : "Editar"}
                   </button>
-                  <Form method="post">
+                  <Form method="post" className="contents">
+                    <input type="hidden" name="intent" value="toggle-bundle-featured" />
+                    <input type="hidden" name="id" value={b.id} />
+                    <button type="submit" className="min-h-11 rounded-full border border-carbon/15 px-4 text-xs font-semibold text-carbon hover:border-carbon/30 w-full sm:w-auto">
+                      {b.isFeatured ? "Quitar estrella" : "Hacer estrella"}
+                    </button>
+                  </Form>
+                  <Form method="post" className="contents">
                     <input type="hidden" name="intent" value="toggle-bundle-active" />
                     <input type="hidden" name="id" value={b.id} />
-                    <button type="submit" className="min-h-11 rounded-full border border-carbon/15 px-4 text-xs font-semibold text-carbon hover:border-carbon/30">
+                    <button type="submit" className="min-h-11 rounded-full border border-carbon/15 px-4 text-xs font-semibold text-carbon hover:border-carbon/30 w-full sm:w-auto">
                       {b.isActive ? "Desactivar" : "Activar"}
                     </button>
                   </Form>
-                  <Form method="post">
+                  <Form method="post" className="contents">
                     <input type="hidden" name="intent" value="delete-bundle" />
                     <input type="hidden" name="id" value={b.id} />
-                    <button type="submit" className="min-h-11 rounded-full border border-carbon/15 px-4 text-xs font-semibold text-red-600 hover:border-red-300">
+                    <button type="submit" className="min-h-11 rounded-full border border-carbon/15 px-4 text-xs font-semibold text-red-600 hover:border-red-300 w-full sm:w-auto">
                       Eliminar
                     </button>
                   </Form>
@@ -379,25 +417,27 @@ export default function AdminCatalogBundles() {
               </div>
 
               {editingId === b.id && (
-                <BundleBuilder
-                  products={products}
-                  submitting={submittingIntent === "update-bundle"}
-                  defaults={b}
-                  onCancel={() => setEditingId(null)}
-                />
+                <>
+                  <BundleBuilder
+                    products={products}
+                    submitting={submittingIntent === "update-bundle"}
+                    defaults={b}
+                    onCancel={() => setEditingId(null)}
+                  />
+                  <div className="mt-4 rounded-2xl border border-dashed border-carbon/20 p-4">
+                    <p className="text-sm font-semibold text-carbon">Fotos y video</p>
+                    <MediaGallery images={b.images} videos={b.videos} removeIntent="remove-media-bundle" ownerId={b.id} />
+                    <button
+                      type="button"
+                      onClick={() => setExpandedMediaFor(expandedMediaFor === b.id ? null : b.id)}
+                      className="mt-3 min-h-11 text-sm font-semibold text-bosque hover:underline"
+                    >
+                      {expandedMediaFor === b.id ? "Cerrar" : "+ Agregar fotos o video"}
+                    </button>
+                    {expandedMediaFor === b.id && <AddMediaForm ownerId={b.id} intent="add-media-bundle" />}
+                  </div>
+                </>
               )}
-
-              <MediaGallery images={b.images} videos={b.videos} removeIntent="remove-media-bundle" ownerId={b.id} />
-
-              <button
-                type="button"
-                onClick={() => setExpandedMediaFor(expandedMediaFor === b.id ? null : b.id)}
-                className="mt-3 min-h-11 text-sm font-semibold text-bosque hover:underline"
-              >
-                {expandedMediaFor === b.id ? "Cerrar" : "+ Agregar fotos o video"}
-              </button>
-
-              {expandedMediaFor === b.id && <AddMediaForm ownerId={b.id} intent="add-media-bundle" />}
             </li>
           ))}
         </ul>

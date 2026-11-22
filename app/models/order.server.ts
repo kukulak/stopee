@@ -21,6 +21,25 @@ const attributionSchema = new Schema(
   { _id: false },
 );
 
+/**
+ * Qué efectos secundarios del pago ya se aplicaron para este pedido (existencias,
+ * cupón, lista de espera, lealtad…). Cada uno se reclama de forma atómica antes
+ * de ejecutarse, así que un reintento del webhook de Stripe (porque falló a la
+ * mitad, o llegó dos veces) retoma lo que faltó sin repetir lo que ya se hizo.
+ * Los pedidos anteriores a este control no lo tienen y no se vuelven a procesar.
+ */
+const effectsSchema = new Schema(
+  {
+    stock: { type: Boolean, default: false },
+    promotion: { type: Boolean, default: false },
+    lead: { type: Boolean, default: false },
+    loyalty: { type: Boolean, default: false },
+    subscription: { type: Boolean, default: false },
+    refund: { type: Boolean, default: false },
+  },
+  { _id: false },
+);
+
 const orderSchema = new Schema(
   {
     user: { type: Schema.Types.ObjectId, ref: "User" },
@@ -46,6 +65,7 @@ const orderSchema = new Schema(
       default: "paid",
     },
     trackingNumber: { type: String, default: "" },
+    effects: { type: effectsSchema, default: undefined },
     attribution: { type: attributionSchema, default: () => ({}) },
     /** Promoción redimida en este pedido, si hubo una (para medir efectividad en el dashboard). */
     promotion: {
@@ -55,7 +75,17 @@ const orderSchema = new Schema(
     },
     /** true si esta orden cuenta para el contador de fidelidad (compra individual, no de suscripción) */
     countsTowardLoyalty: { type: Boolean, default: true },
+    /** Costo de envío cobrado en este pedido (ya incluido en netAmount) — ver ~/models/shipping.server. */
+    shippingCost: { type: Number, default: 0 },
+    /** Método elegido por el cliente: "pickup" (punto de entrega), "home" (domicilio) o vacío en pedidos anteriores / sin envío. */
+    shippingMethod: { type: String, default: "" },
+    /** Nombre del método tal como lo vio el cliente al pagar (se guarda porque el admin puede renombrarlo después). */
+    shippingMethodLabel: { type: String, default: "" },
+    /** true si el envío salió gratis por alcanzar el monto mínimo. */
+    shippingFree: { type: Boolean, default: false },
     shippingAddress: {
+      name: String,
+      phone: String,
       line1: String,
       line2: String,
       city: String,
@@ -66,6 +96,14 @@ const orderSchema = new Schema(
   },
   { timestamps: true },
 );
+
+// Consultas frecuentes: "Mis pedidos" (por usuario), dashboard y exportaciones
+// (por fecha y estado), búsqueda por correo y por PaymentIntent (reembolsos).
+orderSchema.index({ user: 1, createdAt: -1 });
+orderSchema.index({ createdAt: -1 });
+orderSchema.index({ status: 1, createdAt: -1 });
+orderSchema.index({ email: 1 });
+orderSchema.index({ stripePaymentIntentId: 1 }, { sparse: true });
 
 export type OrderDoc = InferSchemaType<typeof orderSchema>;
 

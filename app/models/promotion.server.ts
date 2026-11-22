@@ -38,6 +38,7 @@ const bannerSchema = new Schema(
     enabled: { type: Boolean, default: false },
     text: { type: String, default: "", trim: true },
     imageUrl: { type: String, default: "", trim: true },
+    imageAlt: { type: String, default: "", trim: true },
     ctaText: { type: String, default: "", trim: true },
     ctaHref: { type: String, default: "/tienda", trim: true },
   },
@@ -58,6 +59,21 @@ const promotionSchema = new Schema(
     coupon: {
       code: { type: String, uppercase: true, trim: true },
       percentage: { type: Number, min: 1, max: 100 },
+      // --- Reglas opcionales (vacío = sin restricción). Ver ~/lib/couponRules.server ---
+      /** Cada cliente puede usarlo una sola vez (por cuenta o correo). Exige sesión iniciada. */
+      oncePerCustomer: { type: Boolean, default: false },
+      /** Solo estos correos pueden usarlo (en minúsculas). Exige sesión iniciada. */
+      allowedEmails: { type: [String], default: [] },
+      /** Solo para clientes que todavía no han comprado. Exige sesión iniciada. */
+      firstPurchaseOnly: { type: Boolean, default: false },
+      /** Compra mínima en pesos (antes del descuento). */
+      minSpendMxn: { type: Number, min: 0 },
+      /** Mínimo de piezas en el carrito. */
+      minQuantity: { type: Number, min: 1 },
+      /** El carrito debe traer al menos uno de estos productos o paquetes (SKU). */
+      requiredSkus: { type: [String], default: [] },
+      /** Puede sumarse a la recompensa de lealtad del cliente. Por defecto, no se combina con nada. */
+      stackable: { type: Boolean, default: false },
     },
     bogo: {
       buyQuantity: { type: Number, min: 1, default: 1 },
@@ -109,9 +125,8 @@ const promotionSchema = new Schema(
      */
     byRequirement: {
       condition: { type: String, enum: ["product_in_cart", "product_spend", "first_purchase"], default: "product_in_cart" },
-      // SKU del catálogo real de la tienda (app/data/products.ts) — NO el
-      // catálogo de /admin/catalog, que es un sistema aparte usado solo para
-      // inventario/margen y no es lo que hay en el carrito del cliente.
+      // SKU del catálogo real de la tienda (~/lib/catalog.server, respaldado
+      // por Product/Bundle en MongoDB — ver /admin/catalog).
       targetSku: { type: String },
       minQuantity: { type: Number, min: 1 },
       minSpendMxn: { type: Number, min: 0 },
@@ -144,28 +159,50 @@ export async function getActiveLoyaltyConfig() {
   };
 }
 
-/** Promoción activa (con banner habilitado) para mostrar en el hero de la tienda. */
-export async function getActiveBannerPromotion() {
+function activeBannerPromotionFilter() {
   const now = new Date();
-  return PromotionModel.findOne({
+  return {
     isActive: true,
     "banner.enabled": true,
     $and: [
       { $or: [{ startsAt: { $exists: false } }, { startsAt: { $lte: now } }] },
       { $or: [{ endsAt: { $exists: false } }, { endsAt: { $gte: now } }] },
     ],
-  })
-    .sort({ updatedAt: -1 })
-    .lean();
+  };
 }
 
-/** Cupón activo y vigente por código, para redimir en checkout. */
+/** Promoción activa (con banner habilitado) para el hero único del home. */
+export async function getActiveBannerPromotion() {
+  return PromotionModel.findOne(activeBannerPromotionFilter()).sort({ updatedAt: -1 }).lean();
+}
+
+/** Todas las promociones activas con banner habilitado, para el carrusel del hero de /tienda. */
+export async function getActiveBannerPromotions() {
+  return PromotionModel.find(activeBannerPromotionFilter()).sort({ updatedAt: -1 }).lean();
+}
+
+/**
+ * Cupón activo y vigente por código, para redimir en checkout. Respeta la
+ * fecha de inicio, la de fin y el tope de usos (`usageLimit`): un cupón con
+ * "primeros 100" deja de servir en cuanto se canjea el número 100.
+ */
 export async function findRedeemableCoupon(code: string) {
   const now = new Date();
   return PromotionModel.findOne({
     type: "coupon",
     isActive: true,
     "coupon.code": code.toUpperCase().trim(),
-    $or: [{ endsAt: { $exists: false } }, { endsAt: { $gte: now } }],
+    $and: [
+      { $or: [{ startsAt: { $exists: false } }, { startsAt: null }, { startsAt: { $lte: now } }] },
+      { $or: [{ endsAt: { $exists: false } }, { endsAt: null }, { endsAt: { $gte: now } }] },
+      {
+        $or: [
+          { usageLimit: { $exists: false } },
+          { usageLimit: null },
+          { usageLimit: 0 },
+          { $expr: { $lt: [{ $ifNull: ["$timesUsed", 0] }, "$usageLimit"] } },
+        ],
+      },
+    ],
   });
 }

@@ -45,6 +45,10 @@ const userSchema = new Schema(
   {
     email: { type: String, required: true, unique: true, lowercase: true, trim: true },
     passwordHash: { type: String, required: true },
+    /** Cuándo confirmó que el correo es suyo (enlace del correo o restablecer contraseña). Vacío = sin confirmar. */
+    emailVerifiedAt: { type: Date },
+    /** Último cambio de contraseña: las sesiones iniciadas antes de este momento dejan de valer. */
+    passwordChangedAt: { type: Date },
     name: { type: String, trim: true },
     stripeCustomerId: { type: String },
     /** @deprecated usar `dogs` — se conserva por el registro histórico y como fallback de despliegue. */
@@ -60,7 +64,7 @@ const userSchema = new Schema(
     loyaltyCyclesCompleted: { type: Number, default: 0 },
     /** Recompensa ganada, lista para su próxima compra — null si no tiene ninguna pendiente. */
     loyaltyPendingReward: { type: loyaltyRewardSchema, default: null },
-    role: { type: String, enum: ["customer", "admin"], default: "customer" },
+    role: { type: String, enum: ["customer", "admin", "superadmin"], default: "customer" },
     /** Lifetime value: suma de netAmount de todas sus órdenes pagadas. */
     totalSpentLTV: { type: Number, default: 0 },
   },
@@ -69,11 +73,28 @@ const userSchema = new Schema(
 
 export type UserDoc = InferSchemaType<typeof userSchema>;
 
+/** Costo de bcrypt para contraseñas nuevas (2^12 vueltas). */
+const BCRYPT_COST = 12;
+
 export async function hashPassword(password: string) {
-  return bcrypt.hash(password, 10);
+  return bcrypt.hash(password, BCRYPT_COST);
 }
 
-export async function verifyPassword(password: string, hash: string) {
+// Hash de relleno para comparar cuando el correo no existe: así responder
+// "correo o contraseña incorrectos" tarda lo mismo exista o no la cuenta, y
+// no se puede averiguar qué correos están registrados midiendo el tiempo.
+let dummyHashPromise: Promise<string> | undefined;
+function getDummyHash() {
+  dummyHashPromise ??= bcrypt.hash("contrasena-de-relleno-sin-uso", BCRYPT_COST);
+  return dummyHashPromise;
+}
+
+/** `hash` puede venir vacío (usuario inexistente): se compara contra el relleno y siempre devuelve false. */
+export async function verifyPassword(password: string, hash: string | null | undefined) {
+  if (!hash) {
+    await bcrypt.compare(password, await getDummyHash());
+    return false;
+  }
   return bcrypt.compare(password, hash);
 }
 

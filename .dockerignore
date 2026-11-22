@@ -1,0 +1,16 @@
+node_modules
+build
+.git
+.claude
+.env
+.env.*
+!.env.example
+._*
+.DS_Store
+public/uploads
+scratch_audit.html
+stopee_landing_ecommerce_spec.md
+*.md
+!README.md
+Dockerfile
+.dockerignore

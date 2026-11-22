@@ -1,5 +1,6 @@
 import mongoose, { type InferSchemaType, type Model } from "mongoose";
 import { connectDB } from "~/lib/db.server";
+import { createTtlCache } from "~/lib/ttlCache.server";
 
 const { Schema, model, models } = mongoose;
 
@@ -34,14 +35,24 @@ export async function getSiteSettings() {
   return created.toObject();
 }
 
+const getSiteSettingsCache = createTtlCache<Awaited<ReturnType<typeof getSiteSettings>>>();
+
+/** getSiteSettings con caché corta, para el layout raíz (que lo lee en cada petición). */
+export function getSiteSettingsCached() {
+  return getSiteSettingsCache.get(getSiteSettings);
+}
+
 export async function updateSiteSettings(data: Partial<SiteSettingsDoc>) {
   await connectDB();
+  getSiteSettingsCache.clear();
   const existing = await SiteSettingsModel.findOne();
   if (existing) {
     Object.assign(existing, data);
     await existing.save();
+    getSiteSettingsCache.clear();
     return existing.toObject();
   }
   const created = await SiteSettingsModel.create(data);
+  getSiteSettingsCache.clear();
   return created.toObject();
 }

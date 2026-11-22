@@ -1,3 +1,4 @@
+import type { LoaderFunctionArgs } from "@remix-run/node";
 import type { ActionFunctionArgs, MetaFunction } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import { Form, useActionData, useLoaderData, useNavigation } from "@remix-run/react";
@@ -6,16 +7,23 @@ import { connectDB } from "~/lib/db.server";
 import { BlogPostModel } from "~/models/blogPost.server";
 import { parseCatalogFormData, uploadedFileToPublicUrl } from "~/lib/upload.server";
 import { renderMarkdown } from "~/lib/markdown.server";
-import { slugify } from "~/lib/slug";
+import { SLUG_MAX_LENGTH, slugify, slugifyLive } from "~/lib/slug";
 import { Field, inputClass } from "~/components/admin/MediaFields";
+import { getCatalogItems } from "~/lib/catalog.server";
+import { requireAdmin } from "~/lib/session.server";
 
 export const meta: MetaFunction = () => [{ title: "Blog — Admin STOPee" }];
 
-export async function loader() {
+export async function loader({ request }: LoaderFunctionArgs) {
+  await requireAdmin(request);
   await connectDB();
-  const posts = await BlogPostModel.find().sort({ createdAt: -1 }).lean();
+  const [posts, catalogItems] = await Promise.all([
+    BlogPostModel.find().sort({ createdAt: -1 }).lean(),
+    getCatalogItems({ includeUnavailable: true }),
+  ]);
   const now = Date.now();
   return json({
+    catalogItems: catalogItems.map((item) => ({ sku: item.sku, name: item.name })),
     posts: posts.map((p) => ({
       id: String(p._id),
       title: p.title,
@@ -23,7 +31,10 @@ export async function loader() {
       excerpt: p.excerpt,
       content: p.content,
       imageUrl: p.imageUrl ?? "",
+      imageAlt: p.imageAlt ?? "",
       readingMinutes: p.readingMinutes ?? 3,
+      relatedPostSlugs: p.relatedPostSlugs ?? [],
+      relatedProductSkus: p.relatedProductSkus ?? [],
       publishedAt: p.publishedAt ?? null,
       status: !p.publishedAt ? ("draft" as const) : new Date(p.publishedAt).getTime() > now ? ("scheduled" as const) : ("published" as const),
     })),
@@ -47,7 +58,7 @@ function buildBlogPostDoc(formData: FormData, options: { existingId?: string; ex
   if (!excerpt) return { ok: false as const, error: "Ponle un resumen corto al artículo." };
   if (!content) return { ok: false as const, error: "El contenido no puede estar vacío." };
 
-  const slug = slugify(slugInput || title);
+  const slug = slugify(slugInput || title, SLUG_MAX_LENGTH);
   if (!slug) return { ok: false as const, error: "El slug no puede estar vacío." };
 
   let publishedAt: Date | null = null;
@@ -60,15 +71,20 @@ function buildBlogPostDoc(formData: FormData, options: { existingId?: string; ex
   const uploadedImageUrl = uploadedFileToPublicUrl(formData.get("image") as File | null);
   const removeImage = formData.get("removeImage") === "on";
   const imageUrl = uploadedImageUrl ?? (removeImage ? "" : options.existingImageUrl ?? "");
+  const imageAlt = String(formData.get("imageAlt") ?? "").trim();
+
+  const relatedPostSlugs = formData.getAll("relatedPostSlugs") as string[];
+  const relatedProductSkus = formData.getAll("relatedProductSkus") as string[];
 
   return {
     ok: true as const,
     slug,
-    doc: { title, slug, excerpt, content, imageUrl, readingMinutes, publishedAt },
+    doc: { title, slug, excerpt, content, imageUrl, imageAlt, readingMinutes, publishedAt, relatedPostSlugs, relatedProductSkus },
   };
 }
 
 export async function action({ request }: ActionFunctionArgs) {
+  await requireAdmin(request);
   await connectDB();
   const formData = await parseCatalogFormData(request);
   const intent = formData.get("intent");
@@ -112,7 +128,15 @@ const STATUS_LABELS = {
   published: { label: "Publicado", className: "bg-lima/20 text-bosque" },
 };
 
-function PostFormFields({ defaults }: { defaults?: Post }) {
+function PostFormFields({
+  defaults,
+  allPosts,
+  catalogItems,
+}: {
+  defaults?: Post;
+  allPosts: Post[];
+  catalogItems: { sku: string; name: string }[];
+}) {
   const [title, setTitle] = useState(defaults?.title ?? "");
   const [slug, setSlug] = useState(defaults?.slug ?? "");
   const [slugTouched, setSlugTouched] = useState(Boolean(defaults?.slug));
@@ -137,7 +161,7 @@ function PostFormFields({ defaults }: { defaults?: Post }) {
             value={title}
             onChange={(e) => {
               setTitle(e.target.value);
-              if (!slugTouched) setSlug(e.target.value);
+              if (!slugTouched) setSlug(slugify(e.target.value, SLUG_MAX_LENGTH));
             }}
             placeholder="Por qué la orina daña el mobiliario urbano"
             className={inputClass}
@@ -149,13 +173,37 @@ function PostFormFields({ defaults }: { defaults?: Post }) {
             name="slug"
             required
             value={slug}
+            maxLength={SLUG_MAX_LENGTH}
+            autoComplete="off"
+            spellCheck={false}
+            aria-describedby="slug-help"
             onChange={(e) => {
               setSlugTouched(true);
-              setSlug(e.target.value);
+              setSlug(slugifyLive(e.target.value));
+            }}
+            onBlur={() => {
+              const clean = slugify(slug, SLUG_MAX_LENGTH);
+              // Si lo deja vacío, vuelve a seguir al título.
+              if (!clean) setSlugTouched(false);
+              setSlug(clean || slugify(title, SLUG_MAX_LENGTH));
             }}
             placeholder="por-que-la-orina-dana-el-mobiliario"
             className={inputClass}
           />
+          <div id="slug-help" className="mt-2 space-y-1 text-xs text-carbon/60">
+            <p>
+              Así quedará la dirección: <span className="font-semibold text-carbon">/blog/{slug || "…"}</span>
+            </p>
+            <p>
+              Solo minúsculas, números y guiones. Los acentos, espacios y símbolos se corrigen solos. Máximo{" "}
+              {SLUG_MAX_LENGTH} caracteres.
+            </p>
+            {defaults?.slug && slug !== defaults.slug && (
+              <p className="font-semibold text-red-600">
+                Este artículo ya tiene dirección. Si la cambias, los enlaces que ya compartiste dejarán de funcionar.
+              </p>
+            )}
+          </div>
         </Field>
       </div>
 
@@ -167,14 +215,21 @@ function PostFormFields({ defaults }: { defaults?: Post }) {
         <Field label="Imagen (opcional)" htmlFor="image">
           <input id="image" name="image" type="file" accept="image/*" className={inputClass} />
           {defaults?.imageUrl && (
-            <div className="mt-2 flex items-center gap-2">
+            <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
               <img src={defaults.imageUrl} alt="" className="h-14 w-24 rounded-lg object-cover" />
-              <label className="flex items-center gap-1 text-xs text-carbon/60">
-                <input type="checkbox" name="removeImage" className="h-4 w-4 accent-red-500" />
+              <label className="flex min-h-11 items-center gap-2 text-xs text-carbon/60">
+                <input type="checkbox" name="removeImage" className="h-5 w-5 shrink-0 accent-red-500" />
                 Quitar imagen actual
               </label>
             </div>
           )}
+          <input
+            type="text"
+            name="imageAlt"
+            defaultValue={defaults?.imageAlt}
+            placeholder="Texto alternativo de la imagen (para lectores de pantalla)"
+            className={`${inputClass} mt-2`}
+          />
         </Field>
         <Field label="Minutos de lectura" htmlFor="readingMinutes">
           <input id="readingMinutes" name="readingMinutes" type="number" min={1} defaultValue={defaults?.readingMinutes ?? 3} className={inputClass} />
@@ -182,14 +237,14 @@ function PostFormFields({ defaults }: { defaults?: Post }) {
       </div>
 
       <div>
-        <div className="flex items-center justify-between">
+        <div className="flex items-start justify-between gap-3">
           <label htmlFor="content" className="text-sm font-semibold text-carbon">
             Contenido (admite Markdown: **negritas**, ## subtítulos, listas, enlaces)
           </label>
           <button
             type="button"
             onClick={() => setShowPreview((v) => !v)}
-            className="text-xs font-semibold text-bosque hover:underline"
+            className="min-h-11 shrink-0 px-2 text-xs font-semibold text-bosque hover:underline"
           >
             {showPreview ? "Editar" : "Vista previa"}
           </button>
@@ -206,6 +261,57 @@ function PostFormFields({ defaults }: { defaults?: Post }) {
           onChange={(e) => setContent(e.target.value)}
           className={showPreview ? "hidden" : `${inputClass} font-mono text-sm`}
         />
+      </div>
+
+      <div className="rounded-2xl border border-carbon/10 p-4">
+        <p className="text-sm font-semibold text-carbon">Enlaces internos</p>
+        <p className="mt-1 text-xs text-carbon/50">
+          Se muestran como "También te puede interesar" al final del artículo publicado.
+        </p>
+
+        <p className="mt-3 text-xs font-semibold uppercase tracking-wide text-carbon/50">Productos relacionados</p>
+        <div className="mt-2 flex flex-wrap gap-2">
+          {catalogItems.map((product) => (
+            <label
+              key={product.sku}
+              className="flex min-h-11 min-w-0 max-w-full cursor-pointer items-center gap-2 break-words rounded-full border border-carbon/15 px-3 py-1.5 text-sm text-carbon has-[:checked]:border-lima has-[:checked]:bg-lima/20"
+            >
+              <input
+                type="checkbox"
+                name="relatedProductSkus"
+                value={product.sku}
+                defaultChecked={defaults?.relatedProductSkus.includes(product.sku)}
+                className="h-5 w-5 shrink-0 accent-lima"
+              />
+              {product.name}
+            </label>
+          ))}
+        </div>
+
+        {allPosts.length > 0 && (
+          <>
+            <p className="mt-4 text-xs font-semibold uppercase tracking-wide text-carbon/50">Artículos relacionados</p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {allPosts
+                .filter((post) => post.id !== defaults?.id)
+                .map((post) => (
+                  <label
+                    key={post.slug}
+                    className="flex min-h-11 min-w-0 max-w-full cursor-pointer items-center gap-2 break-words rounded-full border border-carbon/15 px-3 py-1.5 text-sm text-carbon has-[:checked]:border-lima has-[:checked]:bg-lima/20"
+                  >
+                    <input
+                      type="checkbox"
+                      name="relatedPostSlugs"
+                      value={post.slug}
+                      defaultChecked={defaults?.relatedPostSlugs.includes(post.slug)}
+                      className="h-5 w-5 shrink-0 accent-lima"
+                    />
+                    {post.title}
+                  </label>
+                ))}
+            </div>
+          </>
+        )}
       </div>
 
       <div className="rounded-2xl border border-carbon/10 p-4">
@@ -262,8 +368,9 @@ function MarkdownPreview({ content }: { content: string }) {
   const [html, setHtml] = useState("");
   useEffect(() => {
     let cancelled = false;
-    import("marked").then(({ marked }) => {
-      if (!cancelled) setHtml(marked.parse(content, { async: false }) as string);
+    Promise.all([import("marked"), import("dompurify")]).then(([{ marked }, { default: DOMPurify }]) => {
+      const rawHtml = marked.parse(content, { async: false }) as string;
+      if (!cancelled) setHtml(DOMPurify.sanitize(rawHtml));
     });
     return () => {
       cancelled = true;
@@ -273,7 +380,7 @@ function MarkdownPreview({ content }: { content: string }) {
 }
 
 export default function AdminBlog() {
-  const { posts } = useLoaderData<typeof loader>();
+  const { posts, catalogItems } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const navigation = useNavigation();
   const isCreating = navigation.state !== "idle" && navigation.formData?.get("intent") === "create";
@@ -281,30 +388,30 @@ export default function AdminBlog() {
   const [showCreateForm, setShowCreateForm] = useState(false);
 
   return (
-    <div>
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <h1 className="font-display text-2xl font-black text-carbon">Blog</h1>
+    <div className="min-w-0">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0">
+          <h1 className="font-display text-2xl sm:text-3xl font-black text-carbon">Blog</h1>
           <p className="mt-1 text-sm text-carbon/60">Crea, edita, programa y borra entradas del Blog Cívico.</p>
         </div>
         <button
           type="button"
           onClick={() => setShowCreateForm((v) => !v)}
-          className="min-h-11 rounded-full bg-lima px-6 text-sm font-bold text-carbon"
+          className="min-h-11 w-full rounded-full bg-lima px-6 text-sm font-bold text-carbon sm:w-auto"
         >
           {showCreateForm ? "Cerrar" : "+ Nuevo artículo"}
         </button>
       </div>
 
       {showCreateForm && (
-        <Form method="post" encType="multipart/form-data" className="mt-6 flex flex-col gap-4 rounded-3xl border border-carbon/10 bg-white p-6">
+        <Form method="post" encType="multipart/form-data" className="mt-6 flex flex-col gap-4 rounded-3xl border border-carbon/10 bg-white p-4 sm:p-6">
           <input type="hidden" name="intent" value="create" />
-          <PostFormFields />
+          <PostFormFields allPosts={posts} catalogItems={catalogItems} />
           {actionData?.error && <p className="text-sm font-semibold text-red-600">{actionData.error}</p>}
           <button
             type="submit"
             disabled={isCreating}
-            className="min-h-11 self-start rounded-full bg-carbon px-6 text-sm font-bold text-hueso disabled:opacity-60"
+            className="min-h-11 w-full rounded-full bg-carbon px-6 text-sm font-bold text-hueso disabled:opacity-60 sm:w-auto sm:self-start"
           >
             {isCreating ? "Creando…" : "Crear artículo"}
           </button>
@@ -316,17 +423,17 @@ export default function AdminBlog() {
       ) : (
         <ul className="mt-6 flex flex-col gap-4">
           {posts.map((p) => (
-            <li key={p.id} className="rounded-3xl border border-carbon/10 bg-white p-5">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="flex items-center gap-3">
-                  {p.imageUrl && <img src={p.imageUrl} alt="" className="h-14 w-24 rounded-lg object-cover" />}
-                  <div>
-                    <p className="font-display font-bold text-carbon">{p.title}</p>
-                    <p className="text-xs text-carbon/50">/blog/{p.slug}</p>
+            <li key={p.id} className="min-w-0 rounded-3xl border border-carbon/10 bg-white p-4 sm:p-5">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <div className="flex min-w-0 items-center gap-3">
+                  {p.imageUrl && <img src={p.imageUrl} alt="" className="h-14 w-24 shrink-0 rounded-lg object-cover" />}
+                  <div className="min-w-0">
+                    <p className="min-w-0 break-words font-display font-bold text-carbon">{p.title}</p>
+                    <p className="break-all text-xs text-carbon/50">/blog/{p.slug}</p>
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${STATUS_LABELS[p.status].className}`}>
+                <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center lg:shrink-0">
+                  <span className={`col-span-2 justify-self-start sm:col-span-1 rounded-full px-2.5 py-1 text-xs font-semibold ${STATUS_LABELS[p.status].className}`}>
                     {STATUS_LABELS[p.status].label}
                     {p.status === "scheduled" && p.publishedAt && (
                       <> · {new Date(p.publishedAt).toLocaleString("es-MX", { dateStyle: "medium", timeStyle: "short" })}</>
@@ -335,14 +442,14 @@ export default function AdminBlog() {
                   <button
                     type="button"
                     onClick={() => setEditingId(editingId === p.id ? null : p.id)}
-                    className="min-h-11 rounded-full border border-carbon/15 px-4 text-xs font-semibold text-carbon hover:border-carbon/30"
+                    className="min-h-11 w-full rounded-full border border-carbon/15 px-4 text-xs font-semibold text-carbon hover:border-carbon/30 sm:w-auto"
                   >
                     {editingId === p.id ? "Cerrar" : "Editar"}
                   </button>
-                  <Form method="post" onSubmit={(e) => { if (!confirm(`¿Eliminar "${p.title}"?`)) e.preventDefault(); }}>
+                  <Form method="post" className="contents" onSubmit={(e) => { if (!confirm(`¿Eliminar "${p.title}"?`)) e.preventDefault(); }}>
                     <input type="hidden" name="intent" value="delete" />
                     <input type="hidden" name="id" value={p.id} />
-                    <button type="submit" className="min-h-11 rounded-full border border-carbon/15 px-4 text-xs font-semibold text-red-600 hover:border-red-300">
+                    <button type="submit" className="min-h-11 rounded-full border border-carbon/15 px-4 text-xs font-semibold text-red-600 hover:border-red-300 w-full sm:w-auto">
                       Eliminar
                     </button>
                   </Form>
@@ -350,12 +457,12 @@ export default function AdminBlog() {
               </div>
 
               {editingId === p.id && (
-                <Form method="post" encType="multipart/form-data" className="mt-4 flex flex-col gap-4 rounded-2xl border border-dashed border-carbon/20 p-4">
+                <Form method="post" encType="multipart/form-data" className="mt-4 flex min-w-0 flex-col gap-4 rounded-2xl border border-dashed border-carbon/20 p-3 sm:p-4">
                   <input type="hidden" name="intent" value="update" />
                   <input type="hidden" name="id" value={p.id} />
-                  <PostFormFields defaults={p} />
+                  <PostFormFields defaults={p} allPosts={posts} catalogItems={catalogItems} />
                   {actionData?.error && <p className="text-sm font-semibold text-red-600">{actionData.error}</p>}
-                  <button type="submit" className="min-h-11 self-start rounded-full bg-carbon px-6 text-sm font-bold text-hueso">
+                  <button type="submit" className="min-h-11 w-full rounded-full bg-carbon px-6 text-sm font-bold text-hueso sm:w-auto sm:self-start">
                     Guardar cambios
                   </button>
                 </Form>

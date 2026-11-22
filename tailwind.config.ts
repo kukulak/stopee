@@ -6,6 +6,7 @@ export default {
     extend: {
       colors: {
         lima: "#B5D334",
+        limaNeon: "#D8F83B",
         oliva: "#7A9330",
         bosque: "#3E531D",
         carbon: "#181C14",

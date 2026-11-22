@@ -12,7 +12,11 @@ export function HeroBannerSection({ banner }: { banner: HeroBanner }) {
   return (
     <section className="relative flex min-h-[420px] items-center overflow-hidden bg-carbon sm:min-h-[520px]">
       {banner.imageUrl && (
-        <img src={banner.imageUrl} alt="" className="absolute inset-0 h-full w-full object-cover" />
+        <img
+          src={banner.imageUrl}
+          alt={banner.text ? "" : banner.imageAlt}
+          className="absolute inset-0 h-full w-full object-cover"
+        />
       )}
       <div
         className="pointer-events-none absolute inset-0"

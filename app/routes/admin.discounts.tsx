@@ -1,3 +1,5 @@
+import { describeCouponRules } from "~/lib/couponRules";
+import type { LoaderFunctionArgs } from "@remix-run/node";
 import type { ActionFunctionArgs, MetaFunction } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import { Form, useActionData, useLoaderData, useNavigation } from "@remix-run/react";
@@ -6,22 +8,27 @@ import { connectDB } from "~/lib/db.server";
 import { PromotionModel } from "~/models/promotion.server";
 import type { PromotionType } from "~/data/promotionTypes";
 import { ProductModel } from "~/models/product.server";
-import { PRODUCTS } from "~/data/products";
+import { getCatalogItems } from "~/lib/catalog.server";
 import { parseCatalogFormData } from "~/lib/upload.server";
 import { buildPromotionDocFromFormData } from "~/lib/promotionForm.server";
 import { PromotionFormFields, TYPE_LABELS, type PromotionDefaults } from "~/components/admin/PromotionFormFields";
+import { requireAdmin } from "~/lib/session.server";
 
 export const meta: MetaFunction = () => [{ title: "Descuentos y promociones — Admin STOPee" }];
 
-export async function loader() {
+export async function loader({ request }: LoaderFunctionArgs) {
+  await requireAdmin(request);
   await connectDB();
-  const [promotions, products] = await Promise.all([
+  const [promotions, products, catalogItems] = await Promise.all([
     PromotionModel.find().sort({ createdAt: -1 }).populate("freeGift.giftProduct").populate("buyTogether.productIds").lean(),
     ProductModel.find().select("name").lean(),
+    getCatalogItems({ includeUnavailable: true }),
   ]);
+  const catalogBySku = new Map(catalogItems.map((item) => [item.sku, item]));
 
   return json({
     products: products.map((p) => ({ id: String(p._id), name: p.name })),
+    catalogItems: catalogItems.map((item) => ({ sku: item.sku, name: item.name })),
     promotions: promotions.map((p) => ({
       id: String(p._id),
       name: p.name,
@@ -62,23 +69,24 @@ export async function loader() {
             condition: p.byRequirement.condition,
             targetSku: p.byRequirement.targetSku ?? "",
             targetName: p.byRequirement.targetSku
-              ? PRODUCTS[p.byRequirement.targetSku as keyof typeof PRODUCTS]?.name ?? null
+              ? catalogBySku.get(p.byRequirement.targetSku)?.name ?? null
               : null,
             minQuantity: p.byRequirement.minQuantity ?? null,
             minSpendMxn: p.byRequirement.minSpendMxn ?? null,
             rewardDiscountPercentage: p.byRequirement.rewardDiscountPercentage ?? null,
             rewardGiftSku: p.byRequirement.rewardGiftSku ?? "",
             rewardGiftName: p.byRequirement.rewardGiftSku
-              ? PRODUCTS[p.byRequirement.rewardGiftSku as keyof typeof PRODUCTS]?.name ?? null
+              ? catalogBySku.get(p.byRequirement.rewardGiftSku)?.name ?? null
               : null,
           }
         : null,
-      banner: p.banner ?? { enabled: false, text: "", ctaText: "", ctaHref: "", imageUrl: "" },
+      banner: p.banner ?? { enabled: false, text: "", ctaText: "", ctaHref: "", imageUrl: "", imageAlt: "" },
     })),
   });
 }
 
 export async function action({ request }: ActionFunctionArgs) {
+  await requireAdmin(request);
   await connectDB();
   const formData = await parseCatalogFormData(request);
   const intent = formData.get("intent");
@@ -156,15 +164,15 @@ export async function action({ request }: ActionFunctionArgs) {
 }
 
 export default function AdminDiscounts() {
-  const { promotions, products } = useLoaderData<typeof loader>();
+  const { promotions, products, catalogItems } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const navigation = useNavigation();
   const isCreating = navigation.state !== "idle" && navigation.formData?.get("intent") === "create";
   const [editingId, setEditingId] = useState<string | null>(null);
 
   return (
-    <div>
-      <h1 className="font-display text-2xl font-black text-carbon">Descuentos y promociones</h1>
+    <div className="min-w-0">
+      <h1 className="font-display text-2xl font-black text-carbon sm:text-3xl">Descuentos y promociones</h1>
       <p className="mt-1 text-sm text-carbon/60">
         Varias estrategias en un solo lugar — cupones, BOGO, regalos, escalonados, flash y más.
       </p>
@@ -172,17 +180,17 @@ export default function AdminDiscounts() {
       <Form
         method="post"
         encType="multipart/form-data"
-        className="mt-6 flex flex-col gap-5 rounded-3xl border border-carbon/10 bg-white p-6"
+        className="mt-6 flex flex-col gap-5 rounded-3xl border border-carbon/10 bg-white p-4 sm:p-6"
       >
         <input type="hidden" name="intent" value="create" />
-        <PromotionFormFields products={products} />
+        <PromotionFormFields products={products} catalogItems={catalogItems} />
 
         {actionData?.error && <p className="text-sm font-semibold text-red-600">{actionData.error}</p>}
 
         <button
           type="submit"
           disabled={isCreating}
-          className="min-h-11 self-start rounded-full bg-lima px-6 text-sm font-bold text-carbon disabled:opacity-60"
+          className="min-h-11 w-full rounded-full bg-lima px-6 text-sm font-bold text-carbon disabled:opacity-60 sm:w-auto sm:self-start"
         >
           {isCreating ? "Creando…" : "Crear promoción"}
         </button>
@@ -193,11 +201,11 @@ export default function AdminDiscounts() {
       ) : (
         <ul className="mt-6 flex flex-col gap-3">
           {promotions.map((p) => (
-            <li key={p.id} className="rounded-3xl border border-carbon/10 bg-white p-5">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
+            <li key={p.id} className="min-w-0 rounded-3xl border border-carbon/10 bg-white p-4 sm:p-5">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
-                    <p className="font-display font-bold text-carbon">{p.name}</p>
+                    <p className="min-w-0 break-words font-display font-bold text-carbon">{p.name}</p>
                     <span className="rounded-full bg-carbon/5 px-2 py-0.5 text-xs text-carbon/50">
                       {TYPE_LABELS[p.type]}
                     </span>
@@ -205,6 +213,9 @@ export default function AdminDiscounts() {
                       <span className="rounded-full bg-oliva/15 px-2 py-0.5 text-xs font-semibold text-oliva">
                         Con banner
                       </span>
+                    )}
+                    {p.banner.enabled && p.isActive && (
+                      <span className="rounded-full bg-lima px-2 py-0.5 text-xs font-bold text-carbon">En el carrusel</span>
                     )}
                   </div>
                   <p className="mt-1 text-sm text-carbon/60">{describePromotion(p)}</p>
@@ -219,9 +230,9 @@ export default function AdminDiscounts() {
                     )}
                   </p>
                 </div>
-                <div className="flex flex-wrap items-center gap-2">
+                <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center lg:shrink-0">
                   <span
-                    className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
+                    className={`col-span-2 justify-self-start rounded-full px-2.5 py-1 text-xs font-semibold sm:col-span-1 ${
                       p.isActive ? "bg-lima/20 text-bosque" : "bg-carbon/10 text-carbon/50"
                     }`}
                   >
@@ -230,28 +241,28 @@ export default function AdminDiscounts() {
                   <button
                     type="button"
                     onClick={() => setEditingId(editingId === p.id ? null : p.id)}
-                    className="min-h-11 rounded-full border border-carbon/15 px-4 text-xs font-semibold text-carbon hover:border-carbon/30"
+                    className="min-h-11 w-full rounded-full border border-carbon/15 px-4 text-xs font-semibold text-carbon hover:border-carbon/30 sm:w-auto"
                   >
                     {editingId === p.id ? "Cerrar" : "Editar"}
                   </button>
-                  <Form method="post">
+                  <Form method="post" className="contents">
                     <input type="hidden" name="intent" value="duplicate" />
                     <input type="hidden" name="id" value={p.id} />
-                    <button type="submit" className="min-h-11 rounded-full border border-carbon/15 px-4 text-xs font-semibold text-carbon hover:border-carbon/30">
+                    <button type="submit" className="min-h-11 w-full rounded-full border border-carbon/15 px-4 text-xs font-semibold text-carbon hover:border-carbon/30 sm:w-auto">
                       Duplicar
                     </button>
                   </Form>
-                  <Form method="post">
+                  <Form method="post" className="contents">
                     <input type="hidden" name="intent" value="toggle-active" />
                     <input type="hidden" name="id" value={p.id} />
-                    <button type="submit" className="min-h-11 rounded-full border border-carbon/15 px-4 text-xs font-semibold text-carbon hover:border-carbon/30">
+                    <button type="submit" className="min-h-11 w-full rounded-full border border-carbon/15 px-4 text-xs font-semibold text-carbon hover:border-carbon/30 sm:w-auto">
                       {p.isActive ? "Desactivar" : "Activar"}
                     </button>
                   </Form>
-                  <Form method="post">
+                  <Form method="post" className="contents">
                     <input type="hidden" name="intent" value="delete" />
                     <input type="hidden" name="id" value={p.id} />
-                    <button type="submit" className="min-h-11 rounded-full border border-carbon/15 px-4 text-xs font-semibold text-red-600 hover:border-red-300">
+                    <button type="submit" className="min-h-11 w-full rounded-full border border-carbon/15 px-4 text-xs font-semibold text-red-600 hover:border-red-300 sm:w-auto">
                       Eliminar
                     </button>
                   </Form>
@@ -262,14 +273,14 @@ export default function AdminDiscounts() {
                 <Form
                   method="post"
                   encType="multipart/form-data"
-                  className="mt-5 flex flex-col gap-5 rounded-2xl border border-dashed border-carbon/20 p-4"
+                  className="mt-5 flex min-w-0 flex-col gap-5 rounded-2xl border border-dashed border-carbon/20 p-3 sm:p-4"
                 >
                   <input type="hidden" name="intent" value="update" />
                   <input type="hidden" name="id" value={p.id} />
-                  <PromotionFormFields products={products} defaults={p as PromotionDefaults} />
+                  <PromotionFormFields products={products} catalogItems={catalogItems} defaults={p as PromotionDefaults} />
                   <button
                     type="submit"
-                    className="min-h-11 self-start rounded-full bg-carbon px-6 text-sm font-bold text-hueso"
+                    className="min-h-11 w-full rounded-full bg-carbon px-6 text-sm font-bold text-hueso sm:w-auto sm:self-start"
                   >
                     Guardar cambios
                   </button>
@@ -288,21 +299,22 @@ type PromotionRow = ReturnType<typeof useLoaderData<typeof loader>>["promotions"
 function describePromotion(p: PromotionRow): string {
   switch (p.type) {
     case "coupon":
-      return p.coupon ? `Código ${p.coupon.code} · ${p.coupon.percentage}% de descuento` : "";
+      if (!p.coupon) return "";
+      return [`Código ${p.coupon.code} · ${p.coupon.percentage}% de descuento`, ...describeCouponRules(p.coupon)].join(" · ");
     case "bogo":
       return p.bogo
         ? `Compra ${p.bogo.buyQuantity}, llévate ${p.bogo.getQuantity} con ${p.bogo.getDiscountPercentage}% de descuento${p.bogo.applicableSku ? ` (${p.bogo.applicableSku})` : ""}`
         : "";
     case "free_gift":
       return p.freeGift
-        ? `Gasto mínimo $${p.freeGift.minSpendMxn} → regalo: ${p.freeGift.giftProductName ?? "producto eliminado"}`
+        ? `Gasto mínimo $${p.freeGift.minSpendMxn}, regalo: ${p.freeGift.giftProductName ?? "producto eliminado"}`
         : "";
     case "new_customer":
       return p.newCustomer ? `${p.newCustomer.percentage}% para nuevos clientes` : "";
     case "tiered_spend":
       return p.tieredSpend
         ? (p.tieredSpend.tiers as { minSpendMxn: number; percentage: number }[])
-            .map((t) => `$${t.minSpendMxn}→${t.percentage}%`)
+            .map((t) => `$${t.minSpendMxn}: ${t.percentage}%`)
             .join(" · ")
         : "";
     case "custom":
@@ -321,7 +333,7 @@ function describePromotion(p: PromotionRow): string {
       if (!p.loyalty) return "";
       const tiers = (p.loyalty.tiers ?? []) as { rewardType?: string; percentage?: number; giftDescription?: string }[];
       const tierLabels = tiers.map((t) => (t.rewardType === "gift" ? t.giftDescription || "regalo" : `${t.percentage}%`));
-      return `Cada ${p.loyalty.purchasesRequired} compras, para la siguiente: ${tierLabels.join(" → ") || "sin recompensas"}`;
+      return `Cada ${p.loyalty.purchasesRequired} compras, para la siguiente: ${tierLabels.join(", luego ") || "sin recompensas"}`;
     }
     case "by_requirement": {
       if (!p.byRequirement) return "";
@@ -336,7 +348,7 @@ function describePromotion(p: PromotionRow): string {
         rewardDiscountPercentage ? `${rewardDiscountPercentage}% de descuento` : null,
         rewardGiftName ? `regalo: ${rewardGiftName}` : null,
       ].filter(Boolean);
-      return `${conditionLabel} → ${rewardParts.join(" + ") || "sin recompensa configurada"}`;
+      return `${conditionLabel}: ${rewardParts.join(" + ") || "sin recompensa configurada"}`;
     }
     default:
       return "";

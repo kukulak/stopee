@@ -1,51 +1,89 @@
+import { isStaff } from "~/lib/roles";
 import type { ActionFunctionArgs, LoaderFunctionArgs, MetaFunction } from "@remix-run/node";
 import { json, redirect } from "@remix-run/node";
 import { Form, useActionData, useNavigation, useSearchParams } from "@remix-run/react";
 import { connectDB } from "~/lib/db.server";
+import { PasswordField } from "~/components/ui/PasswordField";
 import { UserModel, verifyPassword } from "~/models/user.server";
-import { createUserSession, getUserId } from "~/lib/session.server";
+import { createUserSession, getSession, isFreshAdminSession, sessionStorage } from "~/lib/session.server";
+import { checkRateLimit, getClientIp, rateLimitMessage } from "~/lib/rateLimit.server";
 import { Logo } from "~/components/ui/Logo";
+import { safeRedirectTarget } from "~/lib/safeRedirect";
+import { unverifiedLoginResponse } from "~/lib/emailVerification.server";
+import { ResendVerification } from "~/components/ui/ResendVerification";
 
 export const meta: MetaFunction = () => [{ title: "Acceso administrador — STOPee" }];
 
 export async function loader({ request }: LoaderFunctionArgs) {
   // No usa requireAdmin a propósito: esta página debe poder mostrarse a
-  // alguien sin sesión, o con sesión pero sin rol admin (para explicarle
-  // por qué no puede entrar), sin quedar atrapada en el redirect de admin.tsx.
-  const userId = await getUserId(request);
-  if (userId) return redirect("/admin");
-  return json({});
+  // alguien sin sesión, con sesión vencida (el acceso al panel caduca a las
+  // 8 horas) o con sesión pero sin rol admin, sin quedar atrapada en el
+  // redirect de admin.tsx.
+  const session = await getSession(request);
+  const userId = session.get("userId");
+  if (typeof userId !== "string") return json({});
+
+  await connectDB();
+  const user = await UserModel.findById(userId);
+  if (user) {
+    // Solo se salta el formulario si el acceso es de verdad válido; si no,
+    // /admin lo rebotaría de vuelta aquí en un ciclo de redirecciones.
+    if (isStaff(user.role) && user.emailVerifiedAt && isFreshAdminSession(session)) return redirect("/admin");
+    return json({});
+  }
+
+  // La cookie apunta a un usuario que ya no existe (p. ej. la base de datos
+  // se reseteó o reseedeó) — admin.tsx redirige aquí al no encontrarlo, y
+  // sin esto se generaría un ciclo infinito (ERR_TOO_MANY_REDIRECTS). Se
+  // limpia la sesión inválida en vez de seguir rebotando.
+  return json(
+    {},
+    { headers: { "Set-Cookie": await sessionStorage.destroySession(session) } },
+  );
 }
 
 export async function action({ request }: ActionFunctionArgs) {
+  // Máximo 8 intentos cada 10 minutos por IP — suficiente para que alguien
+  // se equivoque de contraseña un par de veces, no para probar miles de
+  // combinaciones por fuerza bruta contra el panel de administrador.
+  const ip = getClientIp(request);
+  const rateLimit = checkRateLimit(`admin-login:${ip}`, { max: 8, windowMs: 10 * 60 * 1000 });
+  if (!rateLimit.allowed) {
+    return json({ error: rateLimitMessage(rateLimit.retryAfterSeconds) }, { status: 429 });
+  }
+
   const formData = await request.formData();
   const email = String(formData.get("email") ?? "").toLowerCase().trim();
   const password = String(formData.get("password") ?? "");
-  const redirectTo = String(formData.get("redirectTo") ?? "/admin");
+  const redirectTo = safeRedirectTarget(String(formData.get("redirectTo") ?? ""), "/admin");
 
   if (!email || !password) {
     return json({ error: "Ingresa tu correo y contraseña." }, { status: 400 });
   }
 
+  // Además del límite por IP: un atacante que rota de IP seguiría probando
+  // contraseñas contra la misma cuenta sin este tope por correo.
+  const emailLimit = checkRateLimit(`admin-login-email:${email}`, { max: 10, windowMs: 15 * 60 * 1000 });
+  if (!emailLimit.allowed) {
+    return json({ error: rateLimitMessage(emailLimit.retryAfterSeconds) }, { status: 429 });
+  }
+
   await connectDB();
   const user = await UserModel.findOne({ email });
 
-  if (!user || !(await verifyPassword(password, user.passwordHash))) {
+  if (!(await verifyPassword(password, user?.passwordHash)) || !user) {
     return json({ error: "Correo o contraseña incorrectos." }, { status: 401 });
   }
 
-  const adminEmail = process.env.ADMIN_EMAIL?.toLowerCase();
-  if (user.role !== "admin" && adminEmail && user.email === adminEmail) {
-    user.role = "admin";
-    await user.save();
-  }
-
-  if (user.role !== "admin") {
+  if (!isStaff(user.role)) {
     return json(
       { error: "Esta cuenta no tiene permisos de administrador." },
       { status: 403 },
     );
   }
+
+  // Ni el panel se abre con un correo sin confirmar (ver emailVerification.server.ts).
+  if (!user.emailVerifiedAt) return unverifiedLoginResponse(email);
 
   return createUserSession(String(user._id), redirectTo);
 }
@@ -54,13 +92,14 @@ export default function AdminLogin() {
   const actionData = useActionData<typeof action>();
   const [searchParams] = useSearchParams();
   const navigation = useNavigation();
-  const redirectTo = searchParams.get("redirectTo") ?? "/admin";
+  const redirectTo = safeRedirectTarget(searchParams.get("redirectTo"), "/admin");
   const isSubmitting = navigation.state !== "idle";
+  const unverifiedEmail = actionData && "unverifiedEmail" in actionData ? String(actionData.unverifiedEmail) : null;
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-carbon px-4">
+    <div className="flex min-h-screen items-center justify-center bg-carbon px-4 py-10">
       <div className="w-full max-w-sm">
-        <Logo className="h-10 w-auto" />
+        <Logo variant="compact" className="h-16 w-auto" />
         <h1 className="mt-6 font-display text-2xl font-black text-hueso">
           Acceso de administrador
         </h1>
@@ -79,7 +118,7 @@ export default function AdminLogin() {
               name="email"
               type="email"
               required
-              autoComplete="email"
+              autoComplete="username"
               className="mt-1 w-full min-h-11 rounded-xl border border-hueso/15 bg-hueso/5 px-4 text-hueso focus:border-lima focus:outline-none"
             />
           </div>
@@ -87,13 +126,12 @@ export default function AdminLogin() {
             <label htmlFor="password" className="text-sm font-semibold text-hueso">
               Contraseña
             </label>
-            <input
+            <PasswordField
               id="password"
               name="password"
-              type="password"
               required
               autoComplete="current-password"
-              className="mt-1 w-full min-h-11 rounded-xl border border-hueso/15 bg-hueso/5 px-4 text-hueso focus:border-lima focus:outline-none"
+              inputClassName="mt-1 w-full min-h-11 rounded-xl border border-hueso/15 bg-hueso/5 px-4 text-hueso focus:border-lima focus:outline-none"
             />
           </div>
 
@@ -104,11 +142,17 @@ export default function AdminLogin() {
           <button
             type="submit"
             disabled={isSubmitting}
-            className="mt-2 min-h-11 rounded-full bg-lima px-6 text-sm font-bold text-carbon disabled:opacity-60"
+            className="mt-2 min-h-11 w-full rounded-full bg-lima px-6 text-sm font-bold text-carbon disabled:opacity-60"
           >
             {isSubmitting ? "Entrando…" : "Entrar"}
           </button>
         </Form>
+
+        {unverifiedEmail && (
+          <div className="mt-4">
+            <ResendVerification email={unverifiedEmail} tone="dark" />
+          </div>
+        )}
       </div>
     </div>
   );

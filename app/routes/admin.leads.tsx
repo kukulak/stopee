@@ -1,8 +1,11 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs, MetaFunction } from "@remix-run/node";
 import { json } from "@remix-run/node";
-import { Form, useFetcher, useLoaderData, useSearchParams } from "@remix-run/react";
+import { Form, useFetcher, useLoaderData, useRevalidator, useSearchParams } from "@remix-run/react";
+import { useRef } from "react";
 import { connectDB } from "~/lib/db.server";
 import { LeadModel } from "~/models/lead.server";
+import { DownloadIcon } from "~/components/ui/Icons";
+import { requireAdmin } from "~/lib/session.server";
 
 export const meta: MetaFunction = () => [{ title: "Lista de espera — Admin STOPee" }];
 
@@ -15,6 +18,7 @@ const SOURCE_LABELS: Record<string, string> = {
 };
 
 export async function loader({ request }: LoaderFunctionArgs) {
+  await requireAdmin(request);
   await connectDB();
   const url = new URL(request.url);
   const from = url.searchParams.get("from");
@@ -37,6 +41,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
       registeredAt: l.registeredAt,
       discountCodeAssigned: l.discountCodeAssigned,
       status: l.status,
+      contactedAt: l.contactedAt ?? null,
       source: l.source,
     })),
     from: from ?? "",
@@ -45,12 +50,24 @@ export async function loader({ request }: LoaderFunctionArgs) {
 }
 
 export async function action({ request }: ActionFunctionArgs) {
+  await requireAdmin(request);
   await connectDB();
   const formData = await request.formData();
   const intent = formData.get("intent");
 
   if (intent === "delete") {
     await LeadModel.findByIdAndDelete(String(formData.get("id")));
+    return json({ ok: true });
+  }
+
+  if (intent === "mark-contacted" || intent === "mark-uncontacted") {
+    const ids = formData.getAll("ids") as string[];
+    if (ids.length > 0) {
+      await LeadModel.updateMany(
+        { _id: { $in: ids } },
+        intent === "mark-contacted" ? { contactedAt: new Date() } : { $unset: { contactedAt: 1 } },
+      );
+    }
     return json({ ok: true });
   }
 
@@ -68,26 +85,58 @@ export async function action({ request }: ActionFunctionArgs) {
 export default function AdminLeads() {
   const { leads, from, to } = useLoaderData<typeof loader>();
   const [searchParams] = useSearchParams();
+  const revalidator = useRevalidator();
+  const listFormRef = useRef<HTMLFormElement>(null);
+
+  const withoutContact = leads.filter((l) => !l.contactedAt).length;
+  const purchased = leads.filter((l) => l.status === "converted").length;
+  const query = searchParams.toString();
 
   return (
-    <div>
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h1 className="font-display text-2xl font-black text-carbon">Lista de espera</h1>
-          <p className="mt-1 text-sm text-carbon/60">
-            {leads.length} {leads.length === 1 ? "correo registrado" : "correos registrados"}.
-          </p>
+    <div className="min-w-0">
+      <div className="min-w-0">
+        <h1 className="font-display text-2xl font-black text-carbon sm:text-3xl">Lista de espera</h1>
+        <p className="mt-1 text-sm text-carbon/60">
+          {leads.length} {leads.length === 1 ? "correo registrado" : "correos registrados"}
+          {leads.length > 0 && ` · ${withoutContact} sin contactar · ${purchased} ya compraron`}.
+        </p>
+      </div>
+
+      <div className="mt-5 rounded-3xl border border-carbon/10 bg-white p-4 sm:p-5">
+        <div className="flex flex-wrap items-center gap-3">
+          <Form
+            method="post"
+            action={`/admin/leads/csv?${query}`}
+            reloadDocument
+            onSubmit={() => {
+              // La descarga no recarga la página: se vuelve a consultar para que los correos exportados pasen a "Contactado".
+              setTimeout(() => revalidator.revalidate(), 1200);
+            }}
+          >
+            <button
+              type="submit"
+              disabled={withoutContact === 0}
+              className="inline-flex min-h-11 items-center gap-2 rounded-full bg-lima px-5 py-2.5 text-sm font-bold text-carbon hover:bg-limaNeon disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <DownloadIcon className="h-4 w-4" />
+              Exportar sin contactar ({withoutContact})
+            </button>
+          </Form>
+          <a
+            href={`/admin/leads/csv?${query}`}
+            className="inline-flex min-h-11 items-center gap-2 rounded-full border border-carbon/15 px-5 py-2.5 text-sm font-semibold text-carbon hover:border-carbon/30"
+          >
+            Exportar todos
+          </a>
         </div>
-        <a
-          href={`/admin/leads/csv?${searchParams.toString()}`}
-          className="min-h-11 rounded-full border border-carbon/15 px-5 py-2.5 text-sm font-semibold text-carbon hover:border-carbon/30"
-        >
-          Exportar CSV ↓
-        </a>
+        <p className="mt-3 text-xs text-carbon/60">
+          &ldquo;Exportar sin contactar&rdquo; descarga solo los correos a los que aún no les escribes y los marca como
+          contactados. &ldquo;Exportar todos&rdquo; descarga la lista completa sin cambiar nada.
+        </p>
       </div>
 
       <Form method="get" className="mt-4 flex flex-wrap items-end gap-3">
-        <div>
+        <div className="min-w-0 flex-1 sm:flex-none">
           <label htmlFor="from" className="text-xs font-semibold text-carbon/60">
             Desde
           </label>
@@ -96,10 +145,10 @@ export default function AdminLeads() {
             name="from"
             type="date"
             defaultValue={from}
-            className="mt-1 min-h-11 rounded-xl border border-carbon/15 px-3 text-sm focus:border-oliva focus:outline-none"
+            className="mt-1 box-border min-h-11 w-full rounded-xl border border-carbon/15 px-3 text-sm focus:border-oliva focus:outline-none"
           />
         </div>
-        <div>
+        <div className="min-w-0 flex-1 sm:flex-none">
           <label htmlFor="to" className="text-xs font-semibold text-carbon/60">
             Hasta
           </label>
@@ -108,7 +157,7 @@ export default function AdminLeads() {
             name="to"
             type="date"
             defaultValue={to}
-            className="mt-1 min-h-11 rounded-xl border border-carbon/15 px-3 text-sm focus:border-oliva focus:outline-none"
+            className="mt-1 box-border min-h-11 w-full rounded-xl border border-carbon/15 px-3 text-sm focus:border-oliva focus:outline-none"
           />
         </div>
         <button type="submit" className="min-h-11 rounded-full bg-carbon px-5 text-sm font-semibold text-hueso">
@@ -126,16 +175,24 @@ export default function AdminLeads() {
           No hay correos registrados {from || to ? "en este rango de fechas" : "en la lista de espera"}.
         </p>
       ) : (
-        <Form
-          method="post"
-          onSubmit={(e) => {
-            if (!confirm("¿Eliminar los correos seleccionados?")) e.preventDefault();
-          }}
-        >
-          <input type="hidden" name="intent" value="delete-selected" />
-          <div className="mt-6 overflow-x-auto rounded-3xl border border-carbon/10 bg-white">
-            <table className="w-full text-left text-sm">
-              <thead className="border-b border-carbon/10 text-xs font-semibold uppercase tracking-wide text-carbon/50">
+        <Form method="post" ref={listFormRef}>
+          <label className="mt-6 flex min-h-11 w-fit cursor-pointer items-center gap-3 text-sm font-semibold text-carbon">
+            <input
+              type="checkbox"
+              className="h-5 w-5 shrink-0 accent-lima"
+              onChange={(e) => {
+                listFormRef.current
+                  ?.querySelectorAll<HTMLInputElement>('input[name="ids"]')
+                  .forEach((box) => {
+                    box.checked = e.target.checked;
+                  });
+              }}
+            />
+            Seleccionar todos
+          </label>
+          <div className="mt-2 rounded-3xl border border-carbon/10 bg-white md:overflow-x-auto">
+            <table className="block w-full text-left text-sm md:table">
+              <thead className="hidden border-b border-carbon/10 text-xs font-semibold uppercase tracking-wide text-carbon/50 md:table-header-group">
                 <tr>
                   <th className="px-5 py-3" />
                   <th className="px-5 py-3">Correo</th>
@@ -146,7 +203,7 @@ export default function AdminLeads() {
                   <th className="px-5 py-3" />
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="block md:table-row-group">
                 {leads.map((lead) => (
                   <LeadRow key={lead.id} lead={lead} />
                 ))}
@@ -154,12 +211,35 @@ export default function AdminLeads() {
             </table>
           </div>
 
-          <button
-            type="submit"
-            className="mt-4 min-h-11 rounded-full border border-carbon/15 px-5 text-sm font-semibold text-red-600 hover:border-red-300"
-          >
-            Eliminar seleccionados
-          </button>
+          <div className="mt-4 flex flex-wrap gap-3">
+            <button
+              type="submit"
+              name="intent"
+              value="mark-contacted"
+              className="min-h-11 rounded-full border border-carbon/15 px-5 text-sm font-semibold text-carbon hover:border-carbon/30"
+            >
+              Marcar como contactados
+            </button>
+            <button
+              type="submit"
+              name="intent"
+              value="mark-uncontacted"
+              className="min-h-11 rounded-full border border-carbon/15 px-5 text-sm font-semibold text-carbon hover:border-carbon/30"
+            >
+              Marcar sin contactar
+            </button>
+            <button
+              type="submit"
+              name="intent"
+              value="delete-selected"
+              onClick={(e) => {
+                if (!confirm("¿Eliminar los correos seleccionados?")) e.preventDefault();
+              }}
+              className="min-h-11 rounded-full border border-carbon/15 px-5 text-sm font-semibold text-red-600 hover:border-red-300"
+            >
+              Eliminar seleccionados
+            </button>
+          </div>
         </Form>
       )}
     </div>
@@ -173,30 +253,43 @@ function LeadRow({ lead }: { lead: Lead }) {
   const isDeleting = fetcher.state !== "idle";
 
   return (
-    <tr className={`border-b border-carbon/5 last:border-0 ${isDeleting ? "opacity-40" : ""}`}>
-      <td className="px-5 py-3">
-        <input type="checkbox" name="ids" value={lead.id} className="h-5 w-5 accent-lima" />
+    <tr
+      className={`grid grid-cols-[2.75rem_minmax(0,1fr)] items-center gap-x-2 gap-y-1 border-b border-carbon/5 px-3 py-3 last:border-0 md:table-row md:p-0 ${isDeleting ? "opacity-40" : ""}`}
+    >
+      <td className="row-span-6 flex min-h-11 items-start justify-center pt-3 md:table-cell md:px-5 md:py-3 md:pt-3">
+        <input type="checkbox" name="ids" value={lead.id} aria-label={`Seleccionar ${lead.email}`} className="h-5 w-5 shrink-0 accent-lima" />
       </td>
-      <td className="px-5 py-3 font-semibold text-carbon">{lead.email}</td>
-      <td className="px-5 py-3 text-carbon/60">
+      <td className="col-start-2 break-all font-semibold text-carbon md:table-cell md:break-words md:px-5 md:py-3">{lead.email}</td>
+      <td className="col-start-2 text-xs text-carbon/60 before:mr-1 before:content-['Registrado:'] md:table-cell md:px-5 md:py-3 md:text-sm md:before:content-none">
         {new Date(lead.registeredAt).toLocaleDateString("es-MX", {
           day: "numeric",
           month: "short",
           year: "numeric",
         })}
       </td>
-      <td className="px-5 py-3 text-carbon/60">{SOURCE_LABELS[lead.source] ?? lead.source}</td>
-      <td className="px-5 py-3 text-carbon/60">{lead.discountCodeAssigned}</td>
-      <td className="px-5 py-3">
-        <span
-          className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
-            lead.status === "converted" ? "bg-lima/20 text-bosque" : "bg-carbon/10 text-carbon/60"
-          }`}
-        >
-          {lead.status === "converted" ? "Convertido" : "Pendiente"}
-        </span>
+      <td className="col-start-2 text-xs text-carbon/60 before:mr-1 before:content-['Canal:'] md:table-cell md:px-5 md:py-3 md:text-sm md:before:content-none">{SOURCE_LABELS[lead.source] ?? lead.source}</td>
+      <td className="col-start-2 break-all text-xs text-carbon/60 before:mr-1 before:content-['Código:'] md:table-cell md:break-words md:px-5 md:py-3 md:text-sm md:before:content-none">{lead.discountCodeAssigned}</td>
+      <td className="col-start-2 md:table-cell md:px-5 md:py-3">
+        <div className="flex flex-wrap gap-1.5">
+          <span
+            className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
+              lead.status === "converted" ? "bg-lima/20 text-bosque" : "bg-carbon/10 text-carbon/60"
+            }`}
+          >
+            {lead.status === "converted" ? "Compró" : "Sin compra"}
+          </span>
+          <span
+            className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
+              lead.contactedAt ? "border border-carbon/15 text-carbon/60" : "bg-civicBlue/10 text-civicBlue"
+            }`}
+          >
+            {lead.contactedAt
+              ? `Contactado ${new Date(lead.contactedAt).toLocaleDateString("es-MX", { day: "numeric", month: "short" })}`
+              : "Sin contactar"}
+          </span>
+        </div>
       </td>
-      <td className="px-5 py-3 text-right">
+      <td className="col-start-2 md:table-cell md:px-5 md:py-3 md:text-right">
         <button
           type="button"
           disabled={isDeleting}

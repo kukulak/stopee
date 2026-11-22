@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { PROMOTION_TYPES, type PromotionType } from "~/data/promotionTypes";
-import { PRODUCT_LIST } from "~/data/products";
+import { CloseIcon } from "~/components/ui/Icons";
 
 export const TYPE_LABELS: Record<PromotionType, string> = {
   coupon: "Cupón",
@@ -41,7 +41,17 @@ export type PromotionDefaults = {
   startsAt?: string | Date | null;
   endsAt?: string | Date | null;
   usageLimit?: number | null;
-  coupon?: { code?: string; percentage?: number } | null;
+  coupon?: {
+    code?: string;
+    percentage?: number;
+    oncePerCustomer?: boolean;
+    allowedEmails?: string[];
+    firstPurchaseOnly?: boolean;
+    minSpendMxn?: number | null;
+    minQuantity?: number | null;
+    requiredSkus?: string[];
+    stackable?: boolean;
+  } | null;
   bogo?: { buyQuantity?: number; getQuantity?: number; getDiscountPercentage?: number; applicableSku?: string } | null;
   freeGift?: { minSpendMxn?: number; giftProduct?: string } | null;
   newCustomer?: { percentage?: number } | null;
@@ -62,7 +72,7 @@ export type PromotionDefaults = {
     rewardDiscountPercentage?: number | null;
     rewardGiftSku?: string;
   } | null;
-  banner?: { enabled?: boolean; text?: string; ctaText?: string; ctaHref?: string; imageUrl?: string } | null;
+  banner?: { enabled?: boolean; text?: string; ctaText?: string; ctaHref?: string; imageUrl?: string; imageAlt?: string } | null;
 };
 
 /**
@@ -73,9 +83,11 @@ export type PromotionDefaults = {
  */
 export function PromotionFormFields({
   products,
+  catalogItems,
   defaults,
 }: {
   products: { id: string; name: string }[];
+  catalogItems: { sku: string; name: string }[];
   defaults?: PromotionDefaults;
 }) {
   const [type, setType] = useState<PromotionType>(defaults?.type ?? "coupon");
@@ -112,18 +124,110 @@ export function PromotionFormFields({
       </div>
 
       {type === "coupon" && (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <Field label="Código" htmlFor="code">
-            <input id="code" name="code" required defaultValue={defaults?.coupon?.code} placeholder="BIENVENIDA10" className={`${inputClass} uppercase`} />
-          </Field>
-          <Field label="% de descuento" htmlFor="percentage">
-            <input id="percentage" name="percentage" type="number" min={1} max={100} required defaultValue={defaults?.coupon?.percentage} className={inputClass} />
-          </Field>
+        <div className="flex flex-col gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <Field label="Código" htmlFor="code">
+              <input id="code" name="code" required defaultValue={defaults?.coupon?.code} placeholder="BIENVENIDA10" className={`${inputClass} uppercase`} />
+            </Field>
+            <Field label="% de descuento" htmlFor="percentage">
+              <input id="percentage" name="percentage" type="number" min={1} max={100} required defaultValue={defaults?.coupon?.percentage} className={inputClass} />
+            </Field>
+            <Field label="Máximo de usos en total (opcional)" htmlFor="usageLimit">
+              <input id="usageLimit" name="usageLimit" type="number" min={1} placeholder="Sin límite" defaultValue={defaults?.usageLimit ?? undefined} className={inputClass} />
+            </Field>
+          </div>
+
+          <details
+            className="group rounded-2xl border border-carbon/10 p-3 sm:p-4"
+            open={Boolean(
+              defaults?.coupon?.oncePerCustomer ||
+                defaults?.coupon?.firstPurchaseOnly ||
+                defaults?.coupon?.allowedEmails?.length ||
+                defaults?.coupon?.minSpendMxn ||
+                defaults?.coupon?.minQuantity ||
+                defaults?.coupon?.requiredSkus?.length ||
+                defaults?.coupon?.stackable,
+            )}
+          >
+            <summary className="flex min-h-11 cursor-pointer items-center text-sm font-bold text-carbon">
+              Reglas del cupón (opcional)
+            </summary>
+
+            <div className="mt-3 flex flex-col gap-6">
+              <fieldset className="flex flex-col gap-1">
+                <legend className="text-sm font-bold text-carbon">Quién puede usarlo</legend>
+                <label className="flex min-h-11 items-center gap-3 text-sm text-carbon">
+                  <input type="checkbox" name="couponOncePerCustomer" defaultChecked={defaults?.coupon?.oncePerCustomer} className="h-5 w-5 shrink-0 accent-lima" />
+                  Una sola vez por cliente
+                </label>
+                <label className="flex min-h-11 items-center gap-3 text-sm text-carbon">
+                  <input type="checkbox" name="couponFirstPurchaseOnly" defaultChecked={defaults?.coupon?.firstPurchaseOnly} className="h-5 w-5 shrink-0 accent-lima" />
+                  Solo en la primera compra
+                </label>
+                <Field label="Solo para estos correos" htmlFor="couponAllowedEmails">
+                  <textarea
+                    id="couponAllowedEmails"
+                    name="couponAllowedEmails"
+                    rows={3}
+                    defaultValue={defaults?.coupon?.allowedEmails?.join("\n")}
+                    placeholder={"cliente1@correo.com\ncliente2@correo.com"}
+                    className={`${inputClass} py-2`}
+                  />
+                </Field>
+                <p className="text-xs text-carbon/50">
+                  Un correo por renglón (o separados por coma). Déjalo vacío para que cualquiera lo use. Estas tres
+                  reglas piden que el cliente inicie sesión para poder usar el cupón.
+                </p>
+              </fieldset>
+
+              <fieldset className="flex flex-col gap-3">
+                <legend className="text-sm font-bold text-carbon">Qué debe tener el carrito</legend>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <Field label="Compra mínima (pesos)" htmlFor="couponMinSpendMxn">
+                    <input id="couponMinSpendMxn" name="couponMinSpendMxn" type="number" min={0} placeholder="Sin mínimo" defaultValue={defaults?.coupon?.minSpendMxn ?? undefined} className={inputClass} />
+                  </Field>
+                  <Field label="Mínimo de piezas" htmlFor="couponMinQuantity">
+                    <input id="couponMinQuantity" name="couponMinQuantity" type="number" min={0} placeholder="Sin mínimo" defaultValue={defaults?.coupon?.minQuantity ?? undefined} className={inputClass} />
+                  </Field>
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-carbon">Solo si el carrito incluye alguno de estos</p>
+                  <div className="mt-1 flex flex-col">
+                    {catalogItems.map((item) => (
+                      <label key={item.sku} className="flex min-h-11 items-center gap-3 text-sm text-carbon">
+                        <input
+                          type="checkbox"
+                          name="couponRequiredSkus"
+                          value={item.sku}
+                          defaultChecked={defaults?.coupon?.requiredSkus?.includes(item.sku)}
+                          className="h-5 w-5 shrink-0 accent-lima"
+                        />
+                        {item.name}
+                      </label>
+                    ))}
+                  </div>
+                  <p className="text-xs text-carbon/50">Sin ninguno marcado, el cupón sirve con cualquier carrito.</p>
+                </div>
+              </fieldset>
+
+              <fieldset className="flex flex-col gap-1">
+                <legend className="text-sm font-bold text-carbon">Combinación con otras promociones</legend>
+                <label className="flex min-h-11 items-center gap-3 text-sm text-carbon">
+                  <input type="checkbox" name="couponStackable" defaultChecked={defaults?.coupon?.stackable} className="h-5 w-5 shrink-0 accent-lima" />
+                  Se puede sumar a la recompensa de lealtad del cliente
+                </label>
+                <p className="text-xs text-carbon/50">
+                  Sin marcar, el cupón no se combina con nada: si el cliente tiene otra promoción, se aplica solo el
+                  cupón y la otra se conserva para su siguiente compra.
+                </p>
+              </fieldset>
+            </div>
+          </details>
         </div>
       )}
 
       {type === "bogo" && (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <Field label="Compra (cantidad)" htmlFor="buyQuantity">
             <input id="buyQuantity" name="buyQuantity" type="number" min={1} defaultValue={defaults?.bogo?.buyQuantity ?? 1} className={inputClass} />
           </Field>
@@ -214,13 +318,13 @@ export function PromotionFormFields({
           <p className="mt-3 text-sm font-semibold text-carbon">Productos incluidos (elige 2 o más)</p>
           <div className="mt-2 flex flex-col gap-1">
             {products.map((p) => (
-              <label key={p.id} className="flex items-center gap-2 text-sm text-carbon">
+              <label key={p.id} className="flex min-h-11 items-center gap-3 text-sm text-carbon">
                 <input
                   type="checkbox"
                   name="buyTogetherProductIds"
                   value={p.id}
                   defaultChecked={selectedBuyTogether.has(p.id)}
-                  className="h-5 w-5 accent-lima"
+                  className="h-5 w-5 shrink-0 accent-lima"
                 />
                 {p.name}
               </label>
@@ -253,8 +357,8 @@ export function PromotionFormFields({
             </p>
             <div className="mt-3 flex flex-col gap-2">
               {loyaltyTiers.map((tier, i) => (
-                <div key={i} className="flex flex-wrap items-center gap-2 rounded-xl border border-carbon/10 p-3">
-                  <span className="w-14 shrink-0 text-xs font-semibold text-carbon/50">{i + 1}ª vez</span>
+                <div key={i} className="grid grid-cols-1 gap-2 rounded-xl border border-carbon/10 p-3 sm:grid-cols-[3.5rem_9rem_minmax(0,1fr)_auto] sm:items-center [&>input]:mt-0 [&>select]:mt-0">
+                  <span className="text-xs font-semibold text-carbon/50">{i + 1}ª vez</span>
                   <select
                     name="tierRewardType"
                     value={tier.rewardType ?? "discount"}
@@ -279,7 +383,7 @@ export function PromotionFormFields({
                       onChange={(e) =>
                         setLoyaltyTiers((rows) => rows.map((r, idx) => (idx === i ? { ...r, percentage: Number(e.target.value) } : r)))
                       }
-                      className={`${inputClass} flex-1`}
+                      className={inputClass}
                     />
                   ) : (
                     <input
@@ -290,7 +394,7 @@ export function PromotionFormFields({
                       onChange={(e) =>
                         setLoyaltyTiers((rows) => rows.map((r, idx) => (idx === i ? { ...r, giftDescription: e.target.value } : r)))
                       }
-                      className={`${inputClass} flex-1`}
+                      className={inputClass}
                     />
                   )}
                   {/* Campo oculto para que getAll() siempre reciba las 3 columnas alineadas por índice, aunque solo una esté visible. */}
@@ -300,9 +404,9 @@ export function PromotionFormFields({
                       type="button"
                       onClick={() => setLoyaltyTiers((rows) => rows.filter((_, idx) => idx !== i))}
                       aria-label="Quitar recompensa"
-                      className="min-h-11 min-w-11 rounded-full text-carbon/40 hover:text-carbon"
+                      className="min-h-11 min-w-11 justify-self-start rounded-full text-carbon/40 hover:text-carbon sm:justify-self-auto"
                     >
-                      ✕
+                      <CloseIcon className="mx-auto block h-4 w-4" />
                     </button>
                   )}
                 </div>
@@ -311,7 +415,7 @@ export function PromotionFormFields({
             <button
               type="button"
               onClick={() => setLoyaltyTiers((rows) => [...rows, { rewardType: "discount", percentage: 10 }])}
-              className="mt-2 text-sm font-semibold text-bosque hover:underline"
+              className="mt-2 inline-flex min-h-11 items-center text-sm font-semibold text-bosque hover:underline"
             >
               + Agregar recompensa
             </button>
@@ -346,7 +450,7 @@ export function PromotionFormFields({
                   className={inputClass}
                 >
                   <option value="">Selecciona...</option>
-                  {PRODUCT_LIST.map((item) => (
+                  {catalogItems.map((item) => (
                     <option key={item.sku} value={item.sku}>
                       {item.name}
                     </option>
@@ -401,7 +505,7 @@ export function PromotionFormFields({
                   className={inputClass}
                 >
                   <option value="">Sin regalo</option>
-                  {PRODUCT_LIST.map((item) => (
+                  {catalogItems.map((item) => (
                     <option key={item.sku} value={item.sku}>
                       {item.name}
                     </option>
@@ -421,28 +525,39 @@ export function PromotionFormFields({
           <input id="endsAt" name="endsAt" type="date" defaultValue={toDateInputValue(defaults?.endsAt)} className={inputClass} />
         </Field>
       </div>
+      {type === "coupon" && (
+        <p className="-mt-2 text-xs text-carbon/60">
+          Si dejas vacía la fecha de término, el cupón no caduca; para detenerlo después, desactívalo desde la lista.
+        </p>
+      )}
 
-      <div className="rounded-2xl border border-carbon/10 p-4">
-        <label className="flex items-center gap-2 text-sm font-semibold text-carbon">
-          <input type="checkbox" name="bannerEnabled" defaultChecked={defaults?.banner?.enabled} className="h-5 w-5 accent-lima" />
+      <div className="min-w-0 rounded-2xl border border-carbon/10 p-3 sm:p-4">
+        <label className="flex min-h-11 items-center gap-3 text-sm font-semibold text-carbon">
+          <input type="checkbox" name="bannerEnabled" defaultChecked={defaults?.banner?.enabled} className="h-5 w-5 shrink-0 accent-lima" />
           Mostrar banner en el hero de la tienda
         </label>
         <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
           <input name="bannerText" defaultValue={defaults?.banner?.text} placeholder="Texto del banner" className={inputClass} />
           <input name="bannerCtaText" defaultValue={defaults?.banner?.ctaText} placeholder="Texto del botón (opcional)" className={inputClass} />
           <input name="bannerCtaHref" defaultValue={defaults?.banner?.ctaHref} placeholder="/tienda" className={inputClass} />
-          <div>
+          <div className="min-w-0">
             <input name="bannerImage" type="file" accept="image/*" className={inputClass} />
             {defaults?.banner?.imageUrl && (
-              <div className="mt-2 flex items-center gap-2">
+              <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
                 <img src={defaults.banner.imageUrl} alt="" className="h-12 w-20 rounded-lg object-cover" />
-                <label className="flex items-center gap-1 text-xs text-carbon/60">
-                  <input type="checkbox" name="removeBannerImage" className="h-4 w-4 accent-red-500" />
+                <label className="flex min-h-11 items-center gap-2 text-xs text-carbon/60">
+                  <input type="checkbox" name="removeBannerImage" className="h-5 w-5 shrink-0 accent-red-500" />
                   Quitar imagen actual
                 </label>
               </div>
             )}
           </div>
+          <input
+            name="bannerImageAlt"
+            defaultValue={defaults?.banner?.imageAlt}
+            placeholder="Texto alternativo de la imagen"
+            className={inputClass}
+          />
         </div>
         <p className="mt-2 text-xs text-carbon/50">
           Sube una imagen para el fondo del banner, o déjala vacía para un banner solo de texto.
