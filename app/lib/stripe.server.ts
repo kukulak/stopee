@@ -13,6 +13,8 @@ if (!STRIPE_SECRET_KEY) {
 
 export const stripe = new Stripe(STRIPE_SECRET_KEY, {
   apiVersion: "2025-02-24.acacia",
+  // Tope por llamada: sin él, una respuesta lenta de Stripe deja al cliente mirando "Redirigiendo…" hasta 80 s.
+  timeout: 15_000,
 });
 
 export const APP_URL = process.env.APP_URL ?? "http://localhost:3000";

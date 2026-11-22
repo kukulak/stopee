@@ -13,6 +13,9 @@ import { getActiveLoyaltyConfig, PromotionModel } from "~/models/promotion.serve
 import { resolveLoyaltyTier } from "~/lib/loyalty";
 import { logError } from "~/lib/logger.server";
 import { decrementStock } from "~/lib/inventory.server";
+import { orderConfirmationEmail } from "~/lib/emailTemplates.server";
+import { sendEmail } from "~/lib/mail.server";
+import { frequencyLabel } from "~/lib/subscriptionConfig";
 
 const WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET;
 
@@ -133,7 +136,7 @@ function readAppliedPromotion(metadata: Stripe.Metadata | null) {
   return { id: metadata.promotionId, name: metadata.promotionName ?? "", type: metadata.promotionType ?? "" };
 }
 
-type EffectName = "stock" | "promotion" | "lead" | "loyalty" | "subscription" | "refund";
+type EffectName = "stock" | "promotion" | "lead" | "loyalty" | "subscription" | "refund" | "confirmationEmail";
 
 /**
  * Reclama un efecto del pedido de forma atómica: devuelve true solo para quien
@@ -148,7 +151,35 @@ async function claimEffect(orderId: unknown, effect: EffectName) {
   return result.modifiedCount === 1;
 }
 
-const NO_EFFECTS_YET = { stock: false, promotion: false, lead: false, loyalty: false, subscription: false, refund: false };
+const NO_EFFECTS_YET = {
+  stock: false,
+  promotion: false,
+  lead: false,
+  loyalty: false,
+  subscription: false,
+  refund: false,
+  confirmationEmail: false,
+};
+
+/**
+ * Correo "Recibimos tu pedido". Se reclama como los demás efectos para no repetirse si Stripe reenvía
+ * el evento. Nunca lanza ni hace fallar el webhook: si Brevo no responde, se libera la marca y queda
+ * en el log (un webhook que falla de más termina desactivado por Stripe, y eso sería peor que un correo perdido).
+ */
+async function sendOrderConfirmation(
+  order: { _id: unknown; email: string },
+  data: Parameters<typeof orderConfirmationEmail>[0],
+) {
+  if (!order.email || order.email === "desconocido@stopee.com.mx") return;
+  if (!(await claimEffect(order._id, "confirmationEmail"))) return;
+  try {
+    const result = await sendEmail({ to: { email: order.email }, ...orderConfirmationEmail(data) });
+    if (!result.ok) throw new Error(`correo no enviado: ${result.reason}`);
+  } catch (error) {
+    logError("webhook.confirmation-email", error, { orderId: String(order._id) });
+    await OrderModel.updateOne({ _id: order._id }, { $set: { "effects.confirmationEmail": false } }).catch(() => undefined);
+  }
+}
 
 /** Crea el pedido, o devuelve el que ya existe si Stripe repitió el evento (o dos llegaron a la vez). */
 async function createOrderOnce(data: Record<string, unknown> & { stripeCheckoutSessionId: string }) {
@@ -314,6 +345,14 @@ async function handleOneTimeCheckoutCompleted(session: Stripe.Checkout.Session) 
     const usedLoyaltyReward = session.metadata?.usedLoyaltyReward === "true";
     await bumpUserLoyaltyAndLTV(user, grossCharged, true, usedLoyaltyReward);
   }
+  await sendOrderConfirmation(order, {
+    items: items.map((item) => ({ name: item.name, quantity: item.quantity })),
+    total: grossCharged,
+    shippingLabel: shippingMethodLabel,
+    shippingFree,
+    destination: shippingAddress ? [shippingAddress.city, shippingAddress.state].filter(Boolean).join(", ") : "",
+    hasAccount: Boolean(user),
+  });
 }
 
 /** Convierte la metadata "sku:cantidad:precio,sku:cantidad:precio" en la caja real de la suscripción. */
@@ -404,6 +443,12 @@ async function handleSubscriptionCheckoutCompleted(session: Stripe.Checkout.Sess
     await decrementStock(items.map((item) => ({ sku: item.sku, quantity: item.quantity })));
   }
   if (user && (await claimEffect(order._id, "loyalty"))) await bumpUserLoyaltyAndLTV(user, netAmount, false, false);
+  await sendOrderConfirmation(order, {
+    items: items.map((item) => ({ name: item.name, quantity: item.quantity })),
+    total: netAmount,
+    frequency: frequencyLabel(frequency).toLowerCase(),
+    hasAccount: true,
+  });
 }
 
 /** Renovaciones automáticas: cada factura pagada de un ciclo genera su propio pedido. */

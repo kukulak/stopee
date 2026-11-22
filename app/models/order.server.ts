@@ -36,6 +36,7 @@ const effectsSchema = new Schema(
     loyalty: { type: Boolean, default: false },
     subscription: { type: Boolean, default: false },
     refund: { type: Boolean, default: false },
+    confirmationEmail: { type: Boolean, default: false },
   },
   { _id: false },
 );

@@ -85,6 +85,44 @@ export function waitlistWelcomeEmail() {
   return { subject: "Ya estás en la lista de STOPee", html, text };
 }
 
+/** Confirmación de compra: sale en cuanto el pago queda registrado, sin depender de que el cliente vuelva al sitio. */
+export function orderConfirmationEmail(data: {
+  items: { name: string; quantity: number }[];
+  total: number;
+  /** Solo suscripciones, ya en minúsculas: "cada 4 semanas". */
+  frequency?: string;
+  shippingLabel?: string;
+  shippingFree?: boolean;
+  /** "Ciudad, Estado" de la dirección de envío. */
+  destination?: string;
+  hasAccount: boolean;
+}) {
+  const shippingLine =
+    data.shippingLabel || data.destination
+      ? `Envío${data.shippingLabel ? ` ${data.shippingLabel}` : ""}${data.shippingFree ? " (sin costo)" : ""}${data.destination ? ` a ${data.destination}` : ""}`
+      : "";
+  const paragraphs = [
+    data.frequency ? "Tu auto-envío quedó activo. Gracias por confiar en STOPee." : "Recibimos tu pago. Gracias por tu compra.",
+    data.items.map((i) => `${i.quantity} × ${i.name}`).join("\n"),
+    `Total pagado: $${data.total} MXN`,
+    ...(data.frequency ? [`Te enviaremos tu caja ${data.frequency}. Puedes pausarla o cancelarla cuando quieras.`] : []),
+    ...(shippingLine ? [shippingLine] : []),
+    "Preparamos tu pedido y te avisamos por correo en cuanto salga, con tu número de guía.",
+  ];
+  const { html, text } = renderLayout({
+    title: data.frequency ? "Tu auto-envío está activo" : "Recibimos tu pedido",
+    paragraphs,
+    action: data.hasAccount
+      ? { label: "Ver mis pedidos", url: appUrl("/cuenta") }
+      : { label: "¿Dudas? Escríbenos", url: appUrl("/contacto") },
+  });
+  return {
+    subject: data.frequency ? "Tu auto-envío de STOPee está activo" : "Recibimos tu pedido de STOPee",
+    html,
+    text,
+  };
+}
+
 /** Aviso al cliente: su pedido salió del almacén. */
 export function orderShippedEmail(data: { trackingNumber?: string; items: { name: string; quantity: number }[] }) {
   const items = data.items.map((i) => `${i.quantity} × ${i.name}`).join(", ");
