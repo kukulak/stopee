@@ -92,6 +92,8 @@ export function CartDrawer({
   const couponFetcher = useFetcher<{ error?: string; ok?: boolean; cta?: "login" | "verify" | null }>();
   const isCheckingOut = checkoutFetcher.state !== "idle";
   const isApplyingCoupon = couponFetcher.state !== "idle";
+  // Sin internet la petición ni sale, y Remix mandaría a la pantalla de "Algo salió mal". Se avisa aquí, con el carrito a la vista.
+  const [offline, setOffline] = useState(false);
   const [codeInput, setCodeInput] = useState("");
   const discountedSubtotal = Math.round(subtotalMxn * (1 - discountPercent / 100));
   // La opción que el cliente acaba de tocar se refleja al instante en el total, sin esperar al servidor.
@@ -225,7 +227,18 @@ export function CartDrawer({
 
           <CheckoutSteps />
 
-          <checkoutFetcher.Form method="post" action="/api/checkout">
+          <checkoutFetcher.Form
+            method="post"
+            action="/api/checkout"
+            onSubmit={(event) => {
+              if (typeof navigator !== "undefined" && navigator.onLine === false) {
+                event.preventDefault();
+                setOffline(true);
+              } else {
+                setOffline(false);
+              }
+            }}
+          >
             <button
               type="submit"
               disabled={isCheckingOut || hasStockProblem}
@@ -239,8 +252,14 @@ export function CartDrawer({
               Ajusta las cantidades marcadas en rojo para poder pagar.
             </p>
           )}
-          {checkoutFetcher.data?.error && (
-            <p className="text-sm font-semibold text-red-600">{checkoutFetcher.data.error}</p>
+          {offline ? (
+            <p role="alert" className="text-sm font-semibold text-red-600">
+              No hay conexión a internet. Tu carrito sigue guardado: cuando vuelva, pulsa «Ir a pagar».
+            </p>
+          ) : (
+            checkoutFetcher.data?.error && (
+              <p className="text-sm font-semibold text-red-600">{checkoutFetcher.data.error}</p>
+            )
           )}
 
           <TrustBadges />
