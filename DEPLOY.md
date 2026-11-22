@@ -192,6 +192,21 @@ de lanzar. Los enlaces de los correos se arman con `APP_URL`: debe ser el domini
    una cuenta con el rol anterior de "admin", sigue funcionando como administrador; corre este comando con tu
    correo para convertirla en super administradora. Para quitarle el acceso a alguien: cambia su rol a Cliente
    desde su perfil (o `--revoke` desde la terminal).
+   **Verificación en dos pasos (obligatoria en el panel).** Además de la contraseña, todo administrador necesita
+   un código de 6 dígitos de una app (Google Authenticator, 1Password, Authy…). La primera vez que alguien con
+   rol de administrador entra a `/admin/login`, el panel lo lleva a **activarla** (escanear un QR y confirmar con un
+   código; toma 2 minutos) y le entrega **10 códigos de recuperación**, de un solo uso, que debe guardar. Hasta
+   activarla no se abre ninguna pantalla del panel. Se administra en **Seguridad** (menú del panel).
+   - *Perdió el celular:* entra con un código de recuperación (`/admin/verificar` → "No tengo mi celular").
+   - *Perdió también los códigos:* quien tenga acceso a la base lo reinicia desde la terminal, y la persona
+     vuelve a activarla en su siguiente entrada:
+     ```bash
+     MONGODB_URI="mongodb+srv://usuario:CONTRASEÑA@cluster.../stopee" npm run reset-2fa -- correo@ejemplo.com
+     ```
+   - No existe un botón para apagarla desde el panel, a propósito: una sesión robada podría usarlo.
+   - Los secretos se guardan **cifrados con una llave derivada de `SESSION_SECRET`**. Si algún día rotas
+     `SESSION_SECRET`, los códigos del celular dejan de validar (los de recuperación siguen sirviendo) y hay
+     que correr `reset-2fa` por cada administrador. Plánéalo junto con la rotación.
    **Correo confirmado para entrar.** Nadie inicia sesión (ni en la tienda ni en el panel) sin haber confirmado
    su correo con el enlace que llega al crear la cuenta; en el login aparece un botón "Reenviar enlace". Por eso
    el correo de Brevo (sección 7b) tiene que funcionar antes de abrir el registro. `make-admin` marca el
@@ -234,7 +249,7 @@ Para volver a una versión anterior: *Cloud Run → servicio → Revisiones → 
 
 ## Qué NO está resuelto todavía
 
-- **Correo de confirmación de compra:** Stripe puede enviar el recibo por su cuenta (*Configuración → Correos de clientes*, activar «Recibos de pago»). El sitio todavía no manda una confirmación propia.
+- **Correo de confirmación de compra:** el sitio manda «Recibimos tu pedido» al registrarse el pago. Además, Stripe puede enviar su propio recibo (*Configuración → Correos de clientes*, activar «Recibos de pago»). Las renovaciones del auto-envío todavía no mandan confirmación propia.
 - **Envío recurrente de suscripciones:** el costo de envío de las cajas periódicas quedó pendiente.
 - **Paquetería real:** los envíos se calculan por zonas de código postal, no con una guía de paquetería.
 - **Respaldos:** Atlas los hace automáticamente en planes de pago; en el plan gratuito, conviene programar `mongodump` periódicos.

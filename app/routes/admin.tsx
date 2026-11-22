@@ -39,6 +39,7 @@ const NAV_ITEMS: {
   { to: "/admin/testimonials", label: "Testimonios" },
   { to: "/admin/legal", label: "Legal (ARCO)" },
   { to: "/admin/password-gate", label: "Acceso privado" },
+  { to: "/admin/seguridad", label: "Seguridad" },
 ];
 
 export async function loader({ request }: LoaderFunctionArgs) {

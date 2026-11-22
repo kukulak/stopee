@@ -10,6 +10,7 @@ import { checkRateLimit, getClientIp, rateLimitMessage } from "~/lib/rateLimit.s
 import { Logo } from "~/components/ui/Logo";
 import { safeRedirectTarget } from "~/lib/safeRedirect";
 import { unverifiedLoginResponse } from "~/lib/emailVerification.server";
+import { beginTwoFactorChallenge } from "~/lib/twoFactor.server";
 import { ResendVerification } from "~/components/ui/ResendVerification";
 
 export const meta: MetaFunction = () => [{ title: "Acceso administrador — STOPee" }];
@@ -28,7 +29,10 @@ export async function loader({ request }: LoaderFunctionArgs) {
   if (user) {
     // Solo se salta el formulario si el acceso es de verdad válido; si no,
     // /admin lo rebotaría de vuelta aquí en un ciclo de redirecciones.
-    if (isStaff(user.role) && user.emailVerifiedAt && isFreshAdminSession(session)) return redirect("/admin");
+    // Con la verificación en dos pasos activa, una sesión de solo contraseña no abre el panel: se
+    // queda aquí para pasar por el código (si no, rebotaría entre /admin y esta página).
+    const secondFactorOk = !user.twoFactor?.enabledAt || session.get("mfa") === true;
+    if (isStaff(user.role) && user.emailVerifiedAt && isFreshAdminSession(session) && secondFactorOk) return redirect("/admin");
     return json({});
   }
 
@@ -84,6 +88,10 @@ export async function action({ request }: ActionFunctionArgs) {
 
   // Ni el panel se abre con un correo sin confirmar (ver emailVerification.server.ts).
   if (!user.emailVerifiedAt) return unverifiedLoginResponse(email);
+
+  // Contraseña correcta, pero todavía sin sesión: falta el código de la app. Sin verificación activa
+  // se abre la sesión, y el panel mismo la lleva a activarla (ver requireAdmin).
+  if (user.twoFactor?.enabledAt) return beginTwoFactorChallenge(String(user._id), redirectTo);
 
   return createUserSession(String(user._id), redirectTo);
 }

@@ -65,6 +65,28 @@ const userSchema = new Schema(
     /** Recompensa ganada, lista para su próxima compra — null si no tiene ninguna pendiente. */
     loyaltyPendingReward: { type: loyaltyRewardSchema, default: null },
     role: { type: String, enum: ["customer", "admin", "superadmin"], default: "customer" },
+    /**
+     * Verificación en dos pasos de administradores (ver ~/lib/twoFactor.server). Los secretos van
+     * cifrados y los códigos de recuperación solo como huella.
+     */
+    twoFactor: {
+      type: new Schema(
+        {
+          secretEnc: { type: String },
+          /** Secreto generado en la pantalla de activación que todavía no se confirma con un código. */
+          pendingSecretEnc: { type: String },
+          enabledAt: { type: Date },
+          /** Último paso de 30 s aceptado: impide reutilizar un código. */
+          lastUsedStep: { type: Number },
+          recoveryCodes: {
+            type: [new Schema({ hash: { type: String, required: true }, usedAt: { type: Date } }, { _id: false })],
+            default: [],
+          },
+        },
+        { _id: false },
+      ),
+      default: undefined,
+    },
     /** Lifetime value: suma de netAmount de todas sus órdenes pagadas. */
     totalSpentLTV: { type: Number, default: 0 },
   },

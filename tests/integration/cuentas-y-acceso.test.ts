@@ -85,11 +85,16 @@ describe.skipIf(!hasTestDb)("cuentas y acceso", () => {
     });
   }
 
+  /** Administrador con la verificación en dos pasos activa (el panel la exige; ver dos-pasos.test.ts). */
+  const makeStaff = (overrides: Record<string, unknown> = {}) =>
+    makeUser({ role: "admin", twoFactor: { enabledAt: new Date(), secretEnc: "no-se-usa-aqui" }, ...overrides });
+
   /** Cookie de sesión con el momento de inicio que se pida (por defecto, ahora). */
-  async function sessionCookieFor(userId: unknown, issuedAt = Date.now()) {
+  async function sessionCookieFor(userId: unknown, issuedAt = Date.now(), secondFactor = false) {
     const s = await session.sessionStorage.getSession();
     s.set("userId", String(userId));
     s.set("iat", issuedAt);
+    if (secondFactor) s.set("mfa", true);
     return (await session.sessionStorage.commitSession(s)).split(";")[0];
   }
 
@@ -286,37 +291,37 @@ describe.skipIf(!hasTestDb)("cuentas y acceso", () => {
       expect(response.status).toBe(403);
     });
 
-    it("un administrador con sesión reciente entra", async () => {
-      const user = await makeUser({ role: "admin" });
-      const result = await session.requireAdmin(get("/admin", await sessionCookieFor(user._id)));
+    it("un administrador con sesión reciente (verificada en dos pasos) entra", async () => {
+      const user = await makeStaff();
+      const result = await session.requireAdmin(get("/admin", await sessionCookieFor(user._id, Date.now(), true)));
       expect(result.email).toBe("ana@correo.com");
     });
 
     it("el acceso al panel caduca a las 8 horas aunque la cookie de cliente siga viva", async () => {
-      const user = await makeUser({ role: "admin" });
-      const nueve = await sessionCookieFor(user._id, Date.now() - 9 * 3600_000);
+      const user = await makeStaff();
+      const nueve = await sessionCookieFor(user._id, Date.now() - 9 * 3600_000, true);
       const response = (await outcome(() => session.requireAdmin(get("/admin", nueve)))) as Response;
       expect(response.status).toBe(302);
       expect(response.headers.get("location")).toContain("/admin/login");
 
-      const siete = await sessionCookieFor(user._id, Date.now() - 7 * 3600_000);
+      const siete = await sessionCookieFor(user._id, Date.now() - 7 * 3600_000, true);
       expect((await session.requireAdmin(get("/admin", siete))).email).toBe("ana@correo.com");
     });
 
     it("quitarle el rol a un administrador le cierra el panel al instante", async () => {
-      const user = await makeUser({ role: "admin" });
-      const cookie = await sessionCookieFor(user._id);
+      const user = await makeStaff();
+      const cookie = await sessionCookieFor(user._id, Date.now(), true);
       await UserModel.updateOne({ _id: user._id }, { role: "customer" });
       const response = (await outcome(() => session.requireAdmin(get("/admin", cookie)))) as Response;
       expect(response.status).toBe(403);
     });
 
     it("solo un super administrador pasa lo reservado a super administradores", async () => {
-      const admin = await makeUser({ role: "admin" });
-      const sup = await makeUser({ email: "jefa@correo.com", role: "superadmin" });
+      const admin = await makeStaff();
+      const sup = await makeStaff({ email: "jefa@correo.com", role: "superadmin" });
 
-      const cookieAdmin = await sessionCookieFor(admin._id);
-      const cookieSuper = await sessionCookieFor(sup._id);
+      const cookieAdmin = await sessionCookieFor(admin._id, Date.now(), true);
+      const cookieSuper = await sessionCookieFor(sup._id, Date.now(), true);
       const denegado = (await outcome(() => session.requireSuperAdmin(get("/admin/usuarios", cookieAdmin)))) as Response;
       expect(denegado.status).toBe(403);
 

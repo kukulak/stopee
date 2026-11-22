@@ -31,16 +31,30 @@ export function isFreshAdminSession(session: { get(key: string): unknown }) {
   return typeof issuedAt === "number" && Date.now() - issuedAt <= ADMIN_SESSION_MAX_AGE_MS;
 }
 
-export async function createUserSession(userId: string, redirectTo: string) {
+export async function createUserSession(
+  userId: string,
+  redirectTo: string,
+  options: { secondFactor?: boolean; alsoSetCookies?: string[] } = {},
+) {
   const session = await sessionStorage.getSession();
   session.set("userId", userId);
   // Momento del inicio de sesión: requireAdmin lo usa para exigir que el acceso
   // al panel sea reciente aunque la cookie de cliente siga vigente.
   session.set("iat", Date.now());
+  // Solo una sesión abierta con el código de la verificación en dos pasos abre el panel
+  // de quien la tiene activada (ver requireAdmin); la contraseña sola no basta.
+  if (options.secondFactor) session.set("mfa", true);
+  const headers = new Headers({ "Set-Cookie": await sessionStorage.commitSession(session) });
+  for (const cookie of options.alsoSetCookies ?? []) headers.append("Set-Cookie", cookie);
   // Defensa en profundidad: aunque una ruta olvide validar, nunca se redirige fuera del sitio.
-  return redirect(safeRedirectTarget(redirectTo), {
-    headers: { "Set-Cookie": await sessionStorage.commitSession(session) },
-  });
+  return redirect(safeRedirectTarget(redirectTo), { headers });
+}
+
+/** Cookie de la sesión actual marcada como verificada en dos pasos (al terminar de activarla). */
+export async function sessionCookieWithSecondFactor(request: Request): Promise<string> {
+  const session = await getSession(request);
+  session.set("mfa", true);
+  return sessionStorage.commitSession(session);
 }
 
 export async function getSession(request: Request) {
@@ -100,7 +114,7 @@ export async function getUser(request: Request) {
  * con el que alguien se registra), y el acceso al panel exige haber iniciado
  * sesión hace menos de 8 horas.
  */
-export async function requireAdmin(request: Request) {
+export async function requireAdmin(request: Request, options: { allowWithoutTwoFactor?: boolean } = {}) {
   const loginRedirect = () => {
     const url = new URL(request.url);
     const searchParams = new URLSearchParams([["redirectTo", url.pathname]]);
@@ -123,7 +137,19 @@ export async function requireAdmin(request: Request) {
     });
   }
 
-  return user.toObject();
+  // Verificación en dos pasos. Con ella activa, la sesión debe haberse abierto con el código
+  // (una sesión de solo contraseña, como la de la tienda, no abre el panel). Sin ella activa,
+  // el panel queda cerrado hasta activarla: solo la propia pantalla de activación pasa sin esto.
+  const { twoFactor, passwordHash: _passwordHash, ...account } = user.toObject();
+  const twoFactorEnabled = Boolean(twoFactor?.enabledAt);
+  if (twoFactorEnabled) {
+    if (session.get("mfa") !== true) throw loginRedirect();
+  } else if (!options.allowWithoutTwoFactor) {
+    throw redirect("/admin/seguridad");
+  }
+
+  // Ni los secretos de la verificación ni el hash de la contraseña salen de aquí: ninguna pantalla del panel los necesita.
+  return { ...account, twoFactorEnabled, recoveryCodesLeft: (twoFactor?.recoveryCodes ?? []).filter((c) => !c.usedAt).length };
 }
 
 /**

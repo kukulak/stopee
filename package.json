@@ -13,7 +13,8 @@
     "make-admin": "node --env-file=.env scripts/make-admin.mjs",
     "optimize:images": "node scripts/optimize-brand-images.mjs",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "reset-2fa": "node --env-file=.env scripts/reset-2fa.mjs"
   },
   "dependencies": {
     "@google-cloud/storage": "^7.22.0",
@@ -33,6 +34,7 @@
     "leva": "^0.10.1",
     "marked": "^18.0.11",
     "mongoose": "^8.8.3",
+    "qrcode": "^1.5.4",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "recharts": "^3.10.1",
@@ -45,6 +47,7 @@
     "@remix-run/dev": "^2.17.5",
     "@tailwindcss/typography": "^0.5.20",
     "@types/bcryptjs": "^2.4.6",
+    "@types/qrcode": "^1.5.6",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@types/three": "^0.169.0",
