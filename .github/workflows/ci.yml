@@ -40,5 +40,5 @@ jobs:
           TEST_MONGODB_URI: mongodb://127.0.0.1:27017/stopee_test_ci
       - name: Compilar
         run: npm run build
-      - name: Dependencias de producción sin fallas críticas
-        run: npm audit --omit=dev --audit-level=critical
+      - name: Dependencias de producción sin fallas altas ni críticas
+        run: npm audit --omit=dev --audit-level=high

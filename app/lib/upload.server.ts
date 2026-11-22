@@ -4,7 +4,7 @@ import { Storage } from "@google-cloud/storage";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { createWriteStream } from "node:fs";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import sharp from "sharp";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
@@ -44,9 +44,9 @@ export function isAllowedUpload(filename: string, contentType: string): boolean 
   return Boolean(allowedContentTypes && allowedContentTypes.includes(contentType));
 }
 
-/** Direcciones que este módulo entrega para archivos guardados en disco (desarrollo): /uploads/<uuid>.<ext permitida>. */
-const LOCAL_UPLOAD_URL = new RegExp(
-  `^/uploads/[0-9a-f-]{36}\\.(${Object.keys(ALLOWED_UPLOAD_TYPES)
+/** Nombre de archivo que este módulo asigna: <uuid>.<extensión permitida> (nunca el nombre que mandó el navegador). */
+const STORED_NAME = new RegExp(
+  `^[0-9a-f-]{36}\\.(${Object.keys(ALLOWED_UPLOAD_TYPES)
     .map((ext) => ext.slice(1))
     .join("|")})$`,
   "i",
@@ -148,7 +148,14 @@ async function saveToBucket(upload: FileUpload): Promise<string> {
 async function saveToDisk(upload: FileUpload): Promise<string> {
   await mkdir(UPLOADS_DIR, { recursive: true });
   const name = `${randomUUID()}${path.extname(upload.name).toLowerCase()}`;
-  await pipeline(Readable.from(chunksOf(upload, MAX_VIDEO_BYTES)), createWriteStream(path.join(UPLOADS_DIR, name)));
+  const target = path.join(UPLOADS_DIR, name);
+  try {
+    await pipeline(Readable.from(chunksOf(upload, MAX_VIDEO_BYTES)), createWriteStream(target));
+  } catch (error) {
+    // Si se pasó del límite (o se cortó la subida) a la mitad, no se deja un archivo incompleto en una carpeta pública.
+    await rm(target, { force: true });
+    throw error;
+  }
   return `/uploads/${name}`;
 }
 
@@ -185,13 +192,15 @@ export async function parseCatalogFormData(request: Request) {
  * Convierte el valor de un campo de archivo en su URL pública: /uploads/… (disco, desarrollo) o la URL del
  * bucket (producción).
  *
- * Solo se confía en las direcciones que entregó uploadHandler: texto con la forma exacta de nuestro bucket
- * o de nuestra carpeta de subidas. Un archivo "en bruto" (un File) nunca se acepta, ni un texto
+ * Solo se confía en las direcciones que entregó uploadHandler: nuestro bucket (o nuestra carpeta de subidas)
+ * seguido de un nombre <uuid>.<extensión permitida>. Un archivo "en bruto" (un File) nunca se acepta, ni un texto
  * cualquiera que alguien escriba en el campo: así un formulario manipulado no puede hacer que el
  * registro apunte a una dirección ajena.
  */
 export function uploadedFileToPublicUrl(file: File | string | null): string | null {
   if (typeof file !== "string") return null;
-  if (GCS_PUBLIC_PREFIX) return file.startsWith(GCS_PUBLIC_PREFIX) ? file : null;
-  return LOCAL_UPLOAD_URL.test(file) ? file : null;
+  if (GCS_PUBLIC_PREFIX) {
+    return file.startsWith(GCS_PUBLIC_PREFIX) && STORED_NAME.test(file.slice(GCS_PUBLIC_PREFIX.length)) ? file : null;
+  }
+  return file.startsWith("/uploads/") && STORED_NAME.test(file.slice("/uploads/".length)) ? file : null;
 }
