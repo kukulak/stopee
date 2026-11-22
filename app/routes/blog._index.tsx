@@ -1,6 +1,6 @@
-import type { LoaderFunctionArgs, MetaFunction } from "@remix-run/node";
-import { json } from "@remix-run/node";
-import { Link, useLoaderData } from "@remix-run/react";
+import type { LoaderFunctionArgs, MetaFunction } from "react-router";
+import { data } from "react-router";
+import { Link, useLoaderData } from "react-router";
 import { Navbar } from "~/components/layout/Navbar";
 import { Footer } from "~/components/layout/Footer";
 import { connectDB } from "~/lib/db.server";
@@ -27,7 +27,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     getCart(request),
   ]);
 
-  return json({
+  return data({
     posts: posts.map((p) => ({
       slug: p.slug,
       title: p.title,

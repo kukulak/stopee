@@ -1,5 +1,5 @@
 import type { CSSProperties } from "react";
-import { useRouteLoaderData } from "@remix-run/react";
+import { useRouteLoaderData } from "react-router";
 import type { loader as RootLoader } from "~/root";
 
 const DEFAULT_LOGO = "/elementos-design/logo-STOPee.webp";

@@ -1,6 +1,6 @@
-import type { ActionFunctionArgs, LoaderFunctionArgs, MetaFunction } from "@remix-run/node";
-import { json } from "@remix-run/node";
-import { Form, useActionData, useLoaderData, useNavigation } from "@remix-run/react";
+import type { ActionFunctionArgs, LoaderFunctionArgs, MetaFunction } from "react-router";
+import { data } from "react-router";
+import { Form, useActionData, useLoaderData, useNavigation } from "react-router";
 import { isStaff, isSuperAdmin, ROLE_LABELS, type UserRole } from "~/lib/roles";
 import { logAudit } from "~/lib/logger.server";
 import { connectDB } from "~/lib/db.server";
@@ -39,20 +39,20 @@ export async function action({ request, params }: ActionFunctionArgs) {
   await connectDB();
 
   const formData = await request.formData();
-  if (formData.get("intent") !== "set-role") return json({ ok: false, error: "Acción no reconocida." }, { status: 400 });
+  if (formData.get("intent") !== "set-role") return data({ ok: false, error: "Acción no reconocida." }, { status: 400 });
 
   const role = formData.get("role");
   if (role !== "customer" && role !== "admin") {
-    return json({ ok: false, error: "Elige un rol válido." }, { status: 400 });
+    return data({ ok: false, error: "Elige un rol válido." }, { status: 400 });
   }
 
   const target = await UserModel.findById(params.id);
-  if (!target) return json({ ok: false, error: "Cuenta no encontrada." }, { status: 404 });
+  if (!target) return data({ ok: false, error: "Cuenta no encontrada." }, { status: 404 });
   if (target.role === "superadmin") {
-    return json({ ok: false, error: "El rol de un super administrador solo se cambia desde la terminal." }, { status: 403 });
+    return data({ ok: false, error: "El rol de un super administrador solo se cambia desde la terminal." }, { status: 403 });
   }
   if (String(target._id) === String(viewer._id)) {
-    return json({ ok: false, error: "No puedes cambiar tu propio rol." }, { status: 403 });
+    return data({ ok: false, error: "No puedes cambiar tu propio rol." }, { status: 403 });
   }
 
   if (target.role !== role) {
@@ -61,7 +61,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
     await target.save();
     logAudit("user.role_changed", { by: String(viewer._id), userId: String(target._id), from: previousRole, to: role });
   }
-  return json({ ok: true, error: null as string | null });
+  return data({ ok: true, error: null as string | null });
 }
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
@@ -100,7 +100,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
           ? "Vio productos, sin agregar al carrito"
           : "Solo entró al sitio";
 
-  return json({
+  return data({
     profile: {
       id: String(user._id),
       email: user.email,

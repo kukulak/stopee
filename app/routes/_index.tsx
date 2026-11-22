@@ -2,9 +2,9 @@ import type {
   ActionFunctionArgs,
   LoaderFunctionArgs,
   MetaFunction
-} from '@remix-run/node'
-import { json } from '@remix-run/node'
-import { Link, useLoaderData } from '@remix-run/react'
+} from 'react-router'
+import { data } from 'react-router'
+import { Link, useLoaderData } from 'react-router'
 import { z } from 'zod'
 import { Navbar } from '~/components/layout/Navbar'
 import { Footer } from '~/components/layout/Footer'
@@ -67,7 +67,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const origin = siteOrigin(request)
 
   if (!settings.isStoreActive) {
-    return json({
+    return data({
       isStoreActive: false as const,
       origin,
       concentrate: await getConcentratePrice()
@@ -92,7 +92,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   // entrada) y si no hay ninguno, el primer producto individual disponible.
   const featured = catalogItems.find(p => p.kind === 'bundle') ?? catalogItems[0] ?? null
 
-  return json({
+  return data({
     isStoreActive: true as const,
     origin,
     cartCount: cart.reduce((sum, item) => sum + item.quantity, 0),
@@ -134,7 +134,7 @@ export async function action({ request }: ActionFunctionArgs) {
   const ip = getClientIp(request)
   const rateLimit = checkRateLimit(`waitlist:${ip}`, { max: 5, windowMs: 60 * 60 * 1000 })
   if (!rateLimit.allowed) {
-    return json({ ok: false, error: rateLimitMessage(rateLimit.retryAfterSeconds) }, { status: 429 })
+    return data({ ok: false, error: rateLimitMessage(rateLimit.retryAfterSeconds) }, { status: 429 })
   }
 
   const formData = await request.formData()
@@ -142,7 +142,7 @@ export async function action({ request }: ActionFunctionArgs) {
   const parsed = waitlistSchema.safeParse({ email: cleanPlainText(formData.get('email')) })
 
   if (!parsed.success) {
-    return json(
+    return data(
       {
         ok: false,
         error: parsed.error.issues[0]?.message ?? 'Ingresa un correo válido.'
@@ -186,7 +186,7 @@ export async function action({ request }: ActionFunctionArgs) {
     }
   }
 
-  return json({ ok: true, error: undefined as string | undefined })
+  return data({ ok: true, error: undefined as string | undefined })
 }
 
 const BENEFITS = [

@@ -1,8 +1,8 @@
-import type { LoaderFunctionArgs } from "@remix-run/node";
-import type { ActionFunctionArgs, MetaFunction } from "@remix-run/node";
-import { json } from "@remix-run/node";
+import type { LoaderFunctionArgs } from "react-router";
+import type { ActionFunctionArgs, MetaFunction } from "react-router";
+import { data } from "react-router";
 import { LINK_TARGET_ERROR, normalizeLinkTarget } from "~/lib/inputValidation";
-import { Form, useActionData, useLoaderData, useNavigation } from "@remix-run/react";
+import { Form, useActionData, useLoaderData, useNavigation } from "react-router";
 import { getExitIntentPopup, updateExitIntentPopup } from "~/models/exitIntentPopup.server";
 import { parseCatalogFormData, uploadedFileToPublicUrl } from "~/lib/upload.server";
 import { Field, inputClass } from "~/components/admin/MediaFields";
@@ -13,7 +13,7 @@ export const meta: MetaFunction = () => [{ title: "Popup de salida — Admin STO
 export async function loader({ request }: LoaderFunctionArgs) {
   await requireAdmin(request);
   const popup = await getExitIntentPopup();
-  return json({
+  return data({
     isEnabled: popup.isEnabled,
     title: popup.title ?? "",
     message: popup.message ?? "",
@@ -38,7 +38,7 @@ export async function action({ request }: ActionFunctionArgs) {
 
   const rawCtaHref = String(formData.get("ctaHref") ?? "").trim();
   const ctaHref = rawCtaHref ? normalizeLinkTarget(rawCtaHref) : "/tienda";
-  if (!ctaHref) return json({ ok: false as const, error: LINK_TARGET_ERROR }, { status: 400 });
+  if (!ctaHref) return data({ ok: false as const, error: LINK_TARGET_ERROR }, { status: 400 });
 
   await updateExitIntentPopup({
     isEnabled: formData.get("isEnabled") === "on",
@@ -53,7 +53,7 @@ export async function action({ request }: ActionFunctionArgs) {
     snoozeDays: Number(formData.get("snoozeDays") ?? 7) || 7,
   });
 
-  return json({ ok: true as const, error: null });
+  return data({ ok: true as const, error: null });
 }
 
 export default function AdminExitIntent() {

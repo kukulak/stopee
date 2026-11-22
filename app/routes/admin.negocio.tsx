@@ -1,7 +1,7 @@
-import type { LoaderFunctionArgs } from "@remix-run/node";
-import type { ActionFunctionArgs, MetaFunction } from "@remix-run/node";
-import { json } from "@remix-run/node";
-import { Form, Link, useActionData, useLoaderData, useNavigation } from "@remix-run/react";
+import type { LoaderFunctionArgs } from "react-router";
+import type { ActionFunctionArgs, MetaFunction } from "react-router";
+import { data } from "react-router";
+import { Form, Link, useActionData, useLoaderData, useNavigation } from "react-router";
 import { useEffect, useRef, useState } from "react";
 import { z } from "zod";
 import { getLegalSettings, updateLegalSettings } from "~/models/legalSettings.server";
@@ -18,7 +18,7 @@ const MAX_SOCIAL_LINKS = 12;
 export async function loader({ request }: LoaderFunctionArgs) {
   await requireAdmin(request);
   const settings = await getLegalSettings();
-  return json({
+  return data({
     razonSocial: settings.razonSocial ?? "",
     direccionFiscal: settings.direccionFiscal ?? "",
     correoContacto: settings.correoContacto ?? "",
@@ -60,7 +60,7 @@ export async function action({ request }: ActionFunctionArgs) {
     politicaDevoluciones: formData.get("politicaDevoluciones"),
   });
   if (!parsed.success) {
-    return json({ ok: false, error: parsed.error.issues[0]?.message ?? "Revisa los datos." }, { status: 400 });
+    return data({ ok: false, error: parsed.error.issues[0]?.message ?? "Revisa los datos." }, { status: 400 });
   }
 
   // Redes: se aceptan links sin "https://", se ignoran filas vacías y repetidas.
@@ -69,7 +69,7 @@ export async function action({ request }: ActionFunctionArgs) {
     if (!raw.trim()) continue;
     const url = normalizeSocialUrl(raw);
     if (!url) {
-      return json(
+      return data(
         { ok: false, error: `“${raw.trim()}” no es un link válido. Pega la dirección completa del perfil, por ejemplo instagram.com/stopee.` },
         { status: 400 },
       );
@@ -77,7 +77,7 @@ export async function action({ request }: ActionFunctionArgs) {
     if (!socialLinks.some((l) => l.url === url)) socialLinks.push({ url });
   }
   if (socialLinks.length > MAX_SOCIAL_LINKS) {
-    return json({ ok: false, error: `Máximo ${MAX_SOCIAL_LINKS} redes sociales.` }, { status: 400 });
+    return data({ ok: false, error: `Máximo ${MAX_SOCIAL_LINKS} redes sociales.` }, { status: 400 });
   }
 
   // Mismo formato E.164 sin espacios (ej. "+52 1 55 1234 5678" -> "5215512345678")
@@ -98,7 +98,7 @@ export async function action({ request }: ActionFunctionArgs) {
     const file = formData.get(field);
     const uploaded = uploadedFileToPublicUrl(file as File | null);
     if (!uploaded && file instanceof File && file.size > 0) {
-      return json({ ok: false, error: "El logo debe ser una imagen PNG, JPG o WebP de máximo 8 MB." }, { status: 400 });
+      return data({ ok: false, error: "El logo debe ser una imagen PNG, JPG o WebP de máximo 8 MB." }, { status: 400 });
     }
     if (uploaded) logoChanges[key] = uploaded;
     else if (formData.get(removeField) === "on") logoChanges[key] = "";
@@ -111,7 +111,7 @@ export async function action({ request }: ActionFunctionArgs) {
     ...(fichaTecnicaUrl !== undefined ? { fichaTecnicaUrl } : {}),
     ...logoChanges,
   });
-  return json({ ok: true, error: null as string | null });
+  return data({ ok: true, error: null as string | null });
 }
 
 type SocialRow = { key: number; url: string };

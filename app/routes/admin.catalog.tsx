@@ -1,7 +1,7 @@
-import type { LoaderFunctionArgs } from "@remix-run/node";
-import type { MetaFunction } from "@remix-run/node";
-import { json } from "@remix-run/node";
-import { Link, useLoaderData } from "@remix-run/react";
+import type { LoaderFunctionArgs } from "react-router";
+import type { MetaFunction } from "react-router";
+import { data } from "react-router";
+import { Link, useLoaderData } from "react-router";
 import { connectDB } from "~/lib/db.server";
 import { ProductModel } from "~/models/product.server";
 import { BundleModel } from "~/models/bundle.server";
@@ -17,7 +17,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     ProductModel.countDocuments(),
     BundleModel.countDocuments(),
   ]);
-  return json({ productCount, bundleCount });
+  return data({ productCount, bundleCount });
 }
 
 /**

@@ -1,4 +1,4 @@
-import { createRequestHandler } from "@remix-run/express";
+import { createRequestHandler } from "@react-router/express";
 import { randomBytes } from "node:crypto";
 import express from "express";
 import * as build from "./build/server/index.js";

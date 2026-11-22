@@ -1,6 +1,6 @@
-import type { ActionFunctionArgs, LoaderFunctionArgs, MetaFunction } from "@remix-run/node";
-import { json, redirect } from "@remix-run/node";
-import { Form, Link, useActionData, useNavigation, useSearchParams } from "@remix-run/react";
+import type { ActionFunctionArgs, LoaderFunctionArgs, MetaFunction } from "react-router";
+import { data, redirect } from "react-router";
+import { Form, Link, useActionData, useNavigation, useSearchParams } from "react-router";
 import { connectDB } from "~/lib/db.server";
 import { Logo } from "~/components/ui/Logo";
 import { isStaff } from "~/lib/roles";
@@ -16,7 +16,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   // Sin el paso previo (contraseña correcta) no hay nada que verificar.
   const pending = await getPendingChallenge(request);
   if (!pending) return redirect("/admin/login");
-  return json({}, { headers: { "Cache-Control": "private, no-store" } });
+  return data({}, { headers: { "Cache-Control": "private, no-store" } });
 }
 
 export async function action({ request }: ActionFunctionArgs) {
@@ -28,12 +28,12 @@ export async function action({ request }: ActionFunctionArgs) {
   const byIp = checkRateLimit(`admin-2fa-ip:${getClientIp(request)}`, { max: 20, windowMs: 10 * 60 * 1000 });
   if (!byAccount.allowed || !byIp.allowed) {
     const wait = Math.max(byAccount.retryAfterSeconds, byIp.retryAfterSeconds);
-    return json({ error: rateLimitMessage(wait) }, { status: 429 });
+    return data({ error: rateLimitMessage(wait) }, { status: 429 });
   }
 
   const formData = await request.formData();
   const code = String(formData.get("code") ?? "");
-  if (!code.trim()) return json({ error: "Escribe el código." }, { status: 400 });
+  if (!code.trim()) return data({ error: "Escribe el código." }, { status: 400 });
 
   await connectDB();
   // La cuenta pudo cambiar en los minutos que pasaron desde la contraseña (rol quitado, etc.).
@@ -45,7 +45,7 @@ export async function action({ request }: ActionFunctionArgs) {
   const result = await verifySecondFactor(pending.userId, code);
   if (!result.ok) {
     logAudit("2fa.failed", { userId: pending.userId });
-    return json({ error: "Ese código no es correcto. Escribe el que muestra tu app ahora mismo." }, { status: 401 });
+    return data({ error: "Ese código no es correcto. Escribe el que muestra tu app ahora mismo." }, { status: 401 });
   }
 
   logAudit(result.method === "recovery" ? "2fa.recovery_code_used" : "2fa.login", { userId: pending.userId });

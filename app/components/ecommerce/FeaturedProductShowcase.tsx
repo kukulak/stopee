@@ -1,4 +1,4 @@
-import { Link, useFetcher } from "@remix-run/react";
+import { Link, useFetcher } from "react-router";
 import { useEffect, useRef, useState } from "react";
 import type { CatalogItem } from "~/lib/catalog.server";
 import { trackEvent } from "~/lib/trackClient";

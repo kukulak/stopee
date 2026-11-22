@@ -1,8 +1,8 @@
 import { isStaff } from "~/lib/roles";
 import { requireStoreAccess } from "~/lib/storeAccess.server";
-import type { ActionFunctionArgs, LoaderFunctionArgs, MetaFunction } from "@remix-run/node";
-import { json, redirect } from "@remix-run/node";
-import { useLoaderData } from "@remix-run/react";
+import type { ActionFunctionArgs, LoaderFunctionArgs, MetaFunction } from "react-router";
+import { data, redirect } from "react-router";
+import { useLoaderData } from "react-router";
 import { useEffect, useState } from "react";
 import { trackEvent } from "~/lib/trackClient";
 import { Navbar } from "~/components/layout/Navbar";
@@ -156,7 +156,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const discountedSubtotal = Math.round(subtotalMxn * (1 - discountPercent / 100));
   const shipping = buildShippingQuote(shippingConfig, discountedSubtotal, cartShippingMethod);
 
-  return json({
+  return data({
     catalogItems,
     lines,
     subtotalMxn,
@@ -183,15 +183,15 @@ export async function action({ request }: ActionFunctionArgs) {
     // Sin tope, alguien podría probar códigos uno tras otro hasta dar con uno vigente.
     const limit = checkRateLimit(`apply-coupon:${getClientIp(request)}`, { max: 15, windowMs: 10 * 60 * 1000 });
     if (!limit.allowed) {
-      return json({ error: rateLimitMessage(limit.retryAfterSeconds) }, { status: 429 });
+      return data({ error: rateLimitMessage(limit.retryAfterSeconds) }, { status: 429 });
     }
     const code = String(formData.get("code") ?? "").trim().slice(0, 40);
     if (!code) {
-      return json({ error: "Ingresa un código." }, { status: 400 });
+      return data({ error: "Ingresa un código." }, { status: 400 });
     }
     const promo = await findRedeemableCoupon(code);
     if (!promo?.coupon?.percentage) {
-      return json({ error: "Ese código no es válido o ya venció." }, { status: 404 });
+      return data({ error: "Ese código no es válido o ya venció." }, { status: 404 });
     }
     // Aquí solo se revisa quién es el cliente: el carrito puede estar vacío todavía,
     // y lo que le falte al carrito se avisa después en el propio carrito.
@@ -201,33 +201,33 @@ export async function action({ request }: ActionFunctionArgs) {
       "identity",
     );
     if (!eligibility.ok) {
-      return json(
+      return data(
         { error: eligibility.reason, cta: eligibility.kind === "login" || eligibility.kind === "verify" ? eligibility.kind : null },
         { status: 400 },
       );
     }
     const cookie = await setCartCoupon(request, code.toUpperCase());
-    return json({ ok: true }, { headers: { "Set-Cookie": cookie } });
+    return data({ ok: true }, { headers: { "Set-Cookie": cookie } });
   }
 
   if (intent === "remove-coupon") {
     const cookie = await setCartCoupon(request, null);
-    return json({ ok: true }, { headers: { "Set-Cookie": cookie } });
+    return data({ ok: true }, { headers: { "Set-Cookie": cookie } });
   }
 
   if (intent === "set-shipping-method") {
     const method = formData.get("method");
     const config = await getShippingConfig();
     if (!isShippingMethodId(method) || !config.methods[method].isActive) {
-      return json({ error: "Esa opción de envío ya no está disponible." }, { status: 400 });
+      return data({ error: "Esa opción de envío ya no está disponible." }, { status: 400 });
     }
     const cookie = await setCartShippingMethod(request, method);
-    return json({ ok: true }, { headers: { "Set-Cookie": cookie } });
+    return data({ ok: true }, { headers: { "Set-Cookie": cookie } });
   }
 
   const sku = formData.get("sku");
   if (typeof sku !== "string" || !sku) {
-    return json({ error: "Producto no válido." }, { status: 400 });
+    return data({ error: "Producto no válido." }, { status: 400 });
   }
 
   // Quitar del carrito (o bajar la cantidad a 0) siempre debe funcionar, aunque
@@ -235,7 +235,7 @@ export async function action({ request }: ActionFunctionArgs) {
   // agregarse — solo agregar o subir cantidad requiere que siga existiendo.
   if (intent === "remove-from-cart") {
     const { cookie } = await removeFromCart(request, sku);
-    return json({ ok: true }, { headers: { "Set-Cookie": cookie } });
+    return data({ ok: true }, { headers: { "Set-Cookie": cookie } });
   }
 
   if (intent === "update-quantity") {
@@ -243,48 +243,48 @@ export async function action({ request }: ActionFunctionArgs) {
     const safeQuantity = Number.isFinite(quantity) ? Math.floor(quantity) : 0;
     if (safeQuantity > 0) {
       const item = await getCatalogItemBySku(sku);
-      if (!item) return json({ error: "Ese producto ya no está disponible." }, { status: 400 });
-      if (item.stock <= 0) return json({ error: soldOutMessage(item.name) }, { status: 400 });
+      if (!item) return data({ error: "Ese producto ya no está disponible." }, { status: 400 });
+      if (item.stock <= 0) return data({ error: soldOutMessage(item.name) }, { status: 400 });
       // Se guarda lo máximo posible en vez de rechazar: el cliente queda con
       // el tope y un aviso claro, sin perder lo que ya tenía en el carrito.
       if (safeQuantity > item.stock) {
         const { cookie } = await setCartQuantity(request, sku, item.stock);
-        return json(
+        return data(
           { ok: true, notice: stockLimitMessage(item.stock, item.name) },
           { headers: { "Set-Cookie": cookie } },
         );
       }
     }
     const { cookie } = await setCartQuantity(request, sku, safeQuantity);
-    return json({ ok: true }, { headers: { "Set-Cookie": cookie } });
+    return data({ ok: true }, { headers: { "Set-Cookie": cookie } });
   }
 
   if (intent === "add-to-cart") {
     const item = await getCatalogItemBySku(sku);
     if (!item) {
-      return json({ error: "Producto no válido." }, { status: 400 });
+      return data({ error: "Producto no válido." }, { status: 400 });
     }
     // Alcance "productos seleccionados" de la compuerta de acceso exclusivo:
     // aunque el visitante nunca haya entrado a /tienda/:sku, no debe poder
     // agregarlo directo desde la cuadrícula sin haber desbloqueado la clave.
     const gateConfig = await getPasswordGateConfig();
     if (isGateWindowActive(gateConfig) && isSkuGated(gateConfig, sku) && !(await hasGateAccess(request))) {
-      return json({ error: "Este producto requiere una clave de acceso exclusivo." }, { status: 403 });
+      return data({ error: "Este producto requiere una clave de acceso exclusivo." }, { status: 403 });
     }
     const requestedQuantity = Number(formData.get("quantity") ?? 1);
     const quantity = Number.isFinite(requestedQuantity) && requestedQuantity > 0 ? Math.floor(requestedQuantity) : 1;
     // Tope por existencia, contando lo que el cliente ya lleva en el carrito.
     const inCart = (await getCart(request)).find((line) => line.sku === sku)?.quantity ?? 0;
     const room = remainingToAdd(item.stock, inCart);
-    if (item.stock <= 0) return json({ error: soldOutMessage(item.name) }, { status: 400 });
+    if (item.stock <= 0) return data({ error: soldOutMessage(item.name) }, { status: 400 });
     if (room <= 0) {
-      return json(
+      return data(
         { error: `Ya tienes en tu carrito todas las unidades disponibles (${item.stock}).` },
         { status: 400 },
       );
     }
     const { cookie } = await addToCart(request, sku, Math.min(quantity, room));
-    return json(
+    return data(
       {
         ok: true,
         notice: quantity > room ? `Solo quedaban ${room} más; agregamos ${room}.` : undefined,
@@ -293,7 +293,7 @@ export async function action({ request }: ActionFunctionArgs) {
     );
   }
 
-  return json({ error: "Acción no reconocida." }, { status: 400 });
+  return data({ error: "Acción no reconocida." }, { status: 400 });
 }
 
 export default function Tienda() {

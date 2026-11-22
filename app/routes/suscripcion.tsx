@@ -1,7 +1,7 @@
 import { requireStoreAccess } from "~/lib/storeAccess.server";
-import type { LoaderFunctionArgs, MetaFunction } from "@remix-run/node";
-import { json } from "@remix-run/node";
-import { useLoaderData } from "@remix-run/react";
+import type { LoaderFunctionArgs, MetaFunction } from "react-router";
+import { data } from "react-router";
+import { useLoaderData } from "react-router";
 import { Navbar } from "~/components/layout/Navbar";
 import { Footer } from "~/components/layout/Footer";
 import { Breadcrumbs } from "~/components/ui/Breadcrumbs";
@@ -42,7 +42,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   ]);
   const subscribableItems = catalogItems.filter((item) => item.isSubscribable);
 
-  return json({
+  return data({
     origin: siteOrigin(request),
     subscriptionConfig,
     pageTitle: subscriptionConfig.programName

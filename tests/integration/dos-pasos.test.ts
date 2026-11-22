@@ -1,5 +1,6 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { assertDisposableDb, dropDb, hasTestDb, wipeDb } from "../helpers/db";
+import { asResponse, outcomeOf } from "../helpers/http";
 
 type RouteArgs = { request: Request; params: object; context: object };
 type Handler = (args: RouteArgs) => Promise<Response>;
@@ -24,11 +25,14 @@ describe.skipIf(!hasTestDb)("verificación en dos pasos", () => {
 
   beforeAll(async () => {
     assertDisposableDb();
-    const login = (await import("~/routes/admin_.login")) as never as { action: Handler; loader: Handler };
-    adminLogin = login;
-    verificar = (await import("~/routes/admin_.verificar")) as never;
-    seguridad = (await import("~/routes/admin_.seguridad")) as never;
-    ({ action: customerLogin } = (await import("~/routes/cuenta_.entrar")) as never);
+    const wrap = async (load: Promise<unknown>) => {
+      const mod = (await load) as { action: Handler; loader: Handler };
+      return { action: asResponse(mod.action), loader: asResponse(mod.loader) };
+    };
+    adminLogin = await wrap(import("~/routes/admin_.login"));
+    verificar = await wrap(import("~/routes/admin_.verificar"));
+    seguridad = await wrap(import("~/routes/admin_.seguridad"));
+    customerLogin = (await wrap(import("~/routes/cuenta_.entrar"))).action;
     session = await import("~/lib/session.server");
     totp = await import("~/lib/totp.server");
     ({ UserModel } = await import("~/models/user.server"));
@@ -72,14 +76,7 @@ describe.skipIf(!hasTestDb)("verificación en dos pasos", () => {
   const joinCookies = (...cookies: (string | undefined)[]) => cookies.filter(Boolean).join("; ");
 
   /** Ejecuta algo que puede lanzar una Response (redirección o 403) y devuelve siempre la Response. */
-  async function outcome<T>(fn: () => Promise<T>): Promise<T | Response> {
-    try {
-      return await fn();
-    } catch (error) {
-      if (error instanceof Response) return error;
-      throw error;
-    }
-  }
+  const outcome = outcomeOf;
 
   async function makeAdmin(opts: { enrolled?: boolean; role?: string; email?: string } = {}) {
     const secret = totp.generateTotpSecret();

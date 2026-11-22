@@ -1,6 +1,6 @@
-import type { LoaderFunctionArgs, MetaFunction } from "@remix-run/node";
-import { json } from "@remix-run/node";
-import { Link, useLoaderData, useRouteLoaderData } from "@remix-run/react";
+import type { LoaderFunctionArgs, MetaFunction } from "react-router";
+import { data } from "react-router";
+import { Link, useLoaderData, useRouteLoaderData } from "react-router";
 import { useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { Navbar } from "~/components/layout/Navbar";
 import { Footer } from "~/components/layout/Footer";
@@ -29,7 +29,7 @@ export const meta: MetaFunction<typeof loader> = ({ data }) => [
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const [cart, legal] = await Promise.all([getCart(request), getLegalSettings()]);
-  return json({
+  return data({
     cartCount: cart.reduce((sum, item) => sum + item.quantity, 0),
     origin: siteOrigin(request),
     fichaTecnicaUrl: legal.fichaTecnicaUrl ?? "",

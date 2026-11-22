@@ -1,6 +1,6 @@
-import type { ActionFunctionArgs, LoaderFunctionArgs, MetaFunction } from "@remix-run/node";
-import { json } from "@remix-run/node";
-import { Form, useActionData, useNavigation, useLoaderData } from "@remix-run/react";
+import type { ActionFunctionArgs, LoaderFunctionArgs, MetaFunction } from "react-router";
+import { data } from "react-router";
+import { Form, useActionData, useNavigation, useLoaderData } from "react-router";
 import { z } from "zod";
 import { Navbar } from "~/components/layout/Navbar";
 import { Footer } from "~/components/layout/Footer";
@@ -21,7 +21,7 @@ export const meta: MetaFunction = () => [
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const cart = await getCart(request);
-  return json({ cartCount: cart.reduce((sum, item) => sum + item.quantity, 0) });
+  return data({ cartCount: cart.reduce((sum, item) => sum + item.quantity, 0) });
 }
 
 const contactSchema = z.object({
@@ -53,7 +53,7 @@ export async function action({ request }: ActionFunctionArgs) {
   const ip = getClientIp(request);
   const rateLimit = checkRateLimit(`contact:${ip}`, { max: 5, windowMs: 60 * 60 * 1000 });
   if (!rateLimit.allowed) {
-    return json({ ok: false, error: rateLimitMessage(rateLimit.retryAfterSeconds) }, { status: 429 });
+    return data({ ok: false, error: rateLimitMessage(rateLimit.retryAfterSeconds) }, { status: 429 });
   }
 
   const formData = await request.formData();
@@ -65,7 +65,7 @@ export async function action({ request }: ActionFunctionArgs) {
   });
 
   if (!parsed.success) {
-    return json({ ok: false, error: parsed.error.issues[0]?.message ?? "Revisa los datos." }, { status: 400 });
+    return data({ ok: false, error: parsed.error.issues[0]?.message ?? "Revisa los datos." }, { status: 400 });
   }
 
   // Primero se guarda (así nunca se pierde el mensaje); el aviso por correo al
@@ -106,7 +106,7 @@ export async function action({ request }: ActionFunctionArgs) {
     logError("contacto.notify", error);
   }
 
-  return json({ ok: true, error: undefined as string | undefined });
+  return data({ ok: true, error: undefined as string | undefined });
 }
 
 export default function Contacto() {

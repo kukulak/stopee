@@ -1,4 +1,4 @@
-import { json } from "@remix-run/node";
+import { data } from "react-router";
 import { UserModel } from "~/models/user.server";
 import { connectDB } from "~/lib/db.server";
 import { sendVerificationEmail } from "~/lib/accountEmails.server";
@@ -15,7 +15,7 @@ export const UNVERIFIED_LOGIN_MESSAGE =
   "Falta confirmar tu correo. Abre el enlace que te enviamos al crear la cuenta y vuelve a entrar.";
 
 export function unverifiedLoginResponse(email: string) {
-  return json({ error: UNVERIFIED_LOGIN_MESSAGE, unverifiedEmail: email }, { status: 403 });
+  return data({ error: UNVERIFIED_LOGIN_MESSAGE, unverifiedEmail: email }, { status: 403 });
 }
 
 /** Tiempo mínimo de respuesta: que exista o no la cuenta no se note por lo que tarda. */

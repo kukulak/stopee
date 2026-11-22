@@ -1,4 +1,4 @@
-import { useLocation } from "@remix-run/react";
+import { useLocation } from "react-router";
 
 const HIDDEN_PREFIXES = ["/admin", "/cuenta"];
 

@@ -1,6 +1,6 @@
-import type { LoaderFunctionArgs, MetaFunction } from "@remix-run/node";
-import { json } from "@remix-run/node";
-import { Link, useLoaderData } from "@remix-run/react";
+import type { LoaderFunctionArgs, MetaFunction } from "react-router";
+import { data } from "react-router";
+import { Link, useLoaderData } from "react-router";
 import { Logo } from "~/components/ui/Logo";
 import { CheckIcon } from "~/components/ui/Icons";
 import { connectDB } from "~/lib/db.server";
@@ -13,18 +13,18 @@ export const meta: MetaFunction = () => [{ title: "Confirmar correo — STOPee" 
 export async function loader({ request }: LoaderFunctionArgs) {
   const headers = { "Referrer-Policy": "no-referrer" };
   const limit = checkRateLimit(`verificar:${getClientIp(request)}`, { max: 30, windowMs: 10 * 60 * 1000 });
-  if (!limit.allowed) return json({ status: "invalid" as const }, { status: 429, headers });
+  if (!limit.allowed) return data({ status: "invalid" as const }, { status: 429, headers });
 
   const token = new URL(request.url).searchParams.get("token");
   await connectDB();
   const consumed = await consumeToken(token, "verify");
-  if (!consumed) return json({ status: "invalid" as const }, { headers });
+  if (!consumed) return data({ status: "invalid" as const }, { headers });
 
   await UserModel.updateOne(
     { _id: consumed.userId, emailVerifiedAt: { $exists: false } },
     { $set: { emailVerifiedAt: new Date() } },
   );
-  return json({ status: "verified" as const }, { headers });
+  return data({ status: "verified" as const }, { headers });
 }
 
 export default function Verificar() {

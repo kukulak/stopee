@@ -1,6 +1,6 @@
-import type { ActionFunctionArgs, LoaderFunctionArgs, MetaFunction } from "@remix-run/node";
-import { json, redirect } from "@remix-run/node";
-import { Form, Link, useActionData, useNavigation } from "@remix-run/react";
+import type { ActionFunctionArgs, LoaderFunctionArgs, MetaFunction } from "react-router";
+import { data, redirect } from "react-router";
+import { Form, Link, useActionData, useNavigation } from "react-router";
 import { z } from "zod";
 import { useState } from "react";
 import { Logo } from "~/components/ui/Logo";
@@ -19,7 +19,7 @@ export const meta: MetaFunction = () => [{ title: "Crear cuenta — STOPee" }];
 export async function loader({ request }: LoaderFunctionArgs) {
   const userId = await getUserId(request);
   if (userId) return redirect("/cuenta");
-  return json({});
+  return data({});
 }
 
 const registroSchema = z.object({
@@ -44,7 +44,7 @@ export async function action({ request }: ActionFunctionArgs) {
   const ip = getClientIp(request);
   const rateLimit = checkRateLimit(`cuenta-registro:${ip}`, { max: 5, windowMs: 60 * 60 * 1000 });
   if (!rateLimit.allowed) {
-    return json({ error: rateLimitMessage(rateLimit.retryAfterSeconds) }, { status: 429 });
+    return data({ error: rateLimitMessage(rateLimit.retryAfterSeconds) }, { status: 429 });
   }
 
   const formData = await request.formData();
@@ -59,7 +59,7 @@ export async function action({ request }: ActionFunctionArgs) {
   });
 
   if (!parsed.success) {
-    return json({ error: parsed.error.issues[0]?.message ?? "Revisa los datos." }, { status: 400 });
+    return data({ error: parsed.error.issues[0]?.message ?? "Revisa los datos." }, { status: 400 });
   }
 
   const { email, password } = parsed.data;
@@ -69,7 +69,7 @@ export async function action({ request }: ActionFunctionArgs) {
   await connectDB();
   const existing = await UserModel.findOne({ email });
   if (existing) {
-    return json({ error: "Ya existe una cuenta con ese correo." }, { status: 409 });
+    return data({ error: "Ya existe una cuenta con ese correo." }, { status: 409 });
   }
 
   const passwordHash = await hashPassword(password);
@@ -80,7 +80,7 @@ export async function action({ request }: ActionFunctionArgs) {
   // sigue en segundo plano) y siempre puede pedir otro enlace al intentar entrar.
   await settleWithin(sendVerificationEmail(user), 2500);
 
-  return json({ error: null, sentTo: email });
+  return data({ error: null, sentTo: email });
 }
 
 export default function Registro() {

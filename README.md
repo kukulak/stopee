@@ -28,7 +28,7 @@ Para apagarla (normalmente no hace falta):
 pkill -f "mongod --dbpath.*stopee-dev"
 ```
 
-### 2. Levantar el sitio (frontend + backend, Remix corre ambos juntos)
+### 2. Levantar el sitio (frontend + backend, React Router corre ambos juntos)
 
 ```bash
 npm install        # solo la primera vez, o cuando cambien las dependencias
@@ -64,7 +64,7 @@ STOPee vende un concentrado biotecnológico (Bacillus subtilis + ricinoleato de 
 
 | Capa | Tecnología |
 |---|---|
-| Framework | [Remix](https://remix.run) (Vite, TypeScript) — front y back en el mismo proyecto |
+| Framework | [React Router 7](https://reactrouter.com) en modo framework (Vite, TypeScript; antes Remix 2) — front y back en el mismo proyecto |
 | Base de datos | MongoDB vía Mongoose |
 | Pagos | Stripe (Checkout para compra única + Billing para suscripciones) |
 | Estilos | Tailwind CSS |
@@ -73,7 +73,7 @@ STOPee vende un concentrado biotecnológico (Bacillus subtilis + ricinoleato de 
 | Markdown | `marked` (contenido del blog) |
 | Validación de formularios | Zod |
 
-No hay build de un "frontend" separado — Remix sirve las rutas del sitio público, el backoffice y las APIs (incluyendo el webhook de Stripe) desde el mismo servidor.
+No hay build de un "frontend" separado — React Router sirve las rutas del sitio público, el backoffice y las APIs (incluyendo el webhook de Stripe) desde el mismo servidor.
 
 ---
 
@@ -132,7 +132,7 @@ No hay build de un "frontend" separado — Remix sirve las rutas del sitio públ
 
 ## 🧠 Cómo funciona (arquitectura, por si vas a tocar código)
 
-- **Rutas**: convención de archivos planos de Remix (`admin.catalog_.products.tsx` → `/admin/catalog/products`, el `_` evita que anide bajo `admin.catalog.tsx`).
+- **Rutas**: convención de archivos planos (se declara en `app/routes.ts` con `flatRoutes()`; `admin.catalog_.products.tsx` → `/admin/catalog/products`, el `_` evita que anide bajo `admin.catalog.tsx`).
 - **Base de datos**: Mongoose, conexión cacheada en `app/lib/db.server.ts` (con recuperación automática si el primer intento de conexión falla).
 - **Autenticación**: `app/lib/session.server.ts` — el admin reutiliza el mismo sistema de sesión de clientes; el rol `superadmin` solo se asigna con `npm run make-admin` (desde Clientes → Nuevo usuario el super administrador crea administradores y clientes), y el acceso al panel caduca a las 8 horas.
 - **Pagos**: `app/lib/stripe.server.ts` centraliza la creación de sesiones de Checkout y Billing; `app/routes/webhooks.stripe.tsx` sincroniza pedidos/suscripciones/lealtad cuando Stripe confirma el pago.

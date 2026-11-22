@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi, type MockInstance } from "vitest";
 import { assertDisposableDb, dropDb, hasTestDb, wipeDb } from "../helpers/db";
+import { asResponse, outcomeOf } from "../helpers/http";
 
 type Action = (args: { request: Request; params: object; context: object }) => Promise<Response>;
 
@@ -27,7 +28,7 @@ describe.skipIf(!hasTestDb)("ir a pagar", () => {
 
   beforeAll(async () => {
     assertDisposableDb();
-    ({ action: checkout } = (await import("~/routes/api.checkout")) as never);
+    checkout = asResponse(((await import("~/routes/api.checkout")) as never as { action: Action }).action);
     ({ stripe } = await import("~/lib/stripe.server"));
     ({ cartStorage } = await import("~/lib/cart.server"));
     ({ sessionStorage } = await import("~/lib/session.server"));
@@ -95,12 +96,7 @@ describe.skipIf(!hasTestDb)("ir a pagar", () => {
 
   /** Respuesta o excepción: la ruta lanza el 403 de "tienda no disponible" en vez de devolverlo. */
   async function payOutcome(...args: Parameters<typeof pay>) {
-    try {
-      return await pay(...args);
-    } catch (error) {
-      if (error instanceof Response) return error;
-      throw error;
-    }
+    return outcomeOf(() => pay(...args));
   }
 
   /** Lo que se le pidió cobrar a Stripe en la única llamada que debió hacerse. */

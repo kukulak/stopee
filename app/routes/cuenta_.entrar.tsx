@@ -1,6 +1,6 @@
-import type { ActionFunctionArgs, LoaderFunctionArgs, MetaFunction } from "@remix-run/node";
-import { json, redirect } from "@remix-run/node";
-import { Form, Link, useActionData, useNavigation, useSearchParams } from "@remix-run/react";
+import type { ActionFunctionArgs, LoaderFunctionArgs, MetaFunction } from "react-router";
+import { data, redirect } from "react-router";
+import { Form, Link, useActionData, useNavigation, useSearchParams } from "react-router";
 import { Logo } from "~/components/ui/Logo";
 import { safeRedirectTarget } from "~/lib/safeRedirect";
 import { PasswordField } from "~/components/ui/PasswordField";
@@ -16,14 +16,14 @@ export const meta: MetaFunction = () => [{ title: "Iniciar sesión — STOPee" }
 export async function loader({ request }: LoaderFunctionArgs) {
   const userId = await getUserId(request);
   if (userId) return redirect("/cuenta");
-  return json({});
+  return data({});
 }
 
 export async function action({ request }: ActionFunctionArgs) {
   const ip = getClientIp(request);
   const rateLimit = checkRateLimit(`cuenta-login:${ip}`, { max: 8, windowMs: 10 * 60 * 1000 });
   if (!rateLimit.allowed) {
-    return json({ error: rateLimitMessage(rateLimit.retryAfterSeconds) }, { status: 429 });
+    return data({ error: rateLimitMessage(rateLimit.retryAfterSeconds) }, { status: 429 });
   }
 
   const formData = await request.formData();
@@ -32,21 +32,21 @@ export async function action({ request }: ActionFunctionArgs) {
   const redirectTo = safeRedirectTarget(String(formData.get("redirectTo") ?? ""), "/cuenta");
 
   if (!email || !password) {
-    return json({ error: "Ingresa tu correo y contraseña." }, { status: 400 });
+    return data({ error: "Ingresa tu correo y contraseña." }, { status: 400 });
   }
 
   // Además del límite por IP: un atacante que rota de IP seguiría probando
   // contraseñas contra la misma cuenta sin este tope por correo.
   const emailLimit = checkRateLimit(`cuenta-login-email:${email}`, { max: 10, windowMs: 15 * 60 * 1000 });
   if (!emailLimit.allowed) {
-    return json({ error: rateLimitMessage(emailLimit.retryAfterSeconds) }, { status: 429 });
+    return data({ error: rateLimitMessage(emailLimit.retryAfterSeconds) }, { status: 429 });
   }
 
   await connectDB();
   const user = await UserModel.findOne({ email });
 
   if (!(await verifyPassword(password, user?.passwordHash)) || !user) {
-    return json({ error: "Correo o contraseña incorrectos." }, { status: 401 });
+    return data({ error: "Correo o contraseña incorrectos." }, { status: 401 });
   }
 
   // Sin correo confirmado no se entra (ver emailVerification.server.ts).

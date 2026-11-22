@@ -1,14 +1,14 @@
 import { PassThrough } from "node:stream";
-import type { ActionFunctionArgs, AppLoadContext, EntryContext, LoaderFunctionArgs } from "@remix-run/node";
-import { createReadableStreamFromReadable } from "@remix-run/node";
-import { RemixServer } from "@remix-run/react";
+import type { ActionFunctionArgs, AppLoadContext, EntryContext, LoaderFunctionArgs } from "react-router";
+import { ServerRouter } from "react-router";
+import { createReadableStreamFromReadable } from "@react-router/node";
 import { isbot } from "isbot";
 import { renderToPipeableStream } from "react-dom/server";
 import { applySecurityHeaders } from "~/lib/securityHeaders.server";
 import { NonceContext } from "~/lib/nonce";
 import { logError } from "~/lib/logger.server";
 
-// Remix llama esto para cualquier error de servidor que NO sea un
+// React Router llama esto para cualquier error de servidor que NO sea un
 // Response esperado (un 404 de "producto no encontrado" nunca llega aquí,
 // solo excepciones de verdad) — sin un Sentry configurado, este es el único
 // lugar donde nos enteramos de un error real de producción, así que queda
@@ -18,7 +18,7 @@ export function handleError(error: unknown, { request }: LoaderFunctionArgs | Ac
   logError("loader-or-action", error, { url: request.url, method: request.method });
 }
 
-declare module "@remix-run/node" {
+declare module "react-router" {
   interface AppLoadContext {
     /** Generado por servidor en server.js, uno distinto por cada request — ver app/lib/securityHeaders.server.ts. */
     nonce: string;
@@ -26,34 +26,36 @@ declare module "@remix-run/node" {
 }
 
 const ABORT_DELAY = 5_000;
+// React Router corta también los datos que aún envía por partes pasado este tiempo.
+export const streamTimeout = ABORT_DELAY;
 
 export default function handleRequest(
   request: Request,
   responseStatusCode: number,
   responseHeaders: Headers,
-  remixContext: EntryContext,
+  routerContext: EntryContext,
   loadContext: AppLoadContext,
 ) {
   const nonce = typeof loadContext?.nonce === "string" ? loadContext.nonce : "";
   applySecurityHeaders(responseHeaders, nonce, new URL(request.url).pathname);
 
   return isbot(request.headers.get("user-agent") || "")
-    ? handleBotRequest(request, responseStatusCode, responseHeaders, remixContext, nonce)
-    : handleBrowserRequest(request, responseStatusCode, responseHeaders, remixContext, nonce);
+    ? handleBotRequest(request, responseStatusCode, responseHeaders, routerContext, nonce)
+    : handleBrowserRequest(request, responseStatusCode, responseHeaders, routerContext, nonce);
 }
 
 function handleBotRequest(
   request: Request,
   responseStatusCode: number,
   responseHeaders: Headers,
-  remixContext: EntryContext,
+  routerContext: EntryContext,
   nonce: string,
 ) {
   return new Promise((resolve, reject) => {
     let shellRendered = false;
     const { pipe, abort } = renderToPipeableStream(
       <NonceContext.Provider value={nonce}>
-        <RemixServer context={remixContext} url={request.url} abortDelay={ABORT_DELAY} nonce={nonce} />
+        <ServerRouter context={routerContext} url={request.url} nonce={nonce} />
       </NonceContext.Provider>,
       {
         nonce,
@@ -89,14 +91,14 @@ function handleBrowserRequest(
   request: Request,
   responseStatusCode: number,
   responseHeaders: Headers,
-  remixContext: EntryContext,
+  routerContext: EntryContext,
   nonce: string,
 ) {
   return new Promise((resolve, reject) => {
     let shellRendered = false;
     const { pipe, abort } = renderToPipeableStream(
       <NonceContext.Provider value={nonce}>
-        <RemixServer context={remixContext} url={request.url} abortDelay={ABORT_DELAY} nonce={nonce} />
+        <ServerRouter context={routerContext} url={request.url} nonce={nonce} />
       </NonceContext.Provider>,
       {
         nonce,

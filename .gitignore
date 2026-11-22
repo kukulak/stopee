@@ -8,3 +8,6 @@ build/
 # Archivos subidos desde el admin (imágenes/videos de catálogo) — no versionar
 public/uploads/*
 !public/uploads/.gitkeep
+
+# Tipos que genera React Router a partir de las rutas
+.react-router/

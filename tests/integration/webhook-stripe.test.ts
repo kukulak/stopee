@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { assertDisposableDb, dropDb, hasTestDb, wipeDb } from "../helpers/db";
+import { asResponse, outcomeOf } from "../helpers/http";
 
 // El correo no sale a ningún lado: se registra cada intento para poder contarlos.
 const { sendEmail } = vi.hoisted(() => ({ sendEmail: vi.fn() }));
@@ -21,7 +22,7 @@ describe.skipIf(!hasTestDb)("webhook de Stripe", () => {
 
   beforeAll(async () => {
     assertDisposableDb();
-    ({ action } = (await import("~/routes/webhooks.stripe")) as never);
+    action = asResponse(((await import("~/routes/webhooks.stripe")) as never as { action: typeof action }).action);
     ({ stripe } = await import("~/lib/stripe.server"));
     ({ OrderModel } = await import("~/models/order.server"));
     ({ ProductModel } = await import("~/models/product.server"));

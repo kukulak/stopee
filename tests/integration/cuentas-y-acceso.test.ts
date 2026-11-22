@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { assertDisposableDb, dropDb, hasTestDb, wipeDb } from "../helpers/db";
+import { asResponse, outcomeOf } from "../helpers/http";
 
 const { sendEmail } = vi.hoisted(() => ({ sendEmail: vi.fn() }));
 vi.mock("~/lib/mail.server", () => ({ sendEmail, isMailConfigured: () => true }));
@@ -30,11 +31,11 @@ describe.skipIf(!hasTestDb)("cuentas y acceso", () => {
 
   beforeAll(async () => {
     assertDisposableDb();
-    ({ action: login } = (await import("~/routes/cuenta_.entrar")) as never);
-    ({ action: adminLogin } = (await import("~/routes/admin_.login")) as never);
-    ({ action: registro } = (await import("~/routes/cuenta_.registro")) as never);
-    ({ action: restablecer } = (await import("~/routes/cuenta_.restablecer")) as never);
-    ({ loader: verificar } = (await import("~/routes/cuenta_.verificar")) as never);
+    login = asResponse(((await import("~/routes/cuenta_.entrar")) as never as { action: Action }).action);
+    adminLogin = asResponse(((await import("~/routes/admin_.login")) as never as { action: Action }).action);
+    registro = asResponse(((await import("~/routes/cuenta_.registro")) as never as { action: Action }).action);
+    restablecer = asResponse(((await import("~/routes/cuenta_.restablecer")) as never as { action: Action }).action);
+    verificar = asResponse(((await import("~/routes/cuenta_.verificar")) as never as { loader: Action }).loader);
     session = await import("~/lib/session.server");
     tokens = await import("~/lib/authTokens.server");
     ({ UserModel } = await import("~/models/user.server"));
@@ -99,14 +100,7 @@ describe.skipIf(!hasTestDb)("cuentas y acceso", () => {
   }
 
   /** Respuesta o excepción (las rutas lanzan redirecciones y 403): se devuelve siempre la Response. */
-  async function outcome<T>(fn: () => Promise<T>): Promise<T | Response> {
-    try {
-      return await fn();
-    } catch (error) {
-      if (error instanceof Response) return error;
-      throw error;
-    }
-  }
+  const outcome = outcomeOf;
 
   // --- Inicio de sesión de clientes ------------------------------------------
 

@@ -1,8 +1,8 @@
 import { describeCouponRules } from "~/lib/couponRules";
-import type { LoaderFunctionArgs } from "@remix-run/node";
-import type { ActionFunctionArgs, MetaFunction } from "@remix-run/node";
-import { json } from "@remix-run/node";
-import { Form, useActionData, useLoaderData, useNavigation } from "@remix-run/react";
+import type { LoaderFunctionArgs } from "react-router";
+import type { ActionFunctionArgs, MetaFunction } from "react-router";
+import { data } from "react-router";
+import { Form, useActionData, useLoaderData, useNavigation } from "react-router";
 import { useState } from "react";
 import { connectDB } from "~/lib/db.server";
 import { PromotionModel } from "~/models/promotion.server";
@@ -26,7 +26,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   ]);
   const catalogBySku = new Map(catalogItems.map((item) => [item.sku, item]));
 
-  return json({
+  return data({
     products: products.map((p) => ({ id: String(p._id), name: p.name })),
     catalogItems: catalogItems.map((item) => ({ sku: item.sku, name: item.name })),
     promotions: promotions.map((p) => ({
@@ -97,18 +97,18 @@ export async function action({ request }: ActionFunctionArgs) {
       promo.isActive = !promo.isActive;
       await promo.save();
     }
-    return json({ ok: true as const, error: null });
+    return data({ ok: true as const, error: null });
   }
 
   if (intent === "delete") {
     await PromotionModel.findByIdAndDelete(String(formData.get("id")));
-    return json({ ok: true as const, error: null });
+    return data({ ok: true as const, error: null });
   }
 
   if (intent === "duplicate") {
     const original = await PromotionModel.findById(String(formData.get("id"))).lean();
     if (!original) {
-      return json({ ok: false as const, error: "No se encontró la promoción a duplicar." }, { status: 404 });
+      return data({ ok: false as const, error: "No se encontró la promoción a duplicar." }, { status: 404 });
     }
     const {
       _id: _originalId,
@@ -131,36 +131,36 @@ export async function action({ request }: ActionFunctionArgs) {
       clone.coupon = { ...original.coupon, code: `${original.coupon.code}-COPY` };
     }
     await PromotionModel.create(clone);
-    return json({ ok: true as const, error: null });
+    return data({ ok: true as const, error: null });
   }
 
   if (intent === "update") {
     const id = String(formData.get("id"));
     const existing = await PromotionModel.findById(id);
     if (!existing) {
-      return json({ ok: false as const, error: "Promoción no encontrada." }, { status: 404 });
+      return data({ ok: false as const, error: "Promoción no encontrada." }, { status: 404 });
     }
     const result = await buildPromotionDocFromFormData(formData, {
       existingId: id,
       existingBannerImageUrl: existing.banner?.imageUrl ?? "",
     });
     if (!result.ok) {
-      return json({ ok: false as const, error: result.error }, { status: result.status });
+      return data({ ok: false as const, error: result.error }, { status: result.status });
     }
     await PromotionModel.findByIdAndUpdate(id, result.doc);
-    return json({ ok: true as const, error: null });
+    return data({ ok: true as const, error: null });
   }
 
   if (intent === "create") {
     const result = await buildPromotionDocFromFormData(formData);
     if (!result.ok) {
-      return json({ ok: false as const, error: result.error }, { status: result.status });
+      return data({ ok: false as const, error: result.error }, { status: result.status });
     }
     await PromotionModel.create(result.doc);
-    return json({ ok: true as const, error: null });
+    return data({ ok: true as const, error: null });
   }
 
-  return json({ ok: false as const, error: "Acción no reconocida." }, { status: 400 });
+  return data({ ok: false as const, error: "Acción no reconocida." }, { status: 400 });
 }
 
 export default function AdminDiscounts() {

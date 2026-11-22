@@ -1,4 +1,4 @@
-import { json } from "@remix-run/node";
+import { data } from "react-router";
 
 /**
  * Defensas compartidas por los formularios públicos (contacto y lista de
@@ -104,5 +104,5 @@ export function rejectForeignOrigin(request: Request) {
       referer: request.headers.get("referer") ?? null,
     }),
   );
-  return json({ ok: false, error: "No pudimos verificar el origen de la solicitud." }, { status: 403 });
+  return data({ ok: false, error: "No pudimos verificar el origen de la solicitud." }, { status: 403 });
 }

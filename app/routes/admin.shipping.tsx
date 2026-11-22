@@ -1,6 +1,6 @@
-import type { ActionFunctionArgs, LoaderFunctionArgs, MetaFunction } from "@remix-run/node";
-import { json } from "@remix-run/node";
-import { Form, useActionData, useLoaderData, useNavigation } from "@remix-run/react";
+import type { ActionFunctionArgs, LoaderFunctionArgs, MetaFunction } from "react-router";
+import { data } from "react-router";
+import { Form, useActionData, useLoaderData, useNavigation } from "react-router";
 import { getShippingConfig, saveShippingConfig, type ShippingConfig } from "~/models/shipping.server";
 import { SHIPPING_METHOD_IDS, type ShippingMethodId } from "~/lib/shippingMethods";
 import { Field, inputClass } from "~/components/admin/MediaFields";
@@ -16,7 +16,7 @@ const METHOD_TITLES: Record<ShippingMethodId, string> = {
 
 export async function loader({ request }: LoaderFunctionArgs) {
   await requireAdmin(request);
-  return json({ config: await getShippingConfig() });
+  return data({ config: await getShippingConfig() });
 }
 
 export async function action({ request }: ActionFunctionArgs) {
@@ -32,10 +32,10 @@ export async function action({ request }: ActionFunctionArgs) {
     const note = cleanPlainText(formData.get(`${id}_note`)).slice(0, 200);
     const cost = readMoney(`${id}_cost`);
     if (!label) {
-      return json({ ok: false as const, error: `Ponle nombre a "${METHOD_TITLES[id]}".` }, { status: 400 });
+      return data({ ok: false as const, error: `Ponle nombre a "${METHOD_TITLES[id]}".` }, { status: 400 });
     }
     if (!Number.isFinite(cost) || cost < 0) {
-      return json({ ok: false as const, error: `El costo de "${label}" no puede estar vacío ni ser negativo.` }, { status: 400 });
+      return data({ ok: false as const, error: `El costo de "${label}" no puede estar vacío ni ser negativo.` }, { status: 400 });
     }
     const deliveryTime = cleanPlainText(formData.get(`${id}_deliveryTime`)).slice(0, 120);
     const details = String(formData.get(`${id}_details`) ?? "").trim().slice(0, 4000);
@@ -46,10 +46,10 @@ export async function action({ request }: ActionFunctionArgs) {
   const freeShippingEnabled = formData.get("freeShippingEnabled") === "on";
   const threshold = readMoney("freeShippingThreshold");
   if (freeShippingEnabled && (!Number.isFinite(threshold) || threshold <= 0)) {
-    return json({ ok: false as const, error: "Escribe desde qué monto el envío es gratis (mayor a $0)." }, { status: 400 });
+    return data({ ok: false as const, error: "Escribe desde qué monto el envío es gratis (mayor a $0)." }, { status: 400 });
   }
   if (isEnabled && !SHIPPING_METHOD_IDS.some((id) => methods[id].isActive)) {
-    return json(
+    return data(
       { ok: false as const, error: "Deja activa al menos una opción de envío, o apaga el cobro de envío." },
       { status: 400 },
     );
@@ -63,7 +63,7 @@ export async function action({ request }: ActionFunctionArgs) {
     freeShippingThreshold: Number.isFinite(threshold) && threshold > 0 ? threshold : current.freeShippingThreshold,
   };
   await saveShippingConfig(next);
-  return json({ ok: true as const, error: null });
+  return data({ ok: true as const, error: null });
 }
 
 function MethodCard({ id, config }: { id: ShippingMethodId; config: ShippingConfig }) {

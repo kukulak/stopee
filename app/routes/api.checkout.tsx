@@ -1,6 +1,6 @@
 import { requireStoreAccessApi } from "~/lib/storeAccess.server";
-import type { ActionFunctionArgs } from "@remix-run/node";
-import { json, redirect } from "@remix-run/node";
+import type { ActionFunctionArgs } from "react-router";
+import { data, redirect } from "react-router";
 import type Stripe from "stripe";
 import { getCatalogItems, getCatalogItemBySku } from "~/lib/catalog.server";
 import { getCart, getCartCoupon, getCartShippingMethod } from "~/lib/cart.server";
@@ -24,7 +24,7 @@ export async function action({ request }: ActionFunctionArgs) {
   const ip = getClientIp(request);
   const rateLimit = checkRateLimit(`checkout:${ip}`, { max: 20, windowMs: 10 * 60 * 1000 });
   if (!rateLimit.allowed) {
-    return json({ error: rateLimitMessage(rateLimit.retryAfterSeconds) }, { status: 429 });
+    return data({ error: rateLimitMessage(rateLimit.retryAfterSeconds) }, { status: 429 });
   }
 
   const [cartItems, user, attribution, couponCode, catalogItems] = await Promise.all([
@@ -39,7 +39,7 @@ export async function action({ request }: ActionFunctionArgs) {
   const validItems = cartItems.filter((item) => bySku.has(item.sku));
 
   if (validItems.length === 0) {
-    return json({ error: "Tu carrito está vacío." }, { status: 400 });
+    return data({ error: "Tu carrito está vacío." }, { status: 400 });
   }
 
   // La existencia se revisa otra vez aquí: el carrito vive en una cookie y el
@@ -47,10 +47,10 @@ export async function action({ request }: ActionFunctionArgs) {
   for (const item of validItems) {
     const catalogItem = bySku.get(item.sku)!;
     if (catalogItem.stock <= 0) {
-      return json({ error: `${soldOutMessage(catalogItem.name)} Quítalo del carrito para continuar.` }, { status: 400 });
+      return data({ error: `${soldOutMessage(catalogItem.name)} Quítalo del carrito para continuar.` }, { status: 400 });
     }
     if (item.quantity > catalogItem.stock) {
-      return json(
+      return data(
         { error: `${stockLimitMessage(catalogItem.stock, catalogItem.name)} Baja la cantidad en tu carrito.` },
         { status: 400 },
       );
@@ -97,7 +97,7 @@ export async function action({ request }: ActionFunctionArgs) {
         nameBySku: new Map(catalogItems.map((item) => [item.sku, item.name])),
       });
       if (!eligibility.ok) {
-        return json({ error: `El cupón ${couponCode} no se puede aplicar: ${eligibility.reason}` }, { status: 400 });
+        return data({ error: `El cupón ${couponCode} no se puede aplicar: ${eligibility.reason}` }, { status: 400 });
       }
       discountPercent = promo.coupon.percentage;
       couponStackable = Boolean(promo.coupon.stackable);
@@ -157,7 +157,7 @@ export async function action({ request }: ActionFunctionArgs) {
   const shippingQuote = await getShippingQuote(discountedSubtotal, await getCartShippingMethod(request));
   const shippingChoice = shippingQuote.selected;
   if (shippingQuote.enabled && !shippingChoice) {
-    return json({ error: "No hay opciones de envío disponibles por ahora. Escríbenos y te ayudamos." }, { status: 400 });
+    return data({ error: "No hay opciones de envío disponibles por ahora. Escríbenos y te ayudamos." }, { status: 400 });
   }
 
   const giftProduct = giftSku ? await getCatalogItemBySku(giftSku, { includeUnavailable: true }) : null;
@@ -166,7 +166,7 @@ export async function action({ request }: ActionFunctionArgs) {
   // carrito enorme el pago fallaría con un error genérico; mejor avisar claro.
   const cartSkusMetadata = validItems.map((i) => `${i.sku}:${i.quantity}:${bySku.get(i.sku)!.priceMxn}`).join(",");
   if (cartSkusMetadata.length > 480) {
-    return json(
+    return data(
       { error: "Tu carrito tiene demasiados productos distintos para pagarlos juntos. Divide la compra en dos pedidos." },
       { status: 400 },
     );
@@ -214,14 +214,14 @@ export async function action({ request }: ActionFunctionArgs) {
     });
   } catch (error) {
     logError("checkout.stripe", error);
-    return json(
+    return data(
       { error: "No pudimos abrir el pago en este momento. Tu carrito sigue guardado: intenta de nuevo en un momento." },
       { status: 502 },
     );
   }
 
   if (!session.url) {
-    return json({ error: "No se pudo iniciar el pago. Intenta de nuevo." }, { status: 502 });
+    return data({ error: "No se pudo iniciar el pago. Intenta de nuevo." }, { status: 502 });
   }
 
   const { visitorId } = await getOrCreateVisitorId(request);

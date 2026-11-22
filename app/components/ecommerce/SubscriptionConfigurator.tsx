@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { useFetcher } from "@remix-run/react";
+import { useFetcher } from "react-router";
 import type { CatalogItem } from "~/lib/catalog.server";
 import { CheckIcon } from "~/components/ui/Icons";
 import {

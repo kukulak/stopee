@@ -1,4 +1,4 @@
-import type { LoaderFunctionArgs } from "@remix-run/node";
+import type { LoaderFunctionArgs } from "react-router";
 import { getSiteSettings } from "~/models/siteSettings.server";
 import { connectDB } from "~/lib/db.server";
 import { BlogPostModel } from "~/models/blogPost.server";

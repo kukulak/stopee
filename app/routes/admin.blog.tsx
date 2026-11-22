@@ -1,7 +1,7 @@
-import type { LoaderFunctionArgs } from "@remix-run/node";
-import type { ActionFunctionArgs, MetaFunction } from "@remix-run/node";
-import { json } from "@remix-run/node";
-import { Form, useActionData, useLoaderData, useNavigation } from "@remix-run/react";
+import type { LoaderFunctionArgs } from "react-router";
+import type { ActionFunctionArgs, MetaFunction } from "react-router";
+import { data } from "react-router";
+import { Form, useActionData, useLoaderData, useNavigation } from "react-router";
 import { useEffect, useState } from "react";
 import { connectDB } from "~/lib/db.server";
 import { BlogPostModel } from "~/models/blogPost.server";
@@ -22,7 +22,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     getCatalogItems({ includeUnavailable: true }),
   ]);
   const now = Date.now();
-  return json({
+  return data({
     catalogItems: catalogItems.map((item) => ({ sku: item.sku, name: item.name })),
     posts: posts.map((p) => ({
       id: String(p._id),
@@ -93,15 +93,15 @@ export async function action({ request }: ActionFunctionArgs) {
     const id = intent === "update" ? String(formData.get("id")) : undefined;
     const existing = id ? await BlogPostModel.findById(id) : null;
     if (intent === "update" && !existing) {
-      return json({ ok: false as const, error: "Artículo no encontrado." }, { status: 404 });
+      return data({ ok: false as const, error: "Artículo no encontrado." }, { status: 404 });
     }
 
     const result = buildBlogPostDoc(formData, { existingId: id, existingImageUrl: existing?.imageUrl ?? "" });
-    if (!result.ok) return json({ ok: false as const, error: result.error }, { status: 400 });
+    if (!result.ok) return data({ ok: false as const, error: result.error }, { status: 400 });
 
     const slugTaken = await BlogPostModel.findOne({ slug: result.slug, ...(id ? { _id: { $ne: id } } : {}) });
     if (slugTaken) {
-      return json({ ok: false as const, error: "Ya existe un artículo con ese slug." }, { status: 409 });
+      return data({ ok: false as const, error: "Ya existe un artículo con ese slug." }, { status: 409 });
     }
 
     if (intent === "update") {
@@ -109,15 +109,15 @@ export async function action({ request }: ActionFunctionArgs) {
     } else {
       await BlogPostModel.create(result.doc);
     }
-    return json({ ok: true as const, error: null });
+    return data({ ok: true as const, error: null });
   }
 
   if (intent === "delete") {
     await BlogPostModel.findByIdAndDelete(String(formData.get("id")));
-    return json({ ok: true as const, error: null });
+    return data({ ok: true as const, error: null });
   }
 
-  return json({ ok: false as const, error: "Acción no reconocida." }, { status: 400 });
+  return data({ ok: false as const, error: "Acción no reconocida." }, { status: 400 });
 }
 
 type Post = ReturnType<typeof useLoaderData<typeof loader>>["posts"][number];

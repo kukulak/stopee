@@ -1,4 +1,4 @@
-import { Link } from "@remix-run/react";
+import { Link } from "react-router";
 import type { HeroBanner } from "~/lib/heroBanner.server";
 import { trackEvent } from "~/lib/trackClient";
 

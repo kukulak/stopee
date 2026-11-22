@@ -1,6 +1,6 @@
-import type { ActionFunctionArgs, LoaderFunctionArgs, MetaFunction } from "@remix-run/node";
-import { json } from "@remix-run/node";
-import { Form, useActionData, useLoaderData, useNavigation } from "@remix-run/react";
+import type { ActionFunctionArgs, LoaderFunctionArgs, MetaFunction } from "react-router";
+import { data } from "react-router";
+import { Form, useActionData, useLoaderData, useNavigation } from "react-router";
 import { randomBytes } from "node:crypto";
 import { useState } from "react";
 import { z } from "zod";
@@ -20,7 +20,7 @@ export const meta: MetaFunction = () => [{ title: "Nuevo usuario — Admin STOPe
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const viewer = await requireAdmin(request);
-  return json({ canCreateAdmin: isSuperAdmin(viewer.role) });
+  return data({ canCreateAdmin: isSuperAdmin(viewer.role) });
 }
 
 const createSchema = z.object({
@@ -35,7 +35,7 @@ export async function action({ request }: ActionFunctionArgs) {
   const viewer = await requireAdmin(request);
 
   const limit = checkRateLimit(`admin-create-user:${String(viewer._id)}`, { max: 30, windowMs: 60 * 60 * 1000 });
-  if (!limit.allowed) return json({ error: rateLimitMessage(limit.retryAfterSeconds), created: null }, { status: 429 });
+  if (!limit.allowed) return data({ error: rateLimitMessage(limit.retryAfterSeconds), created: null }, { status: 429 });
 
   const formData = await request.formData();
   const parsed = createSchema.safeParse({
@@ -46,20 +46,20 @@ export async function action({ request }: ActionFunctionArgs) {
     password: formData.get("password") ?? undefined,
   });
   if (!parsed.success) {
-    return json({ error: parsed.error.issues[0]?.message ?? "Revisa los datos.", created: null }, { status: 400 });
+    return data({ error: parsed.error.issues[0]?.message ?? "Revisa los datos.", created: null }, { status: 400 });
   }
   const { name, email, role, mode } = parsed.data;
 
   // Dar rol de administrador es cosa del super administrador: un administrador común
   // podría, si no, crear cuentas con tanto poder como la suya sin control.
   if (role === "admin" && !isSuperAdmin(viewer.role)) {
-    return json({ error: "Solo un super administrador puede crear administradores.", created: null }, { status: 403 });
+    return data({ error: "Solo un super administrador puede crear administradores.", created: null }, { status: 403 });
   }
 
   let passwordHash: string;
   if (mode === "password") {
     const problem = passwordProblem(parsed.data.password ?? "", email);
-    if (problem) return json({ error: problem, created: null }, { status: 400 });
+    if (problem) return data({ error: problem, created: null }, { status: 400 });
     passwordHash = await hashPassword(parsed.data.password!);
   } else {
     // Contraseña al azar que nadie conoce: la cuenta queda inaccesible hasta que
@@ -69,7 +69,7 @@ export async function action({ request }: ActionFunctionArgs) {
 
   await connectDB();
   if (await UserModel.exists({ email })) {
-    return json({ error: "Ya existe una cuenta con ese correo. Búscala en Clientes para cambiarle el rol.", created: null }, { status: 409 });
+    return data({ error: "Ya existe una cuenta con ese correo. Búscala en Clientes para cambiarle el rol.", created: null }, { status: 409 });
   }
 
   const user = await UserModel.create({ email, name, passwordHash, role });
@@ -88,7 +88,7 @@ export async function action({ request }: ActionFunctionArgs) {
     if (!result.ok) inviteUrl = url;
   }
 
-  return json({
+  return data({
     error: null,
     created: { id: String(user._id), email, role, mode, emailSent, inviteUrl },
   });

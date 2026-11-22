@@ -1,6 +1,6 @@
-import type { ActionFunctionArgs, LoaderFunctionArgs, MetaFunction } from "@remix-run/node";
-import { json } from "@remix-run/node";
-import { Form, useFetcher, useLoaderData, useRevalidator, useSearchParams } from "@remix-run/react";
+import type { ActionFunctionArgs, LoaderFunctionArgs, MetaFunction } from "react-router";
+import { data } from "react-router";
+import { Form, useFetcher, useLoaderData, useRevalidator, useSearchParams } from "react-router";
 import { useRef } from "react";
 import { connectDB } from "~/lib/db.server";
 import { LeadModel } from "~/models/lead.server";
@@ -34,7 +34,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
   const leads = await LeadModel.find(query).sort({ registeredAt: -1 }).lean();
 
-  return json({
+  return data({
     leads: leads.map((l) => ({
       id: String(l._id),
       email: l.email,
@@ -57,7 +57,7 @@ export async function action({ request }: ActionFunctionArgs) {
 
   if (intent === "delete") {
     await LeadModel.findByIdAndDelete(String(formData.get("id")));
-    return json({ ok: true });
+    return data({ ok: true });
   }
 
   if (intent === "mark-contacted" || intent === "mark-uncontacted") {
@@ -68,7 +68,7 @@ export async function action({ request }: ActionFunctionArgs) {
         intent === "mark-contacted" ? { contactedAt: new Date() } : { $unset: { contactedAt: 1 } },
       );
     }
-    return json({ ok: true });
+    return data({ ok: true });
   }
 
   if (intent === "delete-selected") {
@@ -76,10 +76,10 @@ export async function action({ request }: ActionFunctionArgs) {
     if (ids.length > 0) {
       await LeadModel.deleteMany({ _id: { $in: ids } });
     }
-    return json({ ok: true });
+    return data({ ok: true });
   }
 
-  return json({ ok: false, error: "Acción no reconocida." }, { status: 400 });
+  return data({ ok: false, error: "Acción no reconocida." }, { status: 400 });
 }
 
 export default function AdminLeads() {

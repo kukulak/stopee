@@ -1,6 +1,6 @@
-import type { LoaderFunctionArgs, MetaFunction } from "@remix-run/node";
-import { json, redirect } from "@remix-run/node";
-import { Link, useLoaderData, useRevalidator } from "@remix-run/react";
+import type { LoaderFunctionArgs, MetaFunction } from "react-router";
+import { data, redirect } from "react-router";
+import { Link, useLoaderData, useRevalidator } from "react-router";
 import { useEffect, useRef, useState } from "react";
 import { Navbar } from "~/components/layout/Navbar";
 import { Footer } from "~/components/layout/Footer";
@@ -97,7 +97,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   if (paidPurchase) headers.append("Set-Cookie", await clearCart(request));
   const cartCount = paidPurchase ? 0 : cartBefore.reduce((sum, item) => sum + item.quantity, 0);
 
-  return json(
+  return data(
     {
       kind,
       confirmed,
