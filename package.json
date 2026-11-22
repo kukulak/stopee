@@ -33,7 +33,7 @@
     "isomorphic-dompurify": "^3.19.0",
     "leva": "^0.10.1",
     "marked": "^18.0.11",
-    "mongoose": "^8.8.3",
+    "mongoose": "^8.24.10",
     "qrcode": "^1.5.4",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
@@ -66,6 +66,9 @@
     "tar": "^7.5.22",
     "toml": "^5.0.0",
     "estree-util-value-to-estree": "^3.3.3",
-    "vite-node": "^3.2.4"
+    "vite-node": "^3.2.4",
+    "react-router": "6.30.6",
+    "react-router-dom": "6.30.6",
+    "@remix-run/router": "1.23.4"
   }
 }
