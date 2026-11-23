@@ -11,6 +11,13 @@ import * as build from "./build/server/index.js";
 const app = express();
 app.disable("x-powered-by");
 
+// Cloud Run termina el HTTPS y le pasa la petición al contenedor por HTTP, avisando con
+// X-Forwarded-Proto. Sin esto, Express cree que la visita es "http://": React Router compara esa
+// dirección con el Origin "https://" que manda el navegador y rechaza TODOS los formularios
+// (login, pagar…) como si fueran un ataque de falsificación. "1" = se confía solo en el salto
+// inmediato (el proxy de Google), no en lo que el visitante escriba en esas cabeceras.
+app.set("trust proxy", 1);
+
 // Páginas con datos personales o del panel (y sus peticiones de datos, como
 // /cuenta.data): nunca deben quedar en una caché compartida como la de
 // Cloudflare, o un visitante podría recibir la página de otra persona.

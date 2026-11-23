@@ -33,12 +33,13 @@ jobs:
       - run: npm ci
       - name: Tipos (TypeScript)
         run: npm run typecheck
+      - name: Compilar
+        run: npm run build
+      # Después de compilar: algunas pruebas arrancan el sitio compilado (ver tests/integration/servidor-proxy.test.ts).
       - name: Pruebas automáticas
         run: npm test
         env:
           # Mongo desechable del propio flujo (ver "services"): las pruebas del webhook de Stripe lo usan y lo borran.
           TEST_MONGODB_URI: mongodb://127.0.0.1:27017/stopee_test_ci
-      - name: Compilar
-        run: npm run build
       - name: Dependencias de producción sin fallas altas ni críticas
         run: npm audit --omit=dev --audit-level=high
