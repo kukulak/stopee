@@ -3,7 +3,9 @@ import { randomUUID } from "node:crypto";
 import { connectDB } from "~/lib/db.server";
 import { AnalyticsEventModel } from "~/models/analyticsEvent.server";
 
-const visitorCookie = createCookie("__stopee_vid", {
+export const VISITOR_COOKIE_NAME = "__stopee_vid";
+
+const visitorCookie = createCookie(VISITOR_COOKIE_NAME, {
   path: "/",
   httpOnly: true,
   sameSite: "lax",

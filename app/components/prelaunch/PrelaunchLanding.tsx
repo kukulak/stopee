@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import {
+  Link,
   useFetcher,
   useRouteLoaderData,
   type FetcherWithComponents
@@ -10,6 +11,7 @@ import { EditableLogo } from '~/components/ui/EditableLogo'
 import { EditableBrandSwirls } from '~/components/ui/EditableBrandSwirls'
 import { DEFAULT_PAGE_SWIRLS } from '~/components/ui/BrandSwirls'
 import { SocialIcon } from '~/components/ui/SocialIcon'
+import { CookieSettingsButton } from '~/components/ui/CookieConsent'
 
 // --- Iconos minimalistas (línea, currentColor) ------------------------
 
@@ -302,6 +304,13 @@ function WaitlistForm({
       ) : (
         <p className="mt-3 text-xs text-slate-200/60">{microcopy}</p>
       )}
+      <p className="mt-2 text-xs text-slate-200/50">
+        Al registrar tu correo, tus datos se tratan como explica nuestro{' '}
+        <Link to="/aviso-de-privacidad" className="underline underline-offset-2 hover:text-white">
+          aviso de privacidad
+        </Link>
+        .
+      </p>
     </div>
   )
 }
@@ -630,6 +639,17 @@ export function PrelaunchLanding({
             ))}
           </div>
         )}
+        <nav aria-label="Legal" className="mb-3 flex flex-wrap items-center justify-center gap-x-5 gap-y-1">
+          <Link to="/aviso-de-privacidad" className="inline-flex min-h-11 items-center hover:text-limaNeon">
+            Aviso de privacidad
+          </Link>
+          <Link to="/politica-de-cookies" className="inline-flex min-h-11 items-center hover:text-limaNeon">
+            Política de cookies
+          </Link>
+          <CookieSettingsButton className="inline-flex min-h-11 items-center hover:text-limaNeon">
+            Configurar cookies
+          </CookieSettingsButton>
+        </nav>
         © {new Date().getFullYear()} STOPee.com.mx — Todos los derechos
         reservados.
       </footer>

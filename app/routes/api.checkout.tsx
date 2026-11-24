@@ -9,6 +9,7 @@ import { getShippingQuote } from "~/models/shipping.server";
 import { createOneTimeCheckoutSession } from "~/lib/stripe.server";
 import { getAttribution } from "~/lib/attribution.server";
 import { logEvent, getOrCreateVisitorId } from "~/lib/tracking.server";
+import { readConsent } from "~/lib/consent.server";
 import { findRedeemableCoupon } from "~/models/promotion.server";
 import { checkCouponEligibility } from "~/lib/couponRules.server";
 import { stackPercents } from "~/lib/couponRules";
@@ -224,8 +225,11 @@ export async function action({ request }: ActionFunctionArgs) {
     return data({ error: "No se pudo iniciar el pago. Intenta de nuevo." }, { status: 502 });
   }
 
-  const { visitorId } = await getOrCreateVisitorId(request);
-  await logEvent(visitorId, "begin_checkout", undefined, user ? { userId: String(user._id), email: user.email } : undefined);
+  // El embudo solo cuenta a quien aceptó las cookies de estadísticas. El pago no depende de esto.
+  if ((await readConsent(request))?.analytics) {
+    const { visitorId } = await getOrCreateVisitorId(request);
+    await logEvent(visitorId, "begin_checkout", undefined, user ? { userId: String(user._id), email: user.email } : undefined);
+  }
 
   return redirect(session.url);
 }

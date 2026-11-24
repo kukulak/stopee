@@ -4,7 +4,7 @@ import { createTtlCache } from "~/lib/ttlCache.server";
 
 const { Schema, model, models } = mongoose;
 
-const DEFAULT_PRIVACY_MARKDOWN = `**{{razonSocial}}** ("STOPee", "nosotros"), con domicilio en **{{direccionFiscal}}**, es responsable del tratamiento de tus datos personales conforme a la Ley Federal de Protección de Datos Personales en Posesión de los Particulares (LFPDPPP) y su Reglamento.
+export const DEFAULT_PRIVACY_MARKDOWN = `**{{razonSocial}}** ("STOPee", "nosotros"), con domicilio en **{{direccionFiscal}}**, es responsable del tratamiento de tus datos personales conforme a la Ley Federal de Protección de Datos Personales en Posesión de los Particulares (LFPDPPP) y su Reglamento.
 
 ## 1. Datos personales que recabamos
 
@@ -15,7 +15,7 @@ Dependiendo de cómo interactúes con nosotros, podemos recabar:
 - **Datos de tu(s) perro(s):** si decides agregarlos a tu cuenta (nombre, raza u otros datos que tú captures), únicamente para personalizar tu experiencia.
 - **Datos de pago:** no almacenamos los datos completos de tu tarjeta. El cobro lo procesa directamente Stripe, Inc., conforme a sus propias políticas de privacidad y seguridad (certificación PCI-DSS).
 - **Historial de pedidos y suscripciones** asociado a tu cuenta.
-- **Datos de navegación:** páginas visitadas, origen de tu visita (utm_source/medium/campaign) y un identificador de visitante anónimo, mediante cookies propias, para entender qué contenido funciona y mejorar el sitio.
+- **Datos de navegación:** páginas visitadas, origen de tu visita (utm_source/medium/campaign) y un identificador de visitante anónimo, mediante cookies. Esto solo ocurre si aceptas las cookies de estadísticas (ver la sección 5).
 
 ## 2. Finalidades del tratamiento
 
@@ -29,8 +29,8 @@ Dependiendo de cómo interactúes con nosotros, podemos recabar:
 **Finalidades secundarias** (puedes oponerte sin que esto afecte tu compra):
 
 - Enviarte promociones, descuentos o novedades por correo electrónico.
-- Medir el desempeño de nuestra publicidad en Google y Meta (Facebook/Instagram).
-- Elaborar estadísticas internas de uso del sitio.
+- Medir el desempeño de nuestra publicidad en Meta (Facebook/Instagram), solo si aceptas las cookies de marketing.
+- Elaborar estadísticas de uso del sitio con Google Analytics y con nuestra medición propia, solo si aceptas las cookies de estadísticas.
 
 Si no deseas que tus datos se usen para las finalidades secundarias, escríbenos a {{correoContacto}} con el asunto "Oposición a finalidades secundarias".
 
@@ -40,7 +40,9 @@ Para operar el servicio, compartimos datos estrictamente necesarios con:
 
 - **Stripe, Inc.** — procesamiento de pagos.
 - **Nuestro proveedor de hosting y base de datos** — almacenamiento de la información de tu cuenta y pedidos.
-- **Google LLC y Meta Platforms, Inc.** — medición de campañas publicitarias, únicamente si aceptas cookies de marketing.
+- **Cloudflare, Inc.** — seguridad y entrega rápida del sitio.
+- **Google LLC** — estadísticas de uso del sitio (Google Analytics), únicamente si aceptas las cookies de estadísticas.
+- **Meta Platforms, Inc.** — medición de anuncios en Facebook e Instagram, únicamente si aceptas las cookies de marketing.
 
 No vendemos ni rentamos tus datos personales a terceros.
 
@@ -52,7 +54,13 @@ También puedes eliminar tu cuenta directamente desde tu perfil.
 
 ## 5. Uso de cookies
 
-Usamos cookies propias para mantener tu sesión y tu carrito de compra, y cookies de terceros (Google, Meta) para medir el desempeño de nuestra publicidad, solo si llegaste al sitio a través de un anuncio. Puedes eliminarlas desde la configuración de tu navegador en cualquier momento.
+Usamos tres tipos de cookies:
+
+- **Necesarias:** mantienen tu sesión y tu carrito, protegen el sitio y recuerdan tu elección sobre cookies. No requieren tu permiso.
+- **Estadísticas:** nos dicen qué páginas se visitan y cómo llegas a nosotros (Google Analytics y medición propia). Solo se activan si las aceptas.
+- **Marketing:** miden si nuestros anuncios funcionan (píxel de Meta). Solo se activan si las aceptas.
+
+La primera vez que entras al sitio te preguntamos qué permites. Puedes cambiar tu elección cuando quieras con el enlace "Configurar cookies" al final de cualquier página, y retirar tu consentimiento tiene el mismo efecto que rechazarlas desde el principio. El detalle de cada cookie (nombre, para qué sirve, duración y quién la coloca) está en nuestra [política de cookies](/politica-de-cookies).
 
 ## 6. Cambios a este aviso
 
@@ -62,7 +70,7 @@ Podemos actualizar este aviso de privacidad. Cualquier cambio se publicará en e
 
 Dudas sobre este aviso: {{correoContacto}}`;
 
-const DEFAULT_TERMS_MARKDOWN = `Al comprar en STOPee.com.mx aceptas los siguientes términos. Si tienes dudas antes de comprar, escríbenos a {{correoContacto}}.
+export const DEFAULT_TERMS_MARKDOWN = `Al comprar en STOPee.com.mx aceptas los siguientes términos. Si tienes dudas antes de comprar, escríbenos a {{correoContacto}}.
 
 ## 1. Sobre el producto
 
@@ -108,6 +116,71 @@ Estos términos se rigen por las leyes de los Estados Unidos Mexicanos. Cualquie
 
 {{correoContacto}}`;
 
+export const DEFAULT_COOKIES_MARKDOWN = `Esta política explica qué cookies usamos en **STOPee.com.mx**, para qué sirven y cómo puedes controlarlas. El responsable es **{{razonSocial}}**. Para saber cómo tratamos tus datos personales, consulta nuestro [aviso de privacidad](/aviso-de-privacidad).
+
+## 1. Qué son las cookies
+
+Las cookies son pequeños archivos de texto que un sitio guarda en tu navegador. Sirven para recordar cosas entre una página y otra (por ejemplo, lo que tienes en tu carrito) y para entender cómo se usa el sitio.
+
+## 2. Tú decides
+
+Usamos tres categorías:
+
+- **Necesarias:** hacen que el sitio funcione. No requieren tu permiso y no se pueden desactivar desde aquí.
+- **Estadísticas:** nos dicen qué páginas se visitan y cómo llegas a nosotros. **Solo se activan si las aceptas.**
+- **Marketing:** nos permiten medir si nuestros anuncios en Facebook e Instagram funcionan. **Solo se activan si las aceptas.**
+
+La primera vez que entras te preguntamos. Si rechazas, no se carga Google Analytics ni el píxel de Meta, y tampoco usamos nuestra medición propia de visitas. Puedes cambiar tu elección en cualquier momento con el enlace **"Configurar cookies"** que está al final de todas las páginas. Si retiras un permiso, borramos las cookies de esa categoría que hubiera en este sitio. Volvemos a preguntarte cada 12 meses o cuando agreguemos una herramienta nueva.
+
+## 3. Las cookies que usamos
+
+### Necesarias
+
+| Cookie | Para qué sirve | Duración | Quién la coloca |
+| --- | --- | --- | --- |
+| \`__stopee_consent\` | Recuerda tu elección sobre cookies | 12 meses | STOPee |
+| \`__stopee_session\` | Mantiene tu sesión iniciada (solo si inicias sesión) | Hasta 30 días | STOPee |
+| \`__stopee_2fa\` | Paso intermedio del inicio de sesión con verificación en dos pasos | 5 minutos | STOPee |
+| \`__stopee_cart\` | Guarda tu carrito de compra | 14 días | STOPee |
+| \`__stopee_gate\` | Recuerda que ingresaste el código de acceso durante la preventa | 7 días | STOPee |
+| \`stopee_exit_seen\` | Recuerda que ya viste el aviso de salida, para no mostrártelo de nuevo | Según la configuración del sitio (por defecto, 7 días) | STOPee |
+
+Nuestro proveedor de seguridad y entrega del sitio (Cloudflare) puede colocar cookies técnicas estrictamente necesarias para proteger el sitio contra tráfico automatizado. Cuando pagas, Stripe te lleva a su propia página de pago, donde usa sus cookies bajo su propia política.
+
+### Estadísticas (solo si las aceptas)
+
+| Cookie | Para qué sirve | Duración | Quién la coloca |
+| --- | --- | --- | --- |
+| \`__stopee_vid\` | Identificador anónimo y aleatorio para contar visitas y el recorrido hacia la compra | 180 días | STOPee |
+| \`__stopee_attribution\` | Guarda cómo llegaste (anuncio, buscador, red social) para saber qué canales traen pedidos | 90 días | STOPee |
+| \`_ga\` y \`_ga_*\` | Google Analytics: distingue visitantes y sesiones para generar estadísticas | Hasta 2 años | Google |
+
+### Marketing (solo si las aceptas)
+
+| Cookie | Para qué sirve | Duración | Quién la coloca |
+| --- | --- | --- | --- |
+| \`_fbp\` | Píxel de Meta: identifica el navegador para medir el resultado de nuestros anuncios | Hasta 90 días | Meta |
+| \`_fbc\` | Píxel de Meta: guarda de qué anuncio venías, si llegaste desde uno | Hasta 90 días | Meta |
+
+Las duraciones de las cookies de terceros las definen sus proveedores y pueden cambiar.
+
+## 4. Cómo controlar las cookies desde tu navegador
+
+Además de nuestro panel, puedes bloquear o borrar cookies desde la configuración de tu navegador. Si bloqueas las necesarias, es posible que el carrito o el inicio de sesión no funcionen.
+
+## 5. Más información de los terceros
+
+- Google: [cómo usa Google las cookies](https://policies.google.com/technologies/cookies).
+- Meta: [política de cookies de Meta](https://www.facebook.com/privacy/policies/cookies/).
+
+## 6. Cambios a esta política
+
+Podemos actualizar esta política, por ejemplo si agregamos una herramienta nueva. Publicaremos los cambios aquí con su fecha y, si hace falta tu permiso, te lo volveremos a pedir.
+
+## 7. Contacto
+
+Dudas sobre las cookies o tus datos: {{correoContacto}}`;
+
 const legalSettingsSchema = new Schema(
   {
     // Datos del negocio: se insertan como variables ({{razonSocial}}, etc.)
@@ -139,6 +212,7 @@ const legalSettingsSchema = new Schema(
 
     privacyPolicyMarkdown: { type: String, default: DEFAULT_PRIVACY_MARKDOWN },
     termsMarkdown: { type: String, default: DEFAULT_TERMS_MARKDOWN },
+    cookiesMarkdown: { type: String, default: DEFAULT_COOKIES_MARKDOWN },
   },
   { timestamps: true },
 );

@@ -3,7 +3,12 @@ import type { ActionFunctionArgs, MetaFunction } from "react-router";
 import { data } from "react-router";
 import { Form, Link, useActionData, useLoaderData, useNavigation } from "react-router";
 import { useEffect, useState } from "react";
-import { getLegalSettings, updateLegalSettings } from "~/models/legalSettings.server";
+import {
+  DEFAULT_COOKIES_MARKDOWN,
+  DEFAULT_PRIVACY_MARKDOWN,
+  getLegalSettings,
+  updateLegalSettings,
+} from "~/models/legalSettings.server";
 import { applyLegalVariables, type LegalBusinessData } from "~/lib/legalTemplate";
 import { getSubscriptionConfig } from "~/models/subscriptionSettings.server";
 import { subscriptionLegalVariables } from "~/lib/subscriptionConfig";
@@ -24,6 +29,10 @@ export async function loader({ request }: LoaderFunctionArgs) {
     politicaDevoluciones: settings.politicaDevoluciones ?? "",
     privacyPolicyMarkdown: settings.privacyPolicyMarkdown ?? "",
     termsMarkdown: settings.termsMarkdown ?? "",
+    // Los guardados antes de existir la política de cookies no traen el campo: se muestra el texto de fábrica.
+    cookiesMarkdown: settings.cookiesMarkdown?.trim() ? settings.cookiesMarkdown : DEFAULT_COOKIES_MARKDOWN,
+    // Textos recomendados, para cargarlos en el editor con un botón (no se guardan hasta pulsar Guardar).
+    defaults: { privacy: DEFAULT_PRIVACY_MARKDOWN, cookies: DEFAULT_COOKIES_MARKDOWN },
   });
 }
 
@@ -42,6 +51,18 @@ export async function action({ request }: ActionFunctionArgs) {
     }
     await updateLegalSettings({ privacyPolicyMarkdown });
     return data({ ok: true, savedIntent: "save-privacy", error: null as string | null });
+  }
+
+  if (intent === "save-cookies") {
+    const cookiesMarkdown = String(formData.get("cookiesMarkdown") ?? "");
+    if (!cookiesMarkdown.trim()) {
+      return data(
+        { ok: false, savedIntent: "save-cookies", error: "La política de cookies no puede quedar vacía." as string | null },
+        { status: 400 },
+      );
+    }
+    await updateLegalSettings({ cookiesMarkdown });
+    return data({ ok: true, savedIntent: "save-cookies", error: null as string | null });
   }
 
   if (intent === "save-terms") {
@@ -108,18 +129,23 @@ export default function AdminLegal() {
 
   const [privacyPolicyMarkdown, setPrivacyPolicyMarkdown] = useState(data.privacyPolicyMarkdown);
   const [termsMarkdown, setTermsMarkdown] = useState(data.termsMarkdown);
+  const [cookiesMarkdown, setCookiesMarkdown] = useState(data.cookiesMarkdown);
 
   return (
     <div className="w-full min-w-0 max-w-3xl">
       <h1 className="font-display text-2xl sm:text-3xl font-black text-carbon">Legal (ARCO)</h1>
       <p className="mt-1 text-sm text-carbon/60">
-        Edita aquí el aviso de privacidad y los términos y condiciones que se publican en{" "}
+        Edita aquí el aviso de privacidad, los términos y condiciones y la política de cookies. Se publican en{" "}
         <a href="/aviso-de-privacidad" target="_blank" rel="noreferrer" className="underline hover:text-carbon">
           /aviso-de-privacidad
-        </a>{" "}
-        y{" "}
+        </a>
+        ,{" "}
         <a href="/terminos-y-condiciones" target="_blank" rel="noreferrer" className="underline hover:text-carbon">
           /terminos-y-condiciones
+        </a>{" "}
+        y{" "}
+        <a href="/politica-de-cookies" target="_blank" rel="noreferrer" className="underline hover:text-carbon">
+          /politica-de-cookies
         </a>
         . No hace falta tocar código.
       </p>
@@ -156,6 +182,19 @@ export default function AdminLegal() {
           <code>{"{{razonSocial}}"}</code> y <code>{"{{direccionFiscal}}"}</code> donde quieras que
           aparezcan esos datos.
         </p>
+        <div className="flex flex-col items-start gap-1">
+          <button
+            type="button"
+            onClick={() => setPrivacyPolicyMarkdown(data.defaults.privacy)}
+            className="min-h-11 rounded-full border-2 border-carbon/15 px-5 text-sm font-bold text-carbon hover:border-carbon/30"
+          >
+            Cargar el texto recomendado
+          </button>
+          <p className="text-xs text-carbon/50">
+            Reemplaza lo que ves en el cuadro por el texto actualizado (incluye cookies y terceros). No se publica
+            hasta que pulses «Guardar». Si ya personalizaste el aviso, revisa que no pierdas nada.
+          </p>
+        </div>
         <textarea
           name="privacyPolicyMarkdown"
           rows={16}
@@ -180,6 +219,50 @@ export default function AdminLegal() {
           className="min-h-11 w-full rounded-full bg-carbon px-6 text-sm font-bold text-hueso disabled:opacity-60 sm:w-auto sm:self-start"
         >
           {savingIntent === "save-privacy" ? "Guardando…" : "Guardar aviso de privacidad"}
+        </button>
+      </Form>
+
+      {/* Política de cookies */}
+      <Form method="post" className="mt-6 flex min-w-0 flex-col gap-3 rounded-3xl border border-carbon/10 bg-white p-4 sm:p-6">
+        <input type="hidden" name="intent" value="save-cookies" />
+        <h2 className="font-display text-lg font-bold text-carbon">Política de cookies</h2>
+        <p className="text-xs text-carbon/50">
+          La tabla de cookies debe coincidir con lo que hace el sitio. Si agregas una herramienta nueva de medición o
+          publicidad, agrégala aquí y avísame para que vuelva a pedir el permiso a todos.
+        </p>
+        <div className="flex flex-col items-start gap-1">
+          <button
+            type="button"
+            onClick={() => setCookiesMarkdown(data.defaults.cookies)}
+            className="min-h-11 rounded-full border-2 border-carbon/15 px-5 text-sm font-bold text-carbon hover:border-carbon/30"
+          >
+            Cargar el texto recomendado
+          </button>
+        </div>
+        <textarea
+          name="cookiesMarkdown"
+          rows={16}
+          value={cookiesMarkdown}
+          onChange={(e) => setCookiesMarkdown(e.target.value)}
+          className={`${inputClass} font-mono text-sm leading-relaxed`}
+        />
+
+        <p className="text-xs font-semibold uppercase tracking-wide text-carbon/40">Vista previa</p>
+        <LegalMarkdownPreview content={cookiesMarkdown} businessData={businessData} />
+
+        {actionData?.ok && actionData.savedIntent === "save-cookies" && (
+          <p className="text-sm font-semibold text-bosque">Guardado. Ya está visible en el sitio.</p>
+        )}
+        {actionData?.ok === false && actionData.savedIntent === "save-cookies" && (
+          <p className="text-sm font-semibold text-red-600">{actionData.error}</p>
+        )}
+
+        <button
+          type="submit"
+          disabled={savingIntent === "save-cookies"}
+          className="min-h-11 w-full rounded-full bg-carbon px-6 text-sm font-bold text-hueso disabled:opacity-60 sm:w-auto sm:self-start"
+        >
+          {savingIntent === "save-cookies" ? "Guardando…" : "Guardar política de cookies"}
         </button>
       </Form>
 
