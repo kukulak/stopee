@@ -216,6 +216,10 @@ function Document({
           </>
         )}
 
+        {/* El código de Meta suele insertar su script ANTES del primer <script> de la página, o sea
+            en medio del <head> que React está por hidratar; eso desajusta el HTML y React tira el
+            error #418 y vuelve a pintar todo en el navegador. Aquí lo agregamos al final del <head>,
+            donde React tolera nodos ajenos. */}
         {metaPixelId && (
           <script
             nonce={nonce}
@@ -226,8 +230,7 @@ function Document({
                 n.callMethod.apply(n,arguments):n.queue.push(arguments)};
                 if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';
                 n.queue=[];t=b.createElement(e);t.async=!0;
-                t.src=v;s=b.getElementsByTagName(e)[0];
-                s.parentNode.insertBefore(t,s)}(window, document,'script',
+                t.src=v;b.head.appendChild(t)}(window, document,'script',
                 'https://connect.facebook.net/en_US/fbevents.js');
                 fbq('init', '${metaPixelId}');
                 fbq('track', 'PageView');
