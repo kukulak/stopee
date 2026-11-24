@@ -154,9 +154,9 @@ export function CookieConsent({
           <div className="mx-auto max-w-4xl rounded-3xl border border-carbon/10 bg-white p-5 shadow-2xl sm:p-6">
             <div className="flex flex-col gap-5 md:flex-row md:items-center md:gap-8">
               <div className="flex-1">
-                <p className="font-display text-lg font-black text-carbon">Tú decides sobre tus cookies</p>
+                <p className="font-display text-lg font-black text-carbon">Tú decides sobre las cookies</p>
                 <p className="mt-1 text-sm text-carbon/75">
-                  Usamos cookies necesarias para que el sitio funcione. Con tu permiso, también usamos cookies de
+                  Usamos las cookies necesarias para que el sitio funcione. Con tu permiso, también usamos cookies de
                   estadísticas y de marketing para mejorar el sitio y medir nuestros anuncios.{" "}
                   <Link to="/politica-de-cookies" className="font-semibold underline hover:text-carbon">
                     Política de cookies
