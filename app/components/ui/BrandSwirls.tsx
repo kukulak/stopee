@@ -114,8 +114,7 @@ export const DEFAULT_PAGE_SWIRLS: SwirlPlacement[] = [
 ];
 
 /**
- * Remolinos del tramo oscuro del home ya lanzado (manifiesto, y el hero por defecto cuando no hay
- * banner). Mismas imágenes y velocidad de paralax que el landing, pero pegados a los márgenes: con
+ * Remolinos del tramo oscuro de «Identidad y beneficios» en el home ya lanzado. Mismas imágenes y velocidad de paralax que el landing, pero pegados a los márgenes: con
  * hOffset negativo solo asoma una parte por la orilla, así que en pantallas de escritorio no pasan
  * por detrás de los títulos ni de las tarjetas (la columna de texto mide como máximo 896 px y queda
  * centrada). En pantallas angostas el texto ocupa casi todo el ancho y algo asoma por la orilla.
@@ -139,6 +138,15 @@ export const COMPACT_PAGE_SWIRLS: SwirlPlacement[] = [
   { src: "/elementos-design/derecha-05.webp", vAnchor: "top", vOffset: 22, hAnchor: "right", hOffset: -24, scale: 0.8, width: 480, speed: -0.2, rotate: 5, opacity: 1 },
   { src: "/elementos-design/izquierda-02.webp", vAnchor: "top", vOffset: 68, hAnchor: "left", hOffset: -22, scale: 0.7, width: 460, speed: 0.24, rotate: 45, opacity: 1 },
   { src: "/elementos-design/derecha-01.webp", vAnchor: "top", vOffset: 92, hAnchor: "right", hOffset: -18, scale: 0.65, width: 440, speed: -0.22, rotate: 6, opacity: 1 },
+];
+
+/**
+ * Remolinos del hero por defecto del home (cuando no hay banner activo). Su texto va alineado a la
+ * izquierda y el bloque es bajo, así que solo llevan remolinos por la orilla derecha.
+ */
+export const HOME_HERO_SWIRLS: SwirlPlacement[] = [
+  { src: "/elementos-design/derecha-05.webp", vAnchor: "top", vOffset: 0, hAnchor: "right", hOffset: -30, scale: 0.9, width: 700, speed: -0.26, rotate: 5, opacity: 1 },
+  { src: "/elementos-design/derecha-01.webp", vAnchor: "top", vOffset: 62, hAnchor: "right", hOffset: -22, scale: 0.7, width: 700, speed: -0.22, rotate: 6, opacity: 1 },
 ];
 
 export function BrandSwirls({ swirls, className = "" }: { swirls: SwirlPlacement[]; className?: string }) {
