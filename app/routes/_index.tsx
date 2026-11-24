@@ -9,7 +9,7 @@ import { z } from 'zod'
 import { Navbar } from '~/components/layout/Navbar'
 import { Footer } from '~/components/layout/Footer'
 import { EditableBrandSwirls } from '~/components/ui/EditableBrandSwirls'
-import { DEFAULT_PAGE_SWIRLS } from '~/components/ui/BrandSwirls'
+import { HOME_PAGE_SWIRLS } from '~/components/ui/BrandSwirls'
 import { DefaultHero } from '~/components/ecommerce/DefaultHero'
 import { PrelaunchLanding } from '~/components/prelaunch/PrelaunchLanding'
 import { getCatalogItems, getConcentratePrice, type CatalogItem } from '~/lib/catalog.server'
@@ -255,7 +255,7 @@ function LaunchedLanding({
             los mismos remolinos y paralax del landing de pre-lanzamiento
             (igualito), en vez de un fondo de remolinos por sección. */}
         <div className="relative overflow-hidden bg-carbon">
-          <EditableBrandSwirls swirls={DEFAULT_PAGE_SWIRLS} id="home-dark" />
+          <EditableBrandSwirls swirls={HOME_PAGE_SWIRLS} id="home-dark-v2" />
 
           {!heroBanner && <DefaultHero />}
 
