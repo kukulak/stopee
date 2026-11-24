@@ -297,14 +297,9 @@ function LaunchedLanding({
           className="mx-auto max-w-6xl px-4 py-20 sm:px-6"
         >
           <div className="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-end">
-            <div>
-              <p className="font-body text-sm font-bold uppercase tracking-widest text-oliva">
-                Tienda integrada
-              </p>
-              <h2 className="mt-2 font-display text-3xl font-black text-carbon">
-                Empieza con tu paquete inicial
-              </h2>
-            </div>
+            <h2 className="font-display text-3xl font-black text-carbon">
+              Empieza con tu paquete inicial
+            </h2>
             <ArrowLink to="/tienda">Ver todo el catálogo</ArrowLink>
           </div>
 
