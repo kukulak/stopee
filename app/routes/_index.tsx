@@ -265,8 +265,7 @@ function LaunchedLanding({
                 El nuevo estándar cívico
               </p>
               <h2 className="mt-3 font-display text-3xl font-black sm:text-4xl">
-                Levantar la popa ya es un hábito. Atender la orina es el siguiente
-                paso.
+                Recoger la popó ya es costumbre. Ahora toca limpiar la pipí.
               </h2>
               <p className="mx-auto mt-4 max-w-2xl text-hueso/70">
                 La cultura ciudadana adoptó exitosamente la recolección de heces.
