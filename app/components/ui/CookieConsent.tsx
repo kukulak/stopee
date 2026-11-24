@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { Link, useFetcher, useLocation } from "react-router";
 import { OPEN_COOKIE_SETTINGS_EVENT, revokesConsent, type ConsentChoice, type ConsentChoices } from "~/lib/consent";
-import { clearThirdPartyCookies, loadGoogleTag, loadMetaPixel } from "~/lib/consentTags";
+import { clearThirdPartyCookies, loadGoogleTag, loadMetaPixel, loadTikTokPixel } from "~/lib/consentTags";
 
 type PublicConsent = ConsentChoices & { decidedAt: string };
 
@@ -59,10 +59,12 @@ export function CookieConsent({
   consent,
   googlePixelId,
   metaPixelId,
+  tiktokPixelId,
 }: {
   consent: PublicConsent | null;
   googlePixelId: string;
   metaPixelId: string;
+  tiktokPixelId: string;
 }) {
   const { pathname } = useLocation();
   const inAdmin = pathname.startsWith("/admin");
@@ -86,7 +88,8 @@ export function CookieConsent({
     if (inAdmin) return;
     if (consent?.analytics && googlePixelId) loadGoogleTag(googlePixelId, { marketing: consent.marketing });
     if (consent?.marketing && metaPixelId) loadMetaPixel(metaPixelId);
-  }, [inAdmin, consent?.analytics, consent?.marketing, googlePixelId, metaPixelId]);
+    if (consent?.marketing && tiktokPixelId) loadTikTokPixel(tiktokPixelId);
+  }, [inAdmin, consent?.analytics, consent?.marketing, googlePixelId, metaPixelId, tiktokPixelId]);
 
   // Abrir el panel desde el pie de página, con las casillas como estén guardadas.
   useEffect(() => {
@@ -249,7 +252,7 @@ export function CookieConsent({
                 <Switch checked={marketing} onChange={setMarketing} labelledBy={marketingId} />
               </div>
               <p className="-mt-2 text-sm text-carbon/70">
-                Permiten medir si nuestros anuncios en Facebook e Instagram funcionan. Usamos el píxel de Meta.
+                Permiten medir si nuestros anuncios en Facebook, Instagram y TikTok funcionan. Usamos los píxeles de Meta y de TikTok.
               </p>
             </div>
           </div>

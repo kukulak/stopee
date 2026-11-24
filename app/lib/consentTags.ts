@@ -16,8 +16,17 @@ type FbqFn = ((...args: unknown[]) => void) & {
   push: unknown;
 };
 
+type TtqStub = unknown[] & {
+  [key: string]: unknown;
+  _i?: Record<string, unknown[] & { _u?: string }>;
+  _t?: Record<string, number>;
+  _o?: Record<string, unknown>;
+};
+
 declare global {
   interface Window {
+    ttq?: TtqStub;
+    TiktokAnalyticsObject?: string;
     dataLayer?: unknown[];
     gtag?: GtagFn;
     fbq?: FbqFn;
@@ -80,8 +89,49 @@ export function loadMetaPixel(pixelId: string) {
   appendScript("https://connect.facebook.net/en_US/fbevents.js", "meta");
 }
 
+const TIKTOK_METHODS = [
+  "page", "track", "identify", "instances", "debug", "on", "off", "once", "ready", "alias", "group",
+  "enableCookie", "disableCookie", "holdConsent", "revokeConsent", "grantConsent",
+];
+
+/** Píxel de TikTok. Misma estructura que el código oficial: una cola que se vacía cuando carga su script. */
+export function loadTikTokPixel(pixelId: string) {
+  if (window.ttq) return;
+
+  const scriptUrl = "https://analytics.tiktok.com/i18n/pixel/events.js";
+  const ttq = [] as unknown as TtqStub;
+  window.TiktokAnalyticsObject = "ttq";
+  window.ttq = ttq;
+
+  const defer = (target: Record<string, unknown> & unknown[], method: string) => {
+    target[method] = (...args: unknown[]) => {
+      target.push([method, ...args]);
+    };
+  };
+  for (const method of TIKTOK_METHODS) defer(ttq, method);
+
+  ttq.instance = (id: string) => {
+    const instance = (ttq._i?.[id] ?? []) as unknown[] & Record<string, unknown>;
+    for (const method of TIKTOK_METHODS) defer(instance, method);
+    return instance;
+  };
+  ttq.load = (id: string, options?: unknown) => {
+    ttq._i = ttq._i || {};
+    ttq._i[id] = [];
+    ttq._i[id]._u = scriptUrl;
+    ttq._t = ttq._t || {};
+    ttq._t[id] = Date.now();
+    ttq._o = ttq._o || {};
+    ttq._o[id] = options || {};
+  };
+
+  (ttq.load as (id: string) => void)(pixelId);
+  (ttq.page as () => void)();
+  appendScript(`${scriptUrl}?sdkid=${encodeURIComponent(pixelId)}&lib=ttq`, "tiktok");
+}
+
 /**
- * Borra las cookies que Google y Meta dejaron en este sitio (_ga, _ga_XXXX, _gid, _gat, _fbp, _fbc).
+ * Borra las cookies que Google, Meta y TikTok dejaron en este sitio (_ga, _ga_XXXX, _gid, _gat, _fbp, _fbc, _ttp, _tt_*).
  * Un navegador solo deja borrar una cookie si se indica el mismo dominio con el que se creó, y
  * Google la crea en el dominio principal, así que se intentan todas las variantes.
  */
@@ -89,7 +139,7 @@ export function clearThirdPartyCookies() {
   const names = document.cookie
     .split(";")
     .map((part) => part.split("=")[0].trim())
-    .filter((name) => /^(_ga|_gid|_gat|_gcl_|_fbp$|_fbc$)/.test(name));
+    .filter((name) => /^(_ga|_gid|_gat|_gcl_|_fbp$|_fbc$|_ttp$|_tt_|ttclid$)/.test(name));
   if (names.length === 0) return;
 
   const labels = location.hostname.split(".");

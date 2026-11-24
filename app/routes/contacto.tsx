@@ -13,6 +13,7 @@ import { contactNotificationEmail } from "~/lib/emailTemplates.server";
 import { logError } from "~/lib/logger.server";
 import { checkRateLimit, getClientIp, rateLimitMessage } from "~/lib/rateLimit.server";
 import { cleanPlainText, hasControlChars, rejectForeignOrigin } from "~/lib/formGuard.server";
+import { LegalNotice } from "~/components/ui/LegalNotice";
 
 export const meta: MetaFunction = () => [
   { title: "Contacto — STOPee" },
@@ -187,6 +188,7 @@ export default function Contacto() {
               >
                 {isSubmitting ? "Enviando…" : "Enviar mensaje"}
               </button>
+              <LegalNotice lead="Usaremos tus datos solo para responder tu mensaje." />
             </Form>
           )}
         </div>

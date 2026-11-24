@@ -11,6 +11,7 @@ import {
   programEyebrow,
   type SubscriptionConfig,
 } from "~/lib/subscriptionConfig";
+import { LegalNotice } from "~/components/ui/LegalNotice";
 
 export function SubscriptionConfigurator({
   products,
@@ -182,6 +183,7 @@ export function SubscriptionConfigurator({
             >
               {isSubmitting ? "Redirigiendo…" : config.ctaLabel}
             </button>
+            <LegalNotice action="activar tu suscripción" newTab className="mt-3 text-center" />
             {fetcher.data?.error && <p className="mt-3 text-sm font-semibold text-red-600">{fetcher.data.error}</p>}
           </fetcher.Form>
         </div>

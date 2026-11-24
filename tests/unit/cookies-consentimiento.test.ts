@@ -89,6 +89,7 @@ describe("cookies: los textos de fábrica dicen lo que hace el sitio", () => {
       "_ga",
       "_fbp",
       "_fbc",
+      "_ttp",
     ]) {
       expect(DEFAULT_COOKIES_MARKDOWN, name).toContain(name);
     }

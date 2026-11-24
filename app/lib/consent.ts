@@ -8,8 +8,9 @@
  * Las cookies necesarias (sesión, carrito, seguridad, esta misma elección) no piden permiso.
  *
  * Sin elección guardada (o con una versión vieja del aviso) se trata como «todo rechazado» y se
- * vuelve a preguntar. Subir CONSENT_VERSION obliga a preguntar de nuevo a todos, por ejemplo
- * cuando se agrega una herramienta nueva de medición.
+ * vuelve a preguntar. Subir CONSENT_VERSION obliga a preguntar de nuevo a todos: hay que hacerlo
+ * cada vez que se agrega una herramienta nueva de medición o publicidad (por ejemplo, un píxel
+ * más) una vez que ya hay visitantes con una elección guardada.
  */
 export const CONSENT_COOKIE_NAME = "__stopee_consent";
 export const CONSENT_VERSION = 1;

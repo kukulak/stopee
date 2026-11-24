@@ -261,6 +261,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const pixelStatus = {
     google: Boolean(siteSettings.googlePixelId),
     meta: Boolean(siteSettings.metaPixelId),
+    tiktok: Boolean(siteSettings.tiktokPixelId),
   };
 
   // ---------- Capa 5: Inventario ----------
@@ -769,6 +770,10 @@ export default function AdminDashboard() {
             <div className="flex items-center gap-2">
               <span className={`h-2.5 w-2.5 rounded-full ${data.acquisition.pixelStatus.meta ? "bg-lima" : "bg-carbon/20"}`} />
               Meta configurado
+            </div>
+            <div className="flex items-center gap-2">
+              <span className={`h-2.5 w-2.5 rounded-full ${data.acquisition.pixelStatus.tiktok ? "bg-lima" : "bg-carbon/20"}`} />
+              TikTok configurado
             </div>
           </div>
           <p className="mt-3 text-xs text-carbon/40">

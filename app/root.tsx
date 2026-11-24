@@ -31,7 +31,7 @@ import { BackToTopButton } from "~/components/ui/BackToTopButton";
 import { ExitIntentPopup } from "~/components/ui/ExitIntentPopup";
 import { CookieConsent } from "~/components/ui/CookieConsent";
 import { GlobalLoadingBar } from "~/components/ui/GlobalLoadingBar";
-import { isValidGooglePixelId, isValidMetaPixelId, linkTargetOr } from "~/lib/inputValidation";
+import { isValidGooglePixelId, isValidMetaPixelId, isValidTikTokPixelId, linkTargetOr } from "~/lib/inputValidation";
 
 export const links: LinksFunction = () => [
   { rel: "icon", href: "/favicon-32.png", sizes: "32x32", type: "image/png" },
@@ -137,6 +137,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
         // Defensa extra: aunque la base tenga un valor viejo o alterado, solo se imprime si tiene el formato exacto.
         googlePixelId: isValidGooglePixelId(settings.googlePixelId ?? "") ? settings.googlePixelId! : "",
         metaPixelId: isValidMetaPixelId(settings.metaPixelId ?? "") ? settings.metaPixelId! : "",
+        tiktokPixelId: isValidTikTokPixelId(settings.tiktokPixelId ?? "") ? settings.tiktokPixelId! : "",
         announcementBarText: settings.announcementBarActive ? settings.announcementBarText ?? "" : "",
         whatsappNumber: legal.whatsappNumber ?? "",
         subscriptionLinkLabel: subscriptionConfig.programName ? `${subscriptionConfig.programName} (auto-envío)` : "Auto-envío",
@@ -167,6 +168,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
         consent: publicConsent,
         googlePixelId: "",
         metaPixelId: "",
+        tiktokPixelId: "",
         announcementBarText: "",
         whatsappNumber: "",
         subscriptionLinkLabel: "Auto-envío",
@@ -218,6 +220,7 @@ export default function App() {
   const {
     googlePixelId,
     metaPixelId,
+    tiktokPixelId,
     announcementBarText,
     whatsappNumber,
     isStoreActive,
@@ -237,7 +240,12 @@ export default function App() {
       <WhatsAppButton whatsappNumber={whatsappNumber} raised={!isStoreActive} cartHasItems={cartHasItems} />
       <BackToTopButton />
       {exitIntent && <ExitIntentPopup config={exitIntent} />}
-      <CookieConsent consent={consent} googlePixelId={googlePixelId} metaPixelId={metaPixelId} />
+      <CookieConsent
+        consent={consent}
+        googlePixelId={googlePixelId}
+        metaPixelId={metaPixelId}
+        tiktokPixelId={tiktokPixelId}
+      />
     </Document>
   );
 }

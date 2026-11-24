@@ -29,7 +29,7 @@ Dependiendo de cómo interactúes con nosotros, podemos recabar:
 **Finalidades secundarias** (puedes oponerte sin que esto afecte tu compra):
 
 - Enviarte promociones, descuentos o novedades por correo electrónico.
-- Medir el desempeño de nuestra publicidad en Meta (Facebook/Instagram), solo si aceptas las cookies de marketing.
+- Medir el desempeño de nuestra publicidad en Meta (Facebook/Instagram) y TikTok, solo si aceptas las cookies de marketing.
 - Elaborar estadísticas de uso del sitio con Google Analytics y con nuestra medición propia, solo si aceptas las cookies de estadísticas.
 
 Si no deseas que tus datos se usen para las finalidades secundarias, escríbenos a {{correoContacto}} con el asunto "Oposición a finalidades secundarias".
@@ -42,7 +42,7 @@ Para operar el servicio, compartimos datos estrictamente necesarios con:
 - **Nuestro proveedor de hosting y base de datos** — almacenamiento de la información de tu cuenta y pedidos.
 - **Cloudflare, Inc.** — seguridad y entrega rápida del sitio.
 - **Google LLC** — estadísticas de uso del sitio (Google Analytics), únicamente si aceptas las cookies de estadísticas.
-- **Meta Platforms, Inc.** — medición de anuncios en Facebook e Instagram, únicamente si aceptas las cookies de marketing.
+- **Meta Platforms, Inc.** y **TikTok** — medición de anuncios en Facebook, Instagram y TikTok, únicamente si aceptas las cookies de marketing.
 
 No vendemos ni rentamos tus datos personales a terceros.
 
@@ -58,7 +58,7 @@ Usamos tres tipos de cookies:
 
 - **Necesarias:** mantienen tu sesión y tu carrito, protegen el sitio y recuerdan tu elección sobre cookies. No requieren tu permiso.
 - **Estadísticas:** nos dicen qué páginas se visitan y cómo llegas a nosotros (Google Analytics y medición propia). Solo se activan si las aceptas.
-- **Marketing:** miden si nuestros anuncios funcionan (píxel de Meta). Solo se activan si las aceptas.
+- **Marketing:** miden si nuestros anuncios funcionan (píxeles de Meta y TikTok). Solo se activan si las aceptas.
 
 La primera vez que entras al sitio te preguntamos qué permites. Puedes cambiar tu elección cuando quieras con el enlace "Configurar cookies" al final de cualquier página, y retirar tu consentimiento tiene el mismo efecto que rechazarlas desde el principio. El detalle de cada cookie (nombre, para qué sirve, duración y quién la coloca) está en nuestra [política de cookies](/politica-de-cookies).
 
@@ -128,9 +128,9 @@ Usamos tres categorías:
 
 - **Necesarias:** hacen que el sitio funcione. No requieren tu permiso y no se pueden desactivar desde aquí.
 - **Estadísticas:** nos dicen qué páginas se visitan y cómo llegas a nosotros. **Solo se activan si las aceptas.**
-- **Marketing:** nos permiten medir si nuestros anuncios en Facebook e Instagram funcionan. **Solo se activan si las aceptas.**
+- **Marketing:** nos permiten medir si nuestros anuncios en Facebook, Instagram y TikTok funcionan. **Solo se activan si las aceptas.**
 
-La primera vez que entras te preguntamos. Si rechazas, no se carga Google Analytics ni el píxel de Meta, y tampoco usamos nuestra medición propia de visitas. Puedes cambiar tu elección en cualquier momento con el enlace **"Configurar cookies"** que está al final de todas las páginas. Si retiras un permiso, borramos las cookies de esa categoría que hubiera en este sitio. Volvemos a preguntarte cada 12 meses o cuando agreguemos una herramienta nueva.
+La primera vez que entras te preguntamos. Si rechazas, no se carga Google Analytics ni los píxeles de Meta y TikTok, y tampoco usamos nuestra medición propia de visitas. Puedes cambiar tu elección en cualquier momento con el enlace **"Configurar cookies"** que está al final de todas las páginas. Si retiras un permiso, borramos las cookies de esa categoría que hubiera en este sitio. Volvemos a preguntarte cada 12 meses o cuando agreguemos una herramienta nueva.
 
 ## 3. Las cookies que usamos
 
@@ -161,6 +161,7 @@ Nuestro proveedor de seguridad y entrega del sitio (Cloudflare) puede colocar co
 | --- | --- | --- | --- |
 | \`_fbp\` | Píxel de Meta: identifica el navegador para medir el resultado de nuestros anuncios | Hasta 90 días | Meta |
 | \`_fbc\` | Píxel de Meta: guarda de qué anuncio venías, si llegaste desde uno | Hasta 90 días | Meta |
+| \`_ttp\` y otras \`_tt_*\` | Píxel de TikTok: identifica el navegador para medir el resultado de nuestros anuncios en TikTok | Hasta 13 meses | TikTok |
 
 Las duraciones de las cookies de terceros las definen sus proveedores y pueden cambiar.
 
@@ -172,6 +173,7 @@ Además de nuestro panel, puedes bloquear o borrar cookies desde la configuraci�
 
 - Google: [cómo usa Google las cookies](https://policies.google.com/technologies/cookies).
 - Meta: [política de cookies de Meta](https://www.facebook.com/privacy/policies/cookies/).
+- TikTok: [política de cookies de TikTok](https://www.tiktok.com/legal/page/global/cookie-policy/en).
 
 ## 6. Cambios a esta política
 
