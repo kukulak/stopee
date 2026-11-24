@@ -10,7 +10,7 @@ import { Navbar } from '~/components/layout/Navbar'
 import { Footer } from '~/components/layout/Footer'
 import { EditableBrandSwirls } from '~/components/ui/EditableBrandSwirls'
 import { DEFAULT_PAGE_SWIRLS } from '~/components/ui/BrandSwirls'
-import { ScrollytellingSection } from '~/components/scrollytelling/ScrollytellingSection'
+import { DefaultHero } from '~/components/ecommerce/DefaultHero'
 import { PrelaunchLanding } from '~/components/prelaunch/PrelaunchLanding'
 import { getCatalogItems, getConcentratePrice, type CatalogItem } from '~/lib/catalog.server'
 import { BlogPostModel } from '~/models/blogPost.server'
@@ -246,18 +246,18 @@ function LaunchedLanding({
       <Navbar cartCount={cartCount} />
 
       <main className="flex-1">
-        {/* HERO editable (promoción con banner o banner personalizado) — si
-            no hay ninguno activo, no se muestra nada y el propio hero de
-            ScrollytellingSection sigue funcionando como portada. */}
+        {/* HERO editable (promoción con banner o banner personalizado de
+            /admin/banners). Cuando hay uno activo ocupa el lugar del hero
+            por defecto; si no hay ninguno, se muestra DefaultHero. */}
         {heroBanner && <HeroBannerSection banner={heroBanner} />}
 
-        {/* HERO + MANIFIESTO — un solo fondo oscuro continuo con los mismos
-            remolinos y paralax del landing de pre-lanzamiento (igualito),
-            en vez de un fondo de remolinos por sección. */}
+        {/* HERO POR DEFECTO + MANIFIESTO — un solo fondo oscuro continuo con
+            los mismos remolinos y paralax del landing de pre-lanzamiento
+            (igualito), en vez de un fondo de remolinos por sección. */}
         <div className="relative overflow-hidden bg-carbon">
           <EditableBrandSwirls swirls={DEFAULT_PAGE_SWIRLS} id="home-dark" />
 
-          <ScrollytellingSection />
+          {!heroBanner && <DefaultHero />}
 
           <section className="relative py-20 text-hueso">
             <div className="relative mx-auto max-w-4xl px-4 text-center sm:px-6">
