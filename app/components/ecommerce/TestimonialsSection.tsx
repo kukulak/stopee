@@ -1,18 +1,27 @@
 type Testimonial = { customerName: string; quote: string; photoUrl?: string };
 
-/** Sin testimonios publicados, esta sección simplemente no existe — nunca se rellena con reseñas de relleno. */
-export function TestimonialsSection({ testimonials }: { testimonials: Testimonial[] }) {
+/**
+ * Sin testimonios publicados, esta sección simplemente no existe — nunca se rellena con reseñas de relleno.
+ * Los textos del encabezado se editan en /admin/inicio (los valores por defecto son los de siempre).
+ */
+export function TestimonialsSection({
+  testimonials,
+  eyebrow = "Lo que dicen quienes ya lo usan",
+  title = "Clientes reales, resultados reales",
+}: {
+  testimonials: Testimonial[];
+  eyebrow?: string;
+  title?: string;
+}) {
   if (testimonials.length === 0) return null;
 
   return (
     <section className="bg-hueso py-20">
       <div className="mx-auto max-w-6xl px-4 sm:px-6">
-        <p className="text-center font-body text-sm font-bold uppercase tracking-widest text-oliva">
-          Lo que dicen quienes ya lo usan
-        </p>
-        <h2 className="mt-2 text-center font-display text-3xl font-black text-carbon sm:text-4xl">
-          Clientes reales, resultados reales
-        </h2>
+        {eyebrow && (
+          <p className="text-center font-body text-sm font-bold uppercase tracking-widest text-oliva">{eyebrow}</p>
+        )}
+        <h2 className="mt-2 text-center font-display text-3xl font-black text-carbon sm:text-4xl">{title}</h2>
 
         <div className="mt-10 grid grid-cols-1 gap-6 sm:grid-cols-3">
           {testimonials.map((t) => (

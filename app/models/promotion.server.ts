@@ -171,11 +171,6 @@ function activeBannerPromotionFilter() {
   };
 }
 
-/** Promoción activa (con banner habilitado) para el hero único del home. */
-export async function getActiveBannerPromotion() {
-  return PromotionModel.findOne(activeBannerPromotionFilter()).sort({ updatedAt: -1 }).lean();
-}
-
 /** Todas las promociones activas con banner habilitado, para el carrusel del hero de /tienda. */
 export async function getActiveBannerPromotions() {
   return PromotionModel.find(activeBannerPromotionFilter()).sort({ updatedAt: -1 }).lean();

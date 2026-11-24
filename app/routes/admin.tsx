@@ -30,6 +30,7 @@ const NAV_ITEMS: {
   { to: "/admin/discounts", label: "Promociones" },
   { to: "/admin/shipping", label: "Envíos" },
   { to: "/admin/subscription", label: "Auto-envío" },
+  { to: "/admin/inicio", label: "Página de inicio" },
   { to: "/admin/banners", label: "Banners" },
   { to: "/admin/blog", label: "Blog" },
   { to: "/admin/customers", label: "Clientes" },

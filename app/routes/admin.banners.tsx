@@ -5,10 +5,14 @@ import { LINK_TARGET_ERROR, normalizeLinkTarget } from "~/lib/inputValidation";
 import { Form, useActionData, useLoaderData, useNavigation } from "react-router";
 import { useState } from "react";
 import { connectDB } from "~/lib/db.server";
-import { SiteBannerModel } from "~/models/siteBanner.server";
+import { SiteBannerModel, parseBannerPlacement, type BannerPlacement } from "~/models/siteBanner.server";
 import { parseCatalogFormData, uploadedFileToPublicUrl } from "~/lib/upload.server";
 import { Field, inputClass } from "~/components/admin/MediaFields";
 import { requireAdmin } from "~/lib/session.server";
+
+const SUBTITLE_MAX = 160;
+
+const PLACEMENT_LABEL: Record<BannerPlacement, string> = { home: "Inicio", tienda: "Tienda" };
 
 export const meta: MetaFunction = () => [{ title: "Banners — Admin STOPee" }];
 
@@ -16,16 +20,25 @@ export async function loader({ request }: LoaderFunctionArgs) {
   await requireAdmin(request);
   await connectDB();
   const banners = await SiteBannerModel.find().sort({ createdAt: -1 }).lean();
+
+  // En la portada solo se muestra un banner a la vez: el activo editado más recientemente.
+  const shownHomeId = banners
+    .filter((b) => b.isActive && b.placement === "home")
+    .sort((a, b) => new Date(b.updatedAt as unknown as string).getTime() - new Date(a.updatedAt as unknown as string).getTime())[0]?._id;
+
   return data({
     banners: banners.map((b) => ({
       id: String(b._id),
       name: b.name,
+      placement: parseBannerPlacement(b.placement),
       imageUrl: b.imageUrl ?? "",
       imageAlt: b.imageAlt ?? "",
       text: b.text ?? "",
+      subtitle: b.subtitle ?? "",
       ctaText: b.ctaText ?? "",
       ctaHref: b.ctaHref ?? "/tienda",
       isActive: b.isActive,
+      isShownOnHome: shownHomeId !== undefined && String(shownHomeId) === String(b._id),
     })),
   });
 }
@@ -46,9 +59,11 @@ function buildBannerDoc(formData: FormData, existingImageUrl?: string) {
     ok: true as const,
     doc: {
       name,
+      placement: parseBannerPlacement(formData.get("placement")),
       imageUrl,
       imageAlt: String(formData.get("imageAlt") ?? "").trim(),
       text: String(formData.get("text") ?? "").trim(),
+      subtitle: String(formData.get("subtitle") ?? "").trim().slice(0, SUBTITLE_MAX),
       ctaText: String(formData.get("ctaText") ?? "").trim(),
       ctaHref,
     },
@@ -100,14 +115,44 @@ export async function action({ request }: ActionFunctionArgs) {
 type Banner = ReturnType<typeof useLoaderData<typeof loader>>["banners"][number];
 
 function BannerFormFields({ defaults }: { defaults?: Banner }) {
+  const [placement, setPlacement] = useState<BannerPlacement>(defaults?.placement ?? "home");
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
       <Field label="Nombre interno" htmlFor="name">
         <input id="name" name="name" required defaultValue={defaults?.name} placeholder="Verano 2026" className={inputClass} />
       </Field>
-      <Field label="Texto del banner" htmlFor="text">
-        <input id="text" name="text" defaultValue={defaults?.text} placeholder="Ciudades limpias, paseos impecables." className={inputClass} />
+      <Field label="Dónde se muestra" htmlFor="placement">
+        <select
+          id="placement"
+          name="placement"
+          value={placement}
+          onChange={(e) => setPlacement(e.target.value as BannerPlacement)}
+          className={inputClass}
+        >
+          <option value="home">Inicio (banner grande, de borde a borde)</option>
+          <option value="tienda">Tienda (carrusel con productos y promociones)</option>
+        </select>
+        <p className="mt-1 text-xs text-carbon/60">
+          {placement === "home"
+            ? "En Inicio habla de beneficios y de quién eres. Se muestra un banner a la vez: el activo editado más recientemente."
+            : "En Tienda habla de productos, paquetes u ofertas. Pueden rotar varios a la vez."}
+        </p>
       </Field>
+      <Field label="Texto del banner" htmlFor="text">
+        <input id="text" name="text" defaultValue={defaults?.text} placeholder="Tu perro disfruta el paseo. Tu calle también." className={inputClass} />
+      </Field>
+      {placement === "home" && (
+        <Field label="Frase de apoyo (opcional)" htmlFor="subtitle">
+          <input
+            id="subtitle"
+            name="subtitle"
+            maxLength={SUBTITLE_MAX}
+            defaultValue={defaults?.subtitle}
+            placeholder="Elimina el olor desde el primer uso."
+            className={inputClass}
+          />
+        </Field>
+      )}
       <Field label="Texto del botón (opcional)" htmlFor="ctaText">
         <input id="ctaText" name="ctaText" defaultValue={defaults?.ctaText} placeholder="Comprar ahora" className={inputClass} />
       </Field>
@@ -137,7 +182,7 @@ function BannerFormFields({ defaults }: { defaults?: Banner }) {
       </div>
       <label className="col-span-full flex min-h-11 items-center gap-2 text-sm font-medium text-carbon">
         <input type="checkbox" name="isActive" defaultChecked={defaults?.isActive ?? false} className="h-5 w-5 shrink-0 accent-lima" />
-        Incluir en el carrusel de la tienda {defaults ? "" : "de inmediato"}
+        Activo{defaults ? "" : " desde que lo crees"}: se muestra en {PLACEMENT_LABEL[placement]}
       </label>
     </div>
   );
@@ -154,9 +199,9 @@ export default function AdminBanners() {
     <div>
       <h1 className="font-display text-2xl sm:text-3xl font-black text-carbon">Banners</h1>
       <p className="mt-1 text-sm text-carbon/60">
-        Estos banners rotan en el carrusel del hero de /tienda, junto con las promociones que tengan
-        su propio banner activado en <a href="/admin/discounts" className="underline">Descuentos</a>.
-        Puedes tener varios activos a la vez.
+        Cada banner se muestra en un solo lugar. <strong>Inicio:</strong> un banner a todo lo ancho, un
+        banner a la vez. <strong>Tienda:</strong> el carrusel, junto con las promociones que tengan su propio
+        banner activado en <a href="/admin/discounts" className="underline">Descuentos</a>; pueden estar varios activos.
       </p>
 
       <Form method="post" encType="multipart/form-data" className="mt-6 flex flex-col gap-4 rounded-3xl border border-carbon/10 bg-white p-4 sm:p-6">
@@ -188,8 +233,17 @@ export default function AdminBanners() {
                 </div>
                 <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center lg:shrink-0">
                   <div className="col-span-2 flex flex-wrap items-center gap-2 sm:col-span-1">
-                    {b.isActive && (
+                    <span className="rounded-full border border-carbon/15 px-2.5 py-1 text-xs font-semibold text-carbon/70">
+                      {PLACEMENT_LABEL[b.placement]}
+                    </span>
+                    {b.isActive && b.placement === "tienda" && (
                       <span className="rounded-full bg-lima px-2.5 py-1 text-xs font-bold text-carbon">En el carrusel</span>
+                    )}
+                    {b.isActive && b.placement === "home" && b.isShownOnHome && (
+                      <span className="rounded-full bg-lima px-2.5 py-1 text-xs font-bold text-carbon">Se está mostrando</span>
+                    )}
+                    {b.isActive && b.placement === "home" && !b.isShownOnHome && (
+                      <span className="rounded-full bg-carbon/10 px-2.5 py-1 text-xs font-semibold text-carbon/60">En espera: hay uno más reciente</span>
                     )}
                     <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${b.isActive ? "bg-lima/20 text-bosque" : "bg-carbon/10 text-carbon/50"}`}>
                       {b.isActive ? "Activo" : "Inactivo"}

@@ -95,13 +95,14 @@ function SwirlLayer({ swirl, active }: { swirl: SwirlPlacement; active: boolean 
  * EditableBrandSwirls (agrega ?editar=1 a la URL en desarrollo).
  */
 /**
- * El mismo fondo de remolinos (imágenes, escalas, posiciones y velocidad de
- * paralax) usado en el landing de pre-lanzamiento (PrelaunchLanding) y en el
- * tramo oscuro del home ya lanzado (hero + manifiesto en _index.tsx) — una
- * sola fuente de verdad para que ambos se vean "igualito", como pidió el
- * usuario. vOffset es un porcentaje de la altura de SU contenedor, así que
- * la misma composición se reparte proporcionalmente aunque el contenedor
- * mida distinto en cada página.
+ * Fondo de remolinos (imágenes, escalas, posiciones y velocidad de paralax)
+ * del landing de pre-lanzamiento (PrelaunchLanding). Antes lo compartía el
+ * tramo oscuro del home ya lanzado, pero ahí los remolinos quedaban encima
+ * del texto y las tarjetas; el home tiene ahora los suyos (HOME_PAGE_SWIRLS).
+ * No cambiar esta composición por necesidades del home: es la del landing.
+ * vOffset es un porcentaje de la altura de SU contenedor, así que la misma
+ * composición se reparte proporcionalmente aunque el contenedor mida
+ * distinto en cada página.
  */
 export const DEFAULT_PAGE_SWIRLS: SwirlPlacement[] = [
   { src: "/elementos-design/izquierda-02.webp", vAnchor: "top", vOffset: 61, hAnchor: "left", hOffset: -29, scale: 0.95, width: 760, speed: 0.26, rotate: 45, opacity: 1 },
@@ -110,6 +111,19 @@ export const DEFAULT_PAGE_SWIRLS: SwirlPlacement[] = [
   { src: "/elementos-design/derecha-05.webp", vAnchor: "top", vOffset: -5, hAnchor: "right", hOffset: -51, scale: 1.6, width: 780, speed: -0.28, rotate: 5, opacity: 1 },
   { src: "/elementos-design/izquierda-04.webp", vAnchor: "top", vOffset: 88, hAnchor: "left", hOffset: -12, scale: 1, width: 720, speed: 0.24, rotate: 4, opacity: 1 },
   { src: "/elementos-design/izquierda-06.webp", vAnchor: "top", vOffset: 61, hAnchor: "right", hOffset: -87, scale: 3, width: 760, speed: -0.3, rotate: 45, opacity: 1 },
+];
+
+/**
+ * Remolinos del tramo oscuro de «Identidad y beneficios» en el home ya lanzado. Mismas imágenes y velocidad de paralax que el landing, pero pegados a los márgenes: con
+ * hOffset negativo solo asoma una parte por la orilla, así que en pantallas de escritorio no pasan
+ * por detrás de los títulos ni de las tarjetas (la columna de texto mide como máximo 896 px y queda
+ * centrada). En pantallas angostas el texto ocupa casi todo el ancho y algo asoma por la orilla.
+ */
+export const HOME_PAGE_SWIRLS: SwirlPlacement[] = [
+  { src: "/elementos-design/izquierda-06.webp", vAnchor: "top", vOffset: 0, hAnchor: "left", hOffset: -26, scale: 0.9, width: 700, speed: 0.28, rotate: -8, opacity: 1 },
+  { src: "/elementos-design/derecha-05.webp", vAnchor: "top", vOffset: 6, hAnchor: "right", hOffset: -30, scale: 0.9, width: 700, speed: -0.26, rotate: 5, opacity: 1 },
+  { src: "/elementos-design/izquierda-02.webp", vAnchor: "top", vOffset: 55, hAnchor: "left", hOffset: -28, scale: 0.8, width: 700, speed: 0.24, rotate: 45, opacity: 1 },
+  { src: "/elementos-design/derecha-01.webp", vAnchor: "top", vOffset: 64, hAnchor: "right", hOffset: -25, scale: 0.75, width: 700, speed: -0.22, rotate: 6, opacity: 1 },
 ];
 
 /**
@@ -124,6 +138,15 @@ export const COMPACT_PAGE_SWIRLS: SwirlPlacement[] = [
   { src: "/elementos-design/derecha-05.webp", vAnchor: "top", vOffset: 22, hAnchor: "right", hOffset: -24, scale: 0.8, width: 480, speed: -0.2, rotate: 5, opacity: 1 },
   { src: "/elementos-design/izquierda-02.webp", vAnchor: "top", vOffset: 68, hAnchor: "left", hOffset: -22, scale: 0.7, width: 460, speed: 0.24, rotate: 45, opacity: 1 },
   { src: "/elementos-design/derecha-01.webp", vAnchor: "top", vOffset: 92, hAnchor: "right", hOffset: -18, scale: 0.65, width: 440, speed: -0.22, rotate: 6, opacity: 1 },
+];
+
+/**
+ * Remolinos del hero por defecto del home (cuando no hay banner activo). Su texto va alineado a la
+ * izquierda y el bloque es bajo, así que solo llevan remolinos por la orilla derecha.
+ */
+export const HOME_HERO_SWIRLS: SwirlPlacement[] = [
+  { src: "/elementos-design/derecha-05.webp", vAnchor: "top", vOffset: 0, hAnchor: "right", hOffset: -30, scale: 0.9, width: 700, speed: -0.26, rotate: 5, opacity: 1 },
+  { src: "/elementos-design/derecha-01.webp", vAnchor: "top", vOffset: 62, hAnchor: "right", hOffset: -22, scale: 0.7, width: 700, speed: -0.22, rotate: 6, opacity: 1 },
 ];
 
 export function BrandSwirls({ swirls, className = "" }: { swirls: SwirlPlacement[]; className?: string }) {
