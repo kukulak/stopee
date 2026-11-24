@@ -1,9 +1,11 @@
 import { linkTargetOr } from "~/lib/inputValidation";
-import { getActiveBannerPromotion, getActiveBannerPromotions } from "~/models/promotion.server";
-import { getActiveCustomBanner, getActiveCustomBanners } from "~/models/siteBanner.server";
+import { getActiveBannerPromotions } from "~/models/promotion.server";
+import { getActiveCustomBanners, getActiveHomeBanner } from "~/models/siteBanner.server";
 
 export type HeroBanner = {
   text: string;
+  /** Frase de apoyo bajo el título (solo la usa el banner de la portada). */
+  subtitle: string;
   imageUrl: string | null;
   imageAlt: string;
   ctaText: string;
@@ -11,47 +13,21 @@ export type HeroBanner = {
 };
 
 /**
- * El hero del home puede venir de una promoción con banner activado o de un
- * banner subido directamente en /admin/banners, sin relación con ningún
- * descuento. Los dos compiten por el mismo espacio: gana el que se haya
- * activado/editado más recientemente, mismo criterio que ya se usa para
- * elegir entre cupón/lealtad/promoción por requisito en el checkout.
+ * El banner de la portada: el banner activo más reciente que se haya marcado para la portada en
+ * /admin/banners (solo se muestra uno a la vez). Las promociones con banner van solo al carrusel de
+ * /tienda, porque la portada habla de beneficios y la tienda de productos y ofertas.
  */
 export async function getActiveHeroBanner(): Promise<HeroBanner | null> {
-  const [promo, custom] = await Promise.all([getActiveBannerPromotion(), getActiveCustomBanner()]);
-
-  const candidates: { updatedAt: Date; banner: HeroBanner }[] = [];
-
-  if (promo?.banner?.enabled) {
-    candidates.push({
-      updatedAt: new Date(promo.updatedAt as unknown as string),
-      banner: {
-        text: promo.banner.text ?? "",
-        imageUrl: promo.banner.imageUrl || null,
-        imageAlt: promo.banner.imageAlt ?? "",
-        ctaText: promo.banner.ctaText ?? "",
-        ctaHref: linkTargetOr(promo.banner.ctaHref),
-      },
-    });
-  }
-
-  if (custom) {
-    candidates.push({
-      updatedAt: new Date(custom.updatedAt as unknown as string),
-      banner: {
-        text: custom.text ?? "",
-        imageUrl: custom.imageUrl || null,
-        imageAlt: custom.imageAlt ?? "",
-        ctaText: custom.ctaText ?? "",
-        ctaHref: linkTargetOr(custom.ctaHref),
-      },
-    });
-  }
-
-  if (candidates.length === 0) return null;
-
-  candidates.sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
-  return candidates[0].banner;
+  const custom = await getActiveHomeBanner();
+  if (!custom) return null;
+  return {
+    text: custom.text ?? "",
+    subtitle: custom.subtitle ?? "",
+    imageUrl: custom.imageUrl || null,
+    imageAlt: custom.imageAlt ?? "",
+    ctaText: custom.ctaText ?? "",
+    ctaHref: linkTargetOr(custom.ctaHref),
+  };
 }
 
 /**
@@ -67,6 +43,7 @@ export async function getTiendaHeroSlides(): Promise<HeroBanner[]> {
     updatedAt: new Date(promo.updatedAt as unknown as string),
     banner: {
       text: promo.banner?.text ?? "",
+      subtitle: "",
       imageUrl: promo.banner?.imageUrl || null,
       imageAlt: promo.banner?.imageAlt ?? "",
       ctaText: promo.banner?.ctaText ?? "",
@@ -78,6 +55,7 @@ export async function getTiendaHeroSlides(): Promise<HeroBanner[]> {
     updatedAt: new Date(custom.updatedAt as unknown as string),
     banner: {
       text: custom.text ?? "",
+      subtitle: "",
       imageUrl: custom.imageUrl || null,
       imageAlt: custom.imageAlt ?? "",
       ctaText: custom.ctaText ?? "",
