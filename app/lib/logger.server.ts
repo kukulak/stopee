@@ -36,3 +36,8 @@ export function logError(context: string, error: unknown, meta?: Record<string, 
 export function logAudit(action: string, meta: Record<string, unknown>) {
   console.info(JSON.stringify({ level: "info", timestamp: new Date().toISOString(), context: "audit", action, ...meta }));
 }
+
+/** Avisos que no son un error pero conviene ver en los registros (por ejemplo, algo que el navegador bloqueó). */
+export function logWarn(context: string, meta: Record<string, unknown>) {
+  console.warn(JSON.stringify({ level: "warn", timestamp: new Date().toISOString(), context, ...meta }));
+}

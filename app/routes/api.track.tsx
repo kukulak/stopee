@@ -2,6 +2,7 @@ import type { ActionFunctionArgs } from "react-router";
 import { data } from "react-router";
 import { getOrCreateVisitorId, logEvent, type TrackableEvent } from "~/lib/tracking.server";
 import { getUser } from "~/lib/session.server";
+import { readConsent } from "~/lib/consent.server";
 import { checkRateLimit, getClientIp } from "~/lib/rateLimit.server";
 
 const VALID_TYPES: TrackableEvent[] = ["page_view", "view_item", "add_to_cart", "begin_checkout", "banner_click"];
@@ -18,6 +19,12 @@ export async function action({ request }: ActionFunctionArgs) {
   const rateLimit = checkRateLimit(`track:${ip}`, { max: 120, windowMs: 60 * 1000 });
   if (!rateLimit.allowed) {
     return data({ ok: false }, { status: 429 });
+  }
+
+  // Sin permiso para las cookies de estadísticas no se registra nada ni se crea el identificador
+  // de visitante. Es una respuesta normal (no un error): para la persona no pasa nada.
+  if (!(await readConsent(request))?.analytics) {
+    return data({ ok: true, recorded: false });
   }
 
   const { visitorId, setCookieHeader } = await getOrCreateVisitorId(request);

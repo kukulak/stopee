@@ -13,6 +13,7 @@ import { sendVerificationEmail, settleWithin } from "~/lib/accountEmails.server"
 import { checkRateLimit, getClientIp, rateLimitMessage } from "~/lib/rateLimit.server";
 import { ResendVerification } from "~/components/ui/ResendVerification";
 import { CheckIcon } from "~/components/ui/Icons";
+import { LegalNotice } from "~/components/ui/LegalNotice";
 
 export const meta: MetaFunction = () => [{ title: "Crear cuenta — STOPee" }];
 
@@ -205,6 +206,7 @@ export default function Registro() {
           >
             {isSubmitting ? "Creando cuenta…" : "Crear cuenta"}
           </button>
+          <LegalNotice action="crear tu cuenta" className="text-center" />
         </Form>
 
         <p className="mt-6 text-center text-sm text-carbon/60">

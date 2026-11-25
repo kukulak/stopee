@@ -1,3 +1,5 @@
+import { cspDomainsFor, type PixelIds } from "~/lib/integrations";
+
 /**
  * Content-Security-Policy con nonce por request: script-src es estricto (sin
  * 'unsafe-inline') y solo permite los scripts inline que traigan el nonce
@@ -11,24 +13,28 @@
  * roto el layout. Es un riesgo mucho menor que permitir scripts inline: css
  * inyectado no puede ejecutar código.
  */
-export function buildContentSecurityPolicy(nonce: string): string {
+export function buildContentSecurityPolicy(nonce: string, pixelIds: PixelIds = {}): string {
+  // Solo se abre la puerta a las herramientas de terceros que están configuradas (ver ~/lib/integrations.ts).
+  const third = cspDomainsFor(pixelIds);
   return [
     "default-src 'self'",
-    `script-src 'self' 'nonce-${nonce}' https://www.googletagmanager.com https://connect.facebook.net`,
+    ["script-src 'self'", `'nonce-${nonce}'`, ...third.script].join(" "),
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
     "font-src 'self' https://fonts.gstatic.com",
     "media-src 'self' https://storage.googleapis.com",
     "img-src 'self' data: https:",
-    "connect-src 'self' https://www.google-analytics.com https://*.google-analytics.com https://*.analytics.google.com https://www.googletagmanager.com https://www.facebook.com",
+    ["connect-src 'self'", ...third.connect].join(" "),
     "object-src 'none'",
     "base-uri 'self'",
     "form-action 'self' https://checkout.stripe.com",
     "frame-ancestors 'none'",
+    // Cada bloqueo llega a /api/csp-report y queda en los registros del hosting (ver api.csp-report.tsx).
+    "report-uri /api/csp-report",
   ].join("; ");
 }
 
 /** Aplica todas las cabeceras de seguridad a una respuesta de documento. */
-export function applySecurityHeaders(headers: Headers, nonce: string, pathname = ""): void {
+export function applySecurityHeaders(headers: Headers, nonce: string, pathname = "", pixelIds: PixelIds = {}): void {
   // Páginas con datos personales o del panel: nunca deben guardarse en una caché
   // compartida (Cloudflare, un proxy). Si alguien activara "Cache Everything",
   // un cliente podría recibir la página de otro, con su sesión.
@@ -42,7 +48,7 @@ export function applySecurityHeaders(headers: Headers, nonce: string, pathname =
   // desarrollo local. Sin nonce, no hay CSP; en producción (node server.js)
   // siempre hay uno.
   if (nonce) {
-    headers.set("Content-Security-Policy", buildContentSecurityPolicy(nonce));
+    headers.set("Content-Security-Policy", buildContentSecurityPolicy(nonce, pixelIds));
   }
   headers.set("X-Content-Type-Options", "nosniff");
   headers.set("X-Frame-Options", "DENY");

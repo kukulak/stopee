@@ -3,6 +3,7 @@ import { useState } from "react";
 import type { CatalogItem } from "~/lib/catalog.server";
 import type { ShippingQuote } from "~/models/shipping.server";
 import { CloseIcon } from "~/components/ui/Icons";
+import { LegalNotice } from "~/components/ui/LegalNotice";
 
 export type CartLine = {
   sku: string;
@@ -247,6 +248,7 @@ export function CartDrawer({
               {isCheckingOut ? "Redirigiendo a pago…" : "Ir a pagar"}
             </button>
           </checkoutFetcher.Form>
+          <LegalNotice action="pagar" newTab className="text-center" />
           {hasStockProblem && (
             <p className="text-center text-xs font-semibold text-red-600">
               Ajusta las cantidades marcadas en rojo para poder pagar.

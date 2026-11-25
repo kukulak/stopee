@@ -9,6 +9,7 @@ const siteSettingsSchema = new Schema(
     isStoreActive: { type: Boolean, default: false },
     googlePixelId: { type: String, default: "" },
     metaPixelId: { type: String, default: "" },
+    tiktokPixelId: { type: String, default: "" },
     // El texto se conserva aunque la barra esté apagada, para no perder la
     // última redacción al desactivarla temporalmente.
     announcementBarText: { type: String, default: "" },

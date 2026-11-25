@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { safeRedirectTarget } from "~/lib/safeRedirect";
-import { isValidGooglePixelId, isValidMetaPixelId, linkTargetOr, normalizeLinkTarget } from "~/lib/inputValidation";
+import { isValidGooglePixelId, isValidMetaPixelId, isValidTikTokPixelId, linkTargetOr, normalizeLinkTarget } from "~/lib/inputValidation";
 import { csvCell } from "~/lib/csv";
 import { passwordProblem } from "~/lib/password";
 import { isStaff, isSuperAdmin } from "~/lib/roles";
@@ -59,6 +59,14 @@ describe("identificadores de rastreo", () => {
     expect(isValidMetaPixelId("123456789012345")).toBe(true);
     expect(isValidMetaPixelId("12345abc")).toBe(false);
     expect(isValidMetaPixelId("1234567")).toBe(false);
+  });
+
+  it("valida TikTok: letras mayúsculas y números, sin nada que pueda salirse de un texto", () => {
+    expect(isValidTikTokPixelId("C4ABCDEFGHIJ1234567")).toBe(true);
+    expect(isValidTikTokPixelId("c4abcdefghij1234567")).toBe(false);
+    expect(isValidTikTokPixelId("ABC123")).toBe(false);
+    expect(isValidTikTokPixelId("C4ABCDEFGHIJ1');alert(1);//")).toBe(false);
+    expect(isValidTikTokPixelId("C4ABCDEFGHIJ 1234567")).toBe(false);
   });
 });
 

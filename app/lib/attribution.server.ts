@@ -25,7 +25,9 @@ function cleanAttribution(raw: Partial<Attribution> | null): Attribution | null 
   };
 }
 
-const attributionCookie = createCookie("__stopee_attribution", {
+export const ATTRIBUTION_COOKIE_NAME = "__stopee_attribution";
+
+const attributionCookie = createCookie(ATTRIBUTION_COOKIE_NAME, {
   path: "/",
   httpOnly: true,
   sameSite: "lax",

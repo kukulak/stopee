@@ -9,6 +9,11 @@ export function isValidGooglePixelId(value: string): boolean {
   return /^[A-Z]{1,3}-[A-Z0-9]{4,20}$/.test(value);
 }
 
+/** ID de píxel de TikTok: letras mayúsculas y números (por ejemplo "C4ABCDEFGHIJ1234567"). */
+export function isValidTikTokPixelId(value: string): boolean {
+  return /^[A-Z0-9]{10,30}$/.test(value);
+}
+
 /** ID de píxel de Meta: solo dígitos. */
 export function isValidMetaPixelId(value: string): boolean {
   return /^\d{8,20}$/.test(value);

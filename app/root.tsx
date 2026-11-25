@@ -11,7 +11,6 @@ import {
   useLoaderData,
   useNavigation,
   useRouteError,
-  useRouteLoaderData,
 } from "react-router";
 import tailwind from "~/tailwind.css?url";
 import { getSiteSettingsCached } from "~/models/siteSettings.server";
@@ -22,6 +21,7 @@ import { getExitIntentPopupCached } from "~/models/exitIntentPopup.server";
 import { getPasswordGateConfigCached, isGateWindowActive, isPathGated } from "~/models/passwordGate.server";
 import { hasGateAccess } from "~/lib/gateSession.server";
 import { readOrCaptureAttribution, isAttributableEntryPoint } from "~/lib/attribution.server";
+import { expireAnalyticsCookies, readConsent } from "~/lib/consent.server";
 import { getOrCreateVisitorId, logEvent } from "~/lib/tracking.server";
 import { getCart } from "~/lib/cart.server";
 import { getUser } from "~/lib/session.server";
@@ -29,8 +29,10 @@ import { useNonce } from "~/lib/nonce";
 import { WhatsAppButton } from "~/components/ui/WhatsAppButton";
 import { BackToTopButton } from "~/components/ui/BackToTopButton";
 import { ExitIntentPopup } from "~/components/ui/ExitIntentPopup";
+import { CookieConsent } from "~/components/ui/CookieConsent";
 import { GlobalLoadingBar } from "~/components/ui/GlobalLoadingBar";
-import { isValidGooglePixelId, isValidMetaPixelId, linkTargetOr } from "~/lib/inputValidation";
+import { linkTargetOr } from "~/lib/inputValidation";
+import { configuredPixelIds, type PixelIds } from "~/lib/integrations";
 
 export const links: LinksFunction = () => [
   { rel: "icon", href: "/favicon-32.png", sizes: "32x32", type: "image/png" },
@@ -78,30 +80,39 @@ export async function loader({ request }: LoaderFunctionArgs) {
     }
   }
 
-  // Captura de atribución a primer toque (utm_source/medium/campaign): debe
-  // vivir en el root porque un anuncio puede aterrizar en cualquier página,
-  // no solo en "/". Se hace aparte del try/catch de Mongo: no depende de la
-  // base de datos, así que nunca debe bloquearse por un hipo ahí.
-  const { attribution: _attribution, setCookieHeader: attributionCookieHeader } =
-    await readOrCaptureAttribution(request);
-  let visitorCookieHeader: string | null = null;
-
-  // page_view real (servidor, no depende de que el JS del cliente cargue)
-  // solo en las páginas que de verdad importan para el embudo — no en
-  // /admin, /cuenta, checkout, etc.
-  if (isAttributableEntryPoint(pathname)) {
-    try {
-      const { visitorId, setCookieHeader } = await getOrCreateVisitorId(request);
-      visitorCookieHeader = setCookieHeader;
-      await logEvent(visitorId, "page_view");
-    } catch {
-      // El tracking nunca debe tumbar la página.
-    }
-  }
+  // Elección de cookies del visitante. Sin permiso para las de estadísticas no se guarda ninguna
+  // cookie de medición (atribución ni identificador de visitante) ni se registra la visita, y las
+  // que el navegador ya trajera de antes se borran.
+  const consent = await readConsent(request);
+  const publicConsent = consent
+    ? { analytics: consent.analytics, marketing: consent.marketing, decidedAt: consent.decidedAt }
+    : null;
 
   const headers = new Headers();
-  if (attributionCookieHeader) headers.append("Set-Cookie", attributionCookieHeader);
-  if (visitorCookieHeader) headers.append("Set-Cookie", visitorCookieHeader);
+
+  if (consent?.analytics) {
+    // Captura de atribución a primer toque (utm_source/medium/campaign): debe
+    // vivir en el root porque un anuncio puede aterrizar en cualquier página,
+    // no solo en "/". Se hace aparte del try/catch de Mongo: no depende de la
+    // base de datos, así que nunca debe bloquearse por un hipo ahí.
+    const { setCookieHeader: attributionCookieHeader } = await readOrCaptureAttribution(request);
+    if (attributionCookieHeader) headers.append("Set-Cookie", attributionCookieHeader);
+
+    // page_view real (servidor, no depende de que el JS del cliente cargue)
+    // solo en las páginas que de verdad importan para el embudo — no en
+    // /admin, /cuenta, checkout, etc.
+    if (isAttributableEntryPoint(pathname)) {
+      try {
+        const { visitorId, setCookieHeader } = await getOrCreateVisitorId(request);
+        if (setCookieHeader) headers.append("Set-Cookie", setCookieHeader);
+        await logEvent(visitorId, "page_view");
+      } catch {
+        // El tracking nunca debe tumbar la página.
+      }
+    }
+  } else {
+    for (const expired of expireAnalyticsCookies(request)) headers.append("Set-Cookie", expired);
+  }
 
   // Solo para decidir si el botón de WhatsApp debe subirse en /tienda (ver
   // WhatsAppButton) — es de cookie, no de Mongo, así que no entra al try/catch.
@@ -123,9 +134,9 @@ export async function loader({ request }: LoaderFunctionArgs) {
     return data(
       {
         storeVisible,
-        // Defensa extra: aunque la base tenga un valor viejo o alterado, solo se imprime si tiene el formato exacto.
-        googlePixelId: isValidGooglePixelId(settings.googlePixelId ?? "") ? settings.googlePixelId! : "",
-        metaPixelId: isValidMetaPixelId(settings.metaPixelId ?? "") ? settings.metaPixelId! : "",
+        consent: publicConsent,
+        // Defensa extra: aunque la base tenga un valor viejo o alterado, solo se usa un ID con el formato exacto.
+        pixelIds: configuredPixelIds(settings),
         announcementBarText: settings.announcementBarActive ? settings.announcementBarText ?? "" : "",
         whatsappNumber: legal.whatsappNumber ?? "",
         subscriptionLinkLabel: subscriptionConfig.programName ? `${subscriptionConfig.programName} (auto-envío)` : "Auto-envío",
@@ -153,8 +164,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
     return data(
       {
         storeVisible: false,
-        googlePixelId: "",
-        metaPixelId: "",
+        consent: publicConsent,
+        pixelIds: {} as PixelIds,
         announcementBarText: "",
         whatsappNumber: "",
         subscriptionLinkLabel: "Auto-envío",
@@ -171,15 +182,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
 }
 
 /** El esqueleto <html>/<head> es igual para la app normal y para la pantalla de error — solo cambia qué va dentro del <body>. */
-function Document({
-  googlePixelId,
-  metaPixelId,
-  children,
-}: {
-  googlePixelId?: string;
-  metaPixelId?: string;
-  children: React.ReactNode;
-}) {
+function Document({ children }: { children: React.ReactNode }) {
   const nonce = useNonce();
   const navigation = useNavigation();
   const isNavigating = navigation.state !== "idle";
@@ -195,49 +198,6 @@ function Document({
             página. */}
         <Meta />
         <Links />
-
-        {googlePixelId && (
-          <>
-            <script
-              async
-              src={`https://www.googletagmanager.com/gtag/js?id=${googlePixelId}`}
-            />
-            <script
-              nonce={nonce}
-              dangerouslySetInnerHTML={{
-                __html: `
-                  window.dataLayer = window.dataLayer || [];
-                  function gtag(){dataLayer.push(arguments);}
-                  gtag('js', new Date());
-                  gtag('config', '${googlePixelId}');
-                `,
-              }}
-            />
-          </>
-        )}
-
-        {/* El código de Meta suele insertar su script ANTES del primer <script> de la página, o sea
-            en medio del <head> que React está por hidratar; eso desajusta el HTML y React tira el
-            error #418 y vuelve a pintar todo en el navegador. Aquí lo agregamos al final del <head>,
-            donde React tolera nodos ajenos. */}
-        {metaPixelId && (
-          <script
-            nonce={nonce}
-            dangerouslySetInnerHTML={{
-              __html: `
-                !function(f,b,e,v,n,t,s)
-                {if(f.fbq)return;n=f.fbq=function(){n.callMethod?
-                n.callMethod.apply(n,arguments):n.queue.push(arguments)};
-                if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';
-                n.queue=[];t=b.createElement(e);t.async=!0;
-                t.src=v;b.head.appendChild(t)}(window, document,'script',
-                'https://connect.facebook.net/en_US/fbevents.js');
-                fbq('init', '${metaPixelId}');
-                fbq('track', 'PageView');
-              `,
-            }}
-          />
-        )}
       </head>
       <body className="font-body">
         <GlobalLoadingBar />
@@ -255,17 +215,17 @@ function Document({
 
 export default function App() {
   const {
-    googlePixelId,
-    metaPixelId,
+    pixelIds,
     announcementBarText,
     whatsappNumber,
     isStoreActive,
     cartHasItems,
     exitIntent,
+    consent,
   } = useLoaderData<typeof loader>();
 
   return (
-    <Document googlePixelId={googlePixelId} metaPixelId={metaPixelId}>
+    <Document>
       {announcementBarText && (
         <div className="bg-lima px-4 py-2 text-center text-sm font-bold text-carbon">
           {announcementBarText}
@@ -275,6 +235,7 @@ export default function App() {
       <WhatsAppButton whatsappNumber={whatsappNumber} raised={!isStoreActive} cartHasItems={cartHasItems} />
       <BackToTopButton />
       {exitIntent && <ExitIntentPopup config={exitIntent} />}
+      <CookieConsent consent={consent} pixelIds={pixelIds} />
     </Document>
   );
 }
@@ -285,18 +246,10 @@ export const meta: MetaFunction = ({ error }) => [
 
 export function ErrorBoundary() {
   const error = useRouteError();
-  // useLoaderData() no es confiable dentro de un ErrorBoundary (Remix no
-  // garantiza que la data del loader de ESTA ruta siga disponible), y si la
-  // URL no hace match con ninguna ruta el loader del root ni siquiera llega
-  // a correr — por eso el pixel/anuncio pueden faltar aquí (no hay de dónde
-  // sacarlos) aunque el nonce del CSP sí siempre está bien (viene de
-  // NonceContext, no del loader — ver Document).
-  const rootData = useRouteLoaderData<typeof loader>("root");
-
   const is404 = isRouteErrorResponse(error) && error.status === 404;
 
   return (
-    <Document googlePixelId={rootData?.googlePixelId} metaPixelId={rootData?.metaPixelId}>
+    <Document>
       <div className="flex min-h-screen flex-col items-center justify-center bg-carbon px-4 py-16 text-center text-hueso">
         <img
           src="/elementos-design/logo-STOPee.webp"

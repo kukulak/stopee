@@ -2,6 +2,7 @@ import { Link, useRouteLoaderData } from "react-router";
 import type { loader as RootLoader } from "~/root";
 import { Logo } from "~/components/ui/Logo";
 import { SocialIcon } from "~/components/ui/SocialIcon";
+import { CookieSettingsButton } from "~/components/ui/CookieConsent";
 
 export function Footer() {
   const rootData = useRouteLoaderData<typeof RootLoader>("root");
@@ -98,6 +99,14 @@ export function Footer() {
               <Link to="/terminos-y-condiciones" className="hover:text-hueso">
                 Términos y condiciones
               </Link>
+            </li>
+            <li>
+              <Link to="/politica-de-cookies" className="hover:text-hueso">
+                Política de cookies
+              </Link>
+            </li>
+            <li>
+              <CookieSettingsButton className="hover:text-hueso">Configurar cookies</CookieSettingsButton>
             </li>
           </ul>
         </div>

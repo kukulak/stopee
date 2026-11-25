@@ -22,6 +22,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     { path: "/envios", changefreq: "monthly", priority: "0.4" },
     { path: "/aviso-de-privacidad", changefreq: "yearly", priority: "0.2" },
     { path: "/terminos-y-condiciones", changefreq: "yearly", priority: "0.2" },
+    { path: "/politica-de-cookies", changefreq: "yearly", priority: "0.2" },
   ];
 
   // /tienda y las fichas de producto solo cuentan como páginas reales del
