@@ -1,7 +1,7 @@
 import type { LoaderFunctionArgs } from "react-router";
 import type { ActionFunctionArgs, MetaFunction } from "react-router";
 import { data } from "react-router";
-import { isValidGooglePixelId, isValidMetaPixelId, isValidTikTokPixelId } from "~/lib/inputValidation";
+import { INTEGRATIONS } from "~/lib/integrations";
 import { Form, useActionData, useLoaderData, useNavigation } from "react-router";
 import { getSiteSettings, updateSiteSettings } from "~/models/siteSettings.server";
 import { requireAdmin } from "~/lib/session.server";
@@ -13,9 +13,14 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const settings = await getSiteSettings();
   return data({
     isStoreActive: settings.isStoreActive,
-    googlePixelId: settings.googlePixelId ?? "",
-    metaPixelId: settings.metaPixelId ?? "",
-    tiktokPixelId: settings.tiktokPixelId ?? "",
+    // Un campo por herramienta de ~/lib/integrations.ts: sumar una ahí la agrega aquí sola.
+    integrations: INTEGRATIONS.map((integration) => ({
+      field: integration.settingsField,
+      label: integration.fieldLabel,
+      placeholder: integration.placeholder,
+      category: integration.category,
+      value: settings[integration.settingsField] ?? "",
+    })),
     announcementBarText: settings.announcementBarText ?? "",
     announcementBarActive: settings.announcementBarActive ?? false,
   });
@@ -33,33 +38,21 @@ export async function action({ request }: ActionFunctionArgs) {
   }
 
   if (intent === "save-tracking") {
-    const googlePixelId = String(formData.get("googlePixelId") ?? "").trim();
-    const metaPixelId = String(formData.get("metaPixelId") ?? "").trim();
-    const tiktokPixelId = String(formData.get("tiktokPixelId") ?? "").trim();
-    // Estos IDs se escriben dentro de un <script> de todas las páginas: solo se
-    // aceptan con el formato exacto que usan Google y Meta.
-    if (googlePixelId && !isValidGooglePixelId(googlePixelId)) {
-      return data(
-        { ok: false as const, savedIntent: undefined, error: 'El ID de Google no es válido. Debe verse como "G-XXXXXXXXXX".' },
-        { status: 400 },
-      );
-    }
-    if (metaPixelId && !isValidMetaPixelId(metaPixelId)) {
-      return data(
-        { ok: false as const, savedIntent: undefined, error: "El ID del píxel de Meta no es válido: son solo números (de 8 a 20 dígitos)." },
-        { status: 400 },
-      );
-    }
-    if (tiktokPixelId && !isValidTikTokPixelId(tiktokPixelId)) {
-      return data(
-        { ok: false as const, savedIntent: undefined, error: "El ID del píxel de TikTok no es válido: son letras mayúsculas y números, sin espacios." },
-        { status: 400 },
-      );
+    // Estos IDs se usan para encender los píxeles y para abrir sus dominios en la política de
+    // seguridad: solo se aceptan con el formato exacto de cada herramienta.
+    const ids: Record<string, string> = {};
+    for (const integration of INTEGRATIONS) {
+      const value = String(formData.get(integration.settingsField) ?? "").trim();
+      if (value && !integration.isValidId(value)) {
+        return data(
+          { ok: false as const, savedIntent: undefined, error: integration.invalidMessage },
+          { status: 400 },
+        );
+      }
+      ids[integration.settingsField] = value;
     }
     await updateSiteSettings({
-      googlePixelId,
-      metaPixelId,
-      tiktokPixelId,
+      ...ids,
       announcementBarText: String(formData.get("announcementBarText") ?? "").trim(),
       announcementBarActive: formData.get("announcementBarActive") === "on",
     });
@@ -75,9 +68,7 @@ export async function action({ request }: ActionFunctionArgs) {
 export default function AdminSettings() {
   const {
     isStoreActive,
-    googlePixelId,
-    metaPixelId,
-    tiktokPixelId,
+    integrations,
     announcementBarText,
     announcementBarActive,
   } = useLoaderData<typeof loader>();
@@ -147,51 +138,26 @@ export default function AdminSettings() {
         <input type="hidden" name="intent" value="save-tracking" />
         <h2 className="font-display text-lg font-bold text-carbon">Rastreo y anuncio</h2>
 
-        <div>
-          <label htmlFor="googlePixelId" className="text-sm font-semibold text-carbon">
-            Google Pixel ID (GA4 / GTM)
-          </label>
-          <input
-            id="googlePixelId"
-            name="googlePixelId"
-            type="text"
-            defaultValue={googlePixelId}
-            placeholder="G-XXXXXXXXXX"
-            className="mt-1 box-border w-full min-w-0 max-w-full min-h-11 rounded-xl border border-carbon/15 px-4 focus:border-oliva focus:outline-none"
-          />
-        </div>
-
-        <div>
-          <label htmlFor="metaPixelId" className="text-sm font-semibold text-carbon">
-            Meta Pixel ID
-          </label>
-          <input
-            id="metaPixelId"
-            name="metaPixelId"
-            type="text"
-            defaultValue={metaPixelId}
-            placeholder="123456789012345"
-            className="mt-1 box-border w-full min-w-0 max-w-full min-h-11 rounded-xl border border-carbon/15 px-4 focus:border-oliva focus:outline-none"
-          />
-        </div>
-
-        <div>
-          <label htmlFor="tiktokPixelId" className="text-sm font-semibold text-carbon">
-            TikTok Pixel ID
-          </label>
-          <input
-            id="tiktokPixelId"
-            name="tiktokPixelId"
-            type="text"
-            defaultValue={tiktokPixelId}
-            placeholder="C4ABCDEFGHIJ1234567"
-            className="mt-1 box-border w-full min-w-0 max-w-full min-h-11 rounded-xl border border-carbon/15 px-4 focus:border-oliva focus:outline-none"
-          />
-          <p className="mt-1 text-xs text-carbon/50">
-            Los píxeles de Meta y TikTok solo se activan para quien acepta las cookies de marketing; el de Google, para
-            quien acepta las de estadísticas.
-          </p>
-        </div>
+        {integrations.map((integration) => (
+          <div key={integration.field}>
+            <label htmlFor={integration.field} className="text-sm font-semibold text-carbon">
+              {integration.label}
+            </label>
+            <input
+              id={integration.field}
+              name={integration.field}
+              type="text"
+              defaultValue={integration.value}
+              placeholder={integration.placeholder}
+              className="mt-1 box-border w-full min-w-0 max-w-full min-h-11 rounded-xl border border-carbon/15 px-4 focus:border-oliva focus:outline-none"
+            />
+          </div>
+        ))}
+        <p className="-mt-2 text-xs text-carbon/50">
+          Los píxeles de estadísticas (Google) solo se activan para quien acepta las cookies de estadísticas; los de
+          marketing (Meta, TikTok), para quien acepta las de marketing. Sin ID, la herramienta no se carga ni se le
+          abre ningún dominio.
+        </p>
 
         <div className="min-w-0 rounded-2xl border border-carbon/10 p-3 sm:p-4">
           <div className="flex min-h-11 items-center justify-between gap-4">

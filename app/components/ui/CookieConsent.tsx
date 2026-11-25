@@ -1,7 +1,8 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { Link, useFetcher, useLocation } from "react-router";
 import { OPEN_COOKIE_SETTINGS_EVENT, revokesConsent, type ConsentChoice, type ConsentChoices } from "~/lib/consent";
-import { clearThirdPartyCookies, loadGoogleTag, loadMetaPixel, loadTikTokPixel } from "~/lib/consentTags";
+import { TAG_LOADERS, clearThirdPartyCookies } from "~/lib/consentTags";
+import { INTEGRATIONS, integrationsIn, joinNames, type PixelIds } from "~/lib/integrations";
 
 type PublicConsent = ConsentChoices & { decidedAt: string };
 
@@ -57,14 +58,10 @@ const CONFIGURE_BUTTON = `${BUTTON} border-2 border-carbon/20 text-carbon hover:
  */
 export function CookieConsent({
   consent,
-  googlePixelId,
-  metaPixelId,
-  tiktokPixelId,
+  pixelIds,
 }: {
   consent: PublicConsent | null;
-  googlePixelId: string;
-  metaPixelId: string;
-  tiktokPixelId: string;
+  pixelIds: PixelIds;
 }) {
   const { pathname } = useLocation();
   const inAdmin = pathname.startsWith("/admin");
@@ -83,13 +80,19 @@ export function CookieConsent({
 
   consentRef.current = consent;
 
-  // Solo con permiso: Google Analytics con «estadísticas», el píxel de Meta con «marketing».
+  // Cada herramienta se enciende solo si tiene ID y la persona aceptó su categoría.
+  const idsKey = JSON.stringify(pixelIds);
   useEffect(() => {
-    if (inAdmin) return;
-    if (consent?.analytics && googlePixelId) loadGoogleTag(googlePixelId, { marketing: consent.marketing });
-    if (consent?.marketing && metaPixelId) loadMetaPixel(metaPixelId);
-    if (consent?.marketing && tiktokPixelId) loadTikTokPixel(tiktokPixelId);
-  }, [inAdmin, consent?.analytics, consent?.marketing, googlePixelId, metaPixelId, tiktokPixelId]);
+    if (inAdmin || !consent) return;
+    for (const integration of INTEGRATIONS) {
+      const pixelId = pixelIds[integration.id];
+      if (pixelId && consent[integration.category]) {
+        TAG_LOADERS[integration.id](pixelId, { marketing: consent.marketing });
+      }
+    }
+    // pixelIds se compara por su contenido (idsKey): el objeto es nuevo en cada carga de datos.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inAdmin, consent?.analytics, consent?.marketing, idsKey]);
 
   // Abrir el panel desde el pie de página, con las casillas como estén guardadas.
   useEffect(() => {
@@ -239,8 +242,8 @@ export function CookieConsent({
                 <Switch checked={analytics} onChange={setAnalytics} labelledBy={analyticsId} />
               </div>
               <p className="-mt-2 text-sm text-carbon/70">
-                Nos dicen qué páginas se visitan y cómo llegas a nosotros, sin identificarte. Usamos Google Analytics
-                y una medición propia del sitio.
+                Nos dicen qué páginas se visitan y cómo llegas a nosotros, sin identificarte. Usamos{" "}
+                {joinNames([...integrationsIn("analytics", pixelIds).map((tool) => tool.name), "una medición propia del sitio"])}.
               </p>
             </div>
 
@@ -252,7 +255,9 @@ export function CookieConsent({
                 <Switch checked={marketing} onChange={setMarketing} labelledBy={marketingId} />
               </div>
               <p className="-mt-2 text-sm text-carbon/70">
-                Permiten medir si nuestros anuncios en Facebook, Instagram y TikTok funcionan. Usamos los píxeles de Meta y de TikTok.
+                Permiten medir si nuestros anuncios funcionan.
+                {integrationsIn("marketing", pixelIds).length > 0 &&
+                  ` Usamos ${joinNames(integrationsIn("marketing", pixelIds).map((tool) => tool.name))}.`}
               </p>
             </div>
           </div>

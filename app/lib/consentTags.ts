@@ -7,6 +7,8 @@
  * línea y para no tocar el <head> mientras React lo está armando.
  */
 
+import type { IntegrationId } from "~/lib/integrations";
+
 type GtagFn = (...args: unknown[]) => void;
 type FbqFn = ((...args: unknown[]) => void) & {
   callMethod?: (...args: unknown[]) => void;
@@ -152,3 +154,13 @@ export function clearThirdPartyCookies() {
     }
   }
 }
+
+/**
+ * Cómo se enciende cada herramienta. Es un Record sobre IntegrationId: si se agrega una herramienta
+ * nueva a ~/lib/integrations.ts y falta su cargador aquí, el compilador marca el error.
+ */
+export const TAG_LOADERS: Record<IntegrationId, (pixelId: string, context: { marketing: boolean }) => void> = {
+  google: (pixelId, context) => loadGoogleTag(pixelId, context),
+  meta: (pixelId) => loadMetaPixel(pixelId),
+  tiktok: (pixelId) => loadTikTokPixel(pixelId),
+};

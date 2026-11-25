@@ -1,3 +1,4 @@
+import { INTEGRATIONS } from "~/lib/integrations";
 import type { LoaderFunctionArgs, MetaFunction } from "react-router";
 import { data } from "react-router";
 import { useLoaderData } from "react-router";
@@ -258,11 +259,11 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const waitlistConversionRate = totalLeads > 0 ? Math.round((convertedLeads / totalLeads) * 100) : 0;
 
   const siteSettings = await getSiteSettings();
-  const pixelStatus = {
-    google: Boolean(siteSettings.googlePixelId),
-    meta: Boolean(siteSettings.metaPixelId),
-    tiktok: Boolean(siteSettings.tiktokPixelId),
-  };
+  const pixelStatus = INTEGRATIONS.map((integration) => ({
+    id: integration.id,
+    owner: integration.owner,
+    configured: Boolean(siteSettings[integration.settingsField]),
+  }));
 
   // ---------- Capa 5: Inventario ----------
   const thirtyDaysAgo = new Date(Date.now() - 30 * 86400000);
@@ -763,18 +764,12 @@ export default function AdminDashboard() {
             {data.acquisition.leadVelocityPerDay} correos/día en este periodo.
           </p>
           <div className="mt-4 flex flex-wrap gap-x-4 gap-y-2 text-sm">
-            <div className="flex items-center gap-2">
-              <span className={`h-2.5 w-2.5 rounded-full ${data.acquisition.pixelStatus.google ? "bg-lima" : "bg-carbon/20"}`} />
-              Google configurado
-            </div>
-            <div className="flex items-center gap-2">
-              <span className={`h-2.5 w-2.5 rounded-full ${data.acquisition.pixelStatus.meta ? "bg-lima" : "bg-carbon/20"}`} />
-              Meta configurado
-            </div>
-            <div className="flex items-center gap-2">
-              <span className={`h-2.5 w-2.5 rounded-full ${data.acquisition.pixelStatus.tiktok ? "bg-lima" : "bg-carbon/20"}`} />
-              TikTok configurado
-            </div>
+            {data.acquisition.pixelStatus.map((pixel) => (
+              <div key={pixel.id} className="flex items-center gap-2">
+                <span className={`h-2.5 w-2.5 rounded-full ${pixel.configured ? "bg-lima" : "bg-carbon/20"}`} />
+                {pixel.owner} configurado
+              </div>
+            ))}
           </div>
           <p className="mt-3 text-xs text-carbon/40">
             Esto confirma que el ID está guardado en Configuración, no que Meta/Google ya validó el

@@ -5,6 +5,7 @@ import { createReadableStreamFromReadable } from "@react-router/node";
 import { isbot } from "isbot";
 import { renderToPipeableStream } from "react-dom/server";
 import { applySecurityHeaders } from "~/lib/securityHeaders.server";
+import type { PixelIds } from "~/lib/integrations";
 import { NonceContext } from "~/lib/nonce";
 import { logError } from "~/lib/logger.server";
 
@@ -37,7 +38,11 @@ export default function handleRequest(
   loadContext: AppLoadContext,
 ) {
   const nonce = typeof loadContext?.nonce === "string" ? loadContext.nonce : "";
-  applySecurityHeaders(responseHeaders, nonce, new URL(request.url).pathname);
+  // La política de seguridad abre solo los dominios de las herramientas configuradas; los IDs son los
+  // mismos que el layout raíz usa para encenderlas, así que ambos siempre coinciden. Sin esos datos
+  // (una página de error, un 404) no se abre ninguno.
+  const rootData = routerContext.staticHandlerContext?.loaderData?.root as { pixelIds?: PixelIds } | undefined;
+  applySecurityHeaders(responseHeaders, nonce, new URL(request.url).pathname, rootData?.pixelIds ?? {});
 
   return isbot(request.headers.get("user-agent") || "")
     ? handleBotRequest(request, responseStatusCode, responseHeaders, routerContext, nonce)

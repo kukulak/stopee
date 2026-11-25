@@ -1,6 +1,7 @@
 import mongoose, { type InferSchemaType, type Model } from "mongoose";
 import { connectDB } from "~/lib/db.server";
 import { createTtlCache } from "~/lib/ttlCache.server";
+import { cookieTableRows, providerPolicyLines, transferLines } from "~/lib/integrations";
 
 const { Schema, model, models } = mongoose;
 
@@ -41,8 +42,7 @@ Para operar el servicio, compartimos datos estrictamente necesarios con:
 - **Stripe, Inc.** — procesamiento de pagos.
 - **Nuestro proveedor de hosting y base de datos** — almacenamiento de la información de tu cuenta y pedidos.
 - **Cloudflare, Inc.** — seguridad y entrega rápida del sitio.
-- **Google LLC** — estadísticas de uso del sitio (Google Analytics), únicamente si aceptas las cookies de estadísticas.
-- **Meta Platforms, Inc.** y **TikTok** — medición de anuncios en Facebook, Instagram y TikTok, únicamente si aceptas las cookies de marketing.
+${transferLines()}
 
 No vendemos ni rentamos tus datos personales a terceros.
 
@@ -153,15 +153,13 @@ Nuestro proveedor de seguridad y entrega del sitio (Cloudflare) puede colocar co
 | --- | --- | --- | --- |
 | \`__stopee_vid\` | Identificador anónimo y aleatorio para contar visitas y el recorrido hacia la compra | 180 días | STOPee |
 | \`__stopee_attribution\` | Guarda cómo llegaste (anuncio, buscador, red social) para saber qué canales traen pedidos | 90 días | STOPee |
-| \`_ga\` y \`_ga_*\` | Google Analytics: distingue visitantes y sesiones para generar estadísticas | Hasta 2 años | Google |
+${cookieTableRows("analytics")}
 
 ### Marketing (solo si las aceptas)
 
 | Cookie | Para qué sirve | Duración | Quién la coloca |
 | --- | --- | --- | --- |
-| \`_fbp\` | Píxel de Meta: identifica el navegador para medir el resultado de nuestros anuncios | Hasta 90 días | Meta |
-| \`_fbc\` | Píxel de Meta: guarda de qué anuncio venías, si llegaste desde uno | Hasta 90 días | Meta |
-| \`_ttp\` y otras \`_tt_*\` | Píxel de TikTok: identifica el navegador para medir el resultado de nuestros anuncios en TikTok | Hasta 13 meses | TikTok |
+${cookieTableRows("marketing")}
 
 Las duraciones de las cookies de terceros las definen sus proveedores y pueden cambiar.
 
@@ -171,9 +169,7 @@ Además de nuestro panel, puedes bloquear o borrar cookies desde la configuraci�
 
 ## 5. Más información de los terceros
 
-- Google: [cómo usa Google las cookies](https://policies.google.com/technologies/cookies).
-- Meta: [política de cookies de Meta](https://www.facebook.com/privacy/policies/cookies/).
-- TikTok: [política de cookies de TikTok](https://www.tiktok.com/legal/page/global/cookie-policy/en).
+${providerPolicyLines()}
 
 ## 6. Cambios a esta política
 
