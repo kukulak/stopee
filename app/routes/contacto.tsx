@@ -52,7 +52,7 @@ export async function action({ request }: ActionFunctionArgs) {
 
   // El límite va antes de leer el cuerpo, para no procesar formularios de un flood.
   const ip = getClientIp(request);
-  const rateLimit = checkRateLimit(`contact:${ip}`, { max: 5, windowMs: 60 * 60 * 1000 });
+  const rateLimit = await checkRateLimit(`contact:${ip}`, { max: 5, windowMs: 60 * 60 * 1000 });
   if (!rateLimit.allowed) {
     return data({ ok: false, error: rateLimitMessage(rateLimit.retryAfterSeconds) }, { status: 429 });
   }

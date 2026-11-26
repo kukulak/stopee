@@ -26,7 +26,7 @@ export async function action({ request }: ActionFunctionArgs) {
   // Cada llamada crea una sesión real en Stripe — sin este límite, un script
   // podría martillar el endpoint y generar sesiones de checkout sin fin.
   const ip = getClientIp(request);
-  const rateLimit = checkRateLimit(`checkout:${ip}`, { max: 20, windowMs: 10 * 60 * 1000 });
+  const rateLimit = await checkRateLimit(`checkout:${ip}`, { max: 20, windowMs: 10 * 60 * 1000 });
   if (!rateLimit.allowed) {
     return data({ error: rateLimitMessage(rateLimit.retryAfterSeconds) }, { status: 429 });
   }

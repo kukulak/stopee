@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { checkRateLimit, getClientIp, rateLimitMessage } from "~/lib/rateLimit.server";
+import { checkRateLimitMemory as checkRateLimit, getClientIp, rateLimitMessage } from "~/lib/rateLimit.server";
 import { applySecurityHeaders, buildContentSecurityPolicy } from "~/lib/securityHeaders.server";
 import { renderMarkdown } from "~/lib/markdown.server";
 import { siteOrigin } from "~/lib/siteOrigin.server";

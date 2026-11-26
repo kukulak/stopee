@@ -12,7 +12,7 @@ export async function loader() {
 const emailSchema = z.string().trim().toLowerCase().email().max(254);
 
 export async function action({ request }: ActionFunctionArgs) {
-  const ipLimit = checkRateLimit(`reenviar:${getClientIp(request)}`, { max: 10, windowMs: 60 * 60 * 1000 });
+  const ipLimit = await checkRateLimit(`reenviar:${getClientIp(request)}`, { max: 10, windowMs: 60 * 60 * 1000 });
   if (!ipLimit.allowed) {
     return data({ ok: false, message: rateLimitMessage(ipLimit.retryAfterSeconds) }, { status: 429 });
   }
@@ -22,7 +22,7 @@ export async function action({ request }: ActionFunctionArgs) {
   const email = parsed.data;
 
   // Tope por correo: sin él, alguien podría llenar de mensajes la bandeja de un tercero.
-  const emailLimit = checkRateLimit(`reenviar-email:${email}`, { max: 3, windowMs: 60 * 60 * 1000 });
+  const emailLimit = await checkRateLimit(`reenviar-email:${email}`, { max: 3, windowMs: 60 * 60 * 1000 });
   if (emailLimit.allowed) await resendVerificationTo(email);
 
   // Misma respuesta exista o no la cuenta, o se haya llegado al tope.

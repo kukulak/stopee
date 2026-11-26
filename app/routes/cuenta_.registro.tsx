@@ -44,7 +44,7 @@ export async function action({ request }: ActionFunctionArgs) {
   // Límite antes de leer el cuerpo: evita que un script cree cuentas en serie
   // (y que gaste CPU de bcrypt) con correos ajenos.
   const ip = getClientIp(request);
-  const rateLimit = checkRateLimit(`cuenta-registro:${ip}`, { max: 5, windowMs: 60 * 60 * 1000 });
+  const rateLimit = await checkRateLimit(`cuenta-registro:${ip}`, { max: 5, windowMs: 60 * 60 * 1000 });
   if (!rateLimit.allowed) {
     return data({ error: rateLimitMessage(rateLimit.retryAfterSeconds) }, { status: 429 });
   }
@@ -69,7 +69,7 @@ export async function action({ request }: ActionFunctionArgs) {
   const dogName = parsed.data.dogName ?? "";
 
   // Tope por correo: sin él, alguien podría llenar de mensajes la bandeja de un tercero.
-  const emailLimit = checkRateLimit(`registro-email:${email}`, { max: 3, windowMs: 60 * 60 * 1000 });
+  const emailLimit = await checkRateLimit(`registro-email:${email}`, { max: 3, windowMs: 60 * 60 * 1000 });
 
   await connectDB();
   const existing = await UserModel.findOne({ email }).select("email name emailVerifiedAt").lean();

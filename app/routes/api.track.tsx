@@ -16,7 +16,7 @@ export async function action({ request }: ActionFunctionArgs) {
   // minuto) — solo para frenar un flood automatizado, no fallar en silencio
   // no importa aquí (no es una acción que el usuario esté esperando ver).
   const ip = getClientIp(request);
-  const rateLimit = checkRateLimit(`track:${ip}`, { max: 120, windowMs: 60 * 1000 });
+  const rateLimit = await checkRateLimit(`track:${ip}`, { max: 120, windowMs: 60 * 1000 });
   if (!rateLimit.allowed) {
     return data({ ok: false }, { status: 429 });
   }

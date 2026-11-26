@@ -31,7 +31,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
   // Esta página no pide sesión (quien compra sin cuenta también llega aquí), así que
   // se limita para que no sirva de atajo a Stripe.
-  const limit = checkRateLimit(`gracias:${getClientIp(request)}`, { max: 60, windowMs: 10 * 60 * 1000 });
+  const limit = await checkRateLimit(`gracias:${getClientIp(request)}`, { max: 60, windowMs: 10 * 60 * 1000 });
   if (!limit.allowed) return redirect("/tienda");
 
   // Stripe confirma que el pago existe y se completó: sin esto, cualquier id con la forma

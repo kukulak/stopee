@@ -33,7 +33,7 @@ export async function action({ request }: ActionFunctionArgs) {
   const intent = String(formData.get("intent") ?? "");
   const code = String(formData.get("code") ?? "");
 
-  const limit = checkRateLimit(`admin-2fa-setup:${String(admin._id)}`, { max: 8, windowMs: 10 * 60 * 1000 });
+  const limit = await checkRateLimit(`admin-2fa-setup:${String(admin._id)}`, { max: 8, windowMs: 10 * 60 * 1000 });
   if (!limit.allowed) return data({ error: rateLimitMessage(limit.retryAfterSeconds) }, { status: 429 });
   if (!code.trim()) return data({ error: "Escribe el código de 6 dígitos." }, { status: 400 });
 

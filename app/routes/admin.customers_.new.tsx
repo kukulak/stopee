@@ -34,7 +34,7 @@ const createSchema = z.object({
 export async function action({ request }: ActionFunctionArgs) {
   const viewer = await requireAdmin(request);
 
-  const limit = checkRateLimit(`admin-create-user:${String(viewer._id)}`, { max: 30, windowMs: 60 * 60 * 1000 });
+  const limit = await checkRateLimit(`admin-create-user:${String(viewer._id)}`, { max: 30, windowMs: 60 * 60 * 1000 });
   if (!limit.allowed) return data({ error: rateLimitMessage(limit.retryAfterSeconds), created: null }, { status: 429 });
 
   const formData = await request.formData();

@@ -23,7 +23,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
 }
 
 export async function action({ request }: ActionFunctionArgs) {
-  const limit = checkRateLimit(`restablecer:${getClientIp(request)}`, { max: 10, windowMs: 15 * 60 * 1000 });
+  const limit = await checkRateLimit(`restablecer:${getClientIp(request)}`, { max: 10, windowMs: 15 * 60 * 1000 });
   if (!limit.allowed) {
     return data({ error: rateLimitMessage(limit.retryAfterSeconds), expired: false }, { status: 429 });
   }

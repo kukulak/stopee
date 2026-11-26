@@ -12,7 +12,7 @@ export async function action({ request }: ActionFunctionArgs) {
   const done = new Response(null, { status: 204 });
 
   // Un navegador con un píxel bloqueado puede mandar muchos avisos seguidos.
-  if (!checkRateLimit(`csp:${getClientIp(request)}`, { max: 30, windowMs: 60 * 1000 }).allowed) return done;
+  if (!(await checkRateLimit(`csp:${getClientIp(request)}`, { max: 30, windowMs: 60 * 1000 })).allowed) return done;
 
   let body = "";
   try {

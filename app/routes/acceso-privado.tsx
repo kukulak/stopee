@@ -43,7 +43,7 @@ export async function action({ request }: ActionFunctionArgs) {
   const ip = getClientIp(request);
   // Sin este límite, alguien podría probar contraseñas por fuerza bruta —
   // el código es una frase de campaña, no algo con entropía de verdad.
-  const rateLimit = checkRateLimit(`gate:${ip}`, { max: 10, windowMs: 10 * 60 * 1000 });
+  const rateLimit = await checkRateLimit(`gate:${ip}`, { max: 10, windowMs: 10 * 60 * 1000 });
   if (!rateLimit.allowed) {
     return data({ error: rateLimitMessage(rateLimit.retryAfterSeconds) }, { status: 429 });
   }

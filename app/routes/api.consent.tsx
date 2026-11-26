@@ -16,7 +16,7 @@ import { ConsentLogModel } from "~/models/consentLog.server";
  * fabricar un «acepto» en nombre de un visitante.
  */
 export async function action({ request }: ActionFunctionArgs) {
-  const rateLimit = checkRateLimit(`consent:${getClientIp(request)}`, { max: 30, windowMs: 60 * 1000 });
+  const rateLimit = await checkRateLimit(`consent:${getClientIp(request)}`, { max: 30, windowMs: 60 * 1000 });
   if (!rateLimit.allowed) return data({ ok: false as const }, { status: 429 });
 
   const form = await request.formData();

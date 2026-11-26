@@ -25,7 +25,7 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export async function action({ request }: ActionFunctionArgs) {
   const ip = getClientIp(request);
-  const ipLimit = checkRateLimit(`olvide:${ip}`, { max: 5, windowMs: 60 * 60 * 1000 });
+  const ipLimit = await checkRateLimit(`olvide:${ip}`, { max: 5, windowMs: 60 * 60 * 1000 });
   if (!ipLimit.allowed) {
     return data({ error: rateLimitMessage(ipLimit.retryAfterSeconds), sentTo: null, maskedEmail: null }, { status: 429 });
   }
@@ -38,7 +38,7 @@ export async function action({ request }: ActionFunctionArgs) {
   const email = parsed.data;
 
   // Tope por correo: sin él, alguien podría llenar de mensajes la bandeja de un tercero.
-  const emailLimit = checkRateLimit(`olvide-email:${email}`, { max: 3, windowMs: 60 * 60 * 1000 });
+  const emailLimit = await checkRateLimit(`olvide-email:${email}`, { max: 3, windowMs: 60 * 60 * 1000 });
   if (emailLimit.allowed) {
     await Promise.all([
       (async () => {

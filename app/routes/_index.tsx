@@ -153,7 +153,7 @@ export async function action({ request }: ActionFunctionArgs) {
   // equivoca de correo un par de veces, no a un script mandando cientos de
   // altas por minuto. Va antes de leer el cuerpo del formulario.
   const ip = getClientIp(request)
-  const rateLimit = checkRateLimit(`waitlist:${ip}`, { max: 5, windowMs: 60 * 60 * 1000 })
+  const rateLimit = await checkRateLimit(`waitlist:${ip}`, { max: 5, windowMs: 60 * 60 * 1000 })
   if (!rateLimit.allowed) {
     return data({ ok: false, error: rateLimitMessage(rateLimit.retryAfterSeconds) }, { status: 429 })
   }

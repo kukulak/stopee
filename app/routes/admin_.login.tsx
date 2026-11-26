@@ -51,7 +51,7 @@ export async function action({ request }: ActionFunctionArgs) {
   // se equivoque de contraseña un par de veces, no para probar miles de
   // combinaciones por fuerza bruta contra el panel de administrador.
   const ip = getClientIp(request);
-  const rateLimit = checkRateLimit(`admin-login:${ip}`, { max: 8, windowMs: 10 * 60 * 1000 });
+  const rateLimit = await checkRateLimit(`admin-login:${ip}`, { max: 8, windowMs: 10 * 60 * 1000 });
   if (!rateLimit.allowed) {
     return data({ error: rateLimitMessage(rateLimit.retryAfterSeconds) }, { status: 429 });
   }
@@ -67,7 +67,7 @@ export async function action({ request }: ActionFunctionArgs) {
 
   // Además del límite por IP: un atacante que rota de IP seguiría probando
   // contraseñas contra la misma cuenta sin este tope por correo.
-  const emailLimit = checkRateLimit(`admin-login-email:${email}`, { max: 10, windowMs: 15 * 60 * 1000 });
+  const emailLimit = await checkRateLimit(`admin-login-email:${email}`, { max: 10, windowMs: 15 * 60 * 1000 });
   if (!emailLimit.allowed) {
     return data({ error: rateLimitMessage(emailLimit.retryAfterSeconds) }, { status: 429 });
   }

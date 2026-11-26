@@ -165,7 +165,7 @@ export async function action({ request }: ActionFunctionArgs) {
     if (user.emailVerifiedAt) {
       return data({ ok: true, savedIntent: "resend-verification" as const, error: null as string | null });
     }
-    const limit = checkRateLimit(`resend-verification:${userId}`, { max: 3, windowMs: 60 * 60 * 1000 });
+    const limit = await checkRateLimit(`resend-verification:${userId}`, { max: 3, windowMs: 60 * 60 * 1000 });
     if (!limit.allowed) {
       return data({ ok: false, savedIntent: "resend-verification" as const, error: rateLimitMessage(limit.retryAfterSeconds) }, { status: 429 });
     }
@@ -187,7 +187,7 @@ export async function action({ request }: ActionFunctionArgs) {
 
     // Pedir la contraseña evita que alguien con acceso momentáneo a una sesión
     // abierta (computadora compartida, teléfono prestado) borre la cuenta.
-    const passwordLimit = checkRateLimit(`delete-account:${userId}`, { max: 5, windowMs: 15 * 60 * 1000 });
+    const passwordLimit = await checkRateLimit(`delete-account:${userId}`, { max: 5, windowMs: 15 * 60 * 1000 });
     if (!passwordLimit.allowed) {
       return data(
         { ok: false, savedIntent: "delete-account" as const, error: rateLimitMessage(passwordLimit.retryAfterSeconds) },

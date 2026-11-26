@@ -14,7 +14,7 @@ import { addressToMetadata, outOfZoneMessage, readAddressFields, validateDeliver
 export async function action({ request }: ActionFunctionArgs) {
   await requireStoreAccessApi(request);
   const ip = getClientIp(request);
-  const rateLimit = checkRateLimit(`checkout:${ip}`, { max: 20, windowMs: 10 * 60 * 1000 });
+  const rateLimit = await checkRateLimit(`checkout:${ip}`, { max: 20, windowMs: 10 * 60 * 1000 });
   if (!rateLimit.allowed) {
     return data({ error: rateLimitMessage(rateLimit.retryAfterSeconds) }, { status: 429 });
   }

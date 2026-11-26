@@ -17,7 +17,7 @@ const emailSchema = z.string().email().max(254);
  */
 export async function action({ request }: ActionFunctionArgs) {
   const ip = getClientIp(request);
-  const rateLimit = checkRateLimit(`cobertura:${ip}`, { max: 10, windowMs: 10 * 60 * 1000 });
+  const rateLimit = await checkRateLimit(`cobertura:${ip}`, { max: 10, windowMs: 10 * 60 * 1000 });
   if (!rateLimit.allowed) {
     return data({ ok: false as const, error: rateLimitMessage(rateLimit.retryAfterSeconds) }, { status: 429 });
   }

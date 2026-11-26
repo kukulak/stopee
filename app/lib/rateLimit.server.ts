@@ -1,12 +1,16 @@
 /**
- * Rate limiting en memoria, por proceso — suficiente para un solo servidor
- * (que es como corre STOPee hoy). Si en algún momento se despliega en
- * varias instancias detrás de un balanceador, esto habría que moverlo a
- * Redis o Mongo para que el conteo se comparta entre procesos; mientras
- * tanto, esto ya cierra la puerta a fuerza bruta y spam automatizado, que
- * es el riesgo real de no tener nada.
+ * Límite de intentos (fuerza bruta, spam de formularios, mensajes a bandejas ajenas).
+ *
+ * Los contadores viven en MongoDB (colección `ratelimits`, con índice TTL que los borra solos) y se
+ * actualizan con UNA operación atómica, así que todas las instancias de Cloud Run comparten el mismo
+ * conteo: escalar a más instancias no multiplica los intentos permitidos, ni dos peticiones a la vez
+ * pueden colarse por encima del tope.
+ *
+ * Si Mongo no responde, se cae a un contador en memoria de ese proceso (mejor que dejar la puerta
+ * abierta, y mejor que tumbar el login por un fallo del contador). Queda un aviso en los registros.
  */
 import { BlockList, isIP } from "node:net";
+import { RateLimitModel } from "~/models/rateLimit.server";
 
 type Bucket = { count: number; resetAt: number };
 
@@ -18,16 +22,14 @@ function cleanupExpired(now: number) {
   }
 }
 
+export type RateLimitResult = { allowed: boolean; retryAfterSeconds: number };
+type RateLimitOptions = { max: number; windowMs: number };
+
 /**
- * Registra un intento bajo `key` y dice si debe permitirse. `key` debe
- * incluir tanto el identificador del cliente (IP) como la acción que se
- * está limitando (ej. "login:203.0.113.4"), para que un límite no se mezcle
- * con otro.
+ * Contador en la memoria de ESTE proceso. Es el respaldo cuando Mongo no está disponible; el
+ * límite real es `checkRateLimit`.
  */
-export function checkRateLimit(
-  key: string,
-  { max, windowMs }: { max: number; windowMs: number },
-): { allowed: boolean; retryAfterSeconds: number } {
+export function checkRateLimitMemory(key: string, { max, windowMs }: RateLimitOptions): RateLimitResult {
   const now = Date.now();
   cleanupExpired(now);
 
@@ -43,6 +45,83 @@ export function checkRateLimit(
 
   bucket.count += 1;
   return { allowed: true, retryAfterSeconds: 0 };
+}
+
+const EPOCH = new Date(0);
+let indexesReady: Promise<unknown> | undefined;
+let lastFallbackWarning = 0;
+
+async function checkRateLimitMongo(key: string, { max, windowMs }: RateLimitOptions): Promise<RateLimitResult> {
+  // Se importa aquí (y no arriba) para que las pruebas que solo usan getClientIp no necesiten una base de datos.
+  const { connectDB } = await import("~/lib/db.server");
+  await connectDB();
+  // Garantiza el índice TTL antes del primer uso en este proceso (es idempotente).
+  indexesReady ??= RateLimitModel.init().catch((error) => {
+    indexesReady = undefined;
+    throw error;
+  });
+  await indexesReady;
+
+  const now = new Date();
+  const newResetAt = new Date(now.getTime() + windowMs);
+  // Una sola operación atómica: si la ventana sigue abierta suma 1 y la conserva; si venció (o no
+  // existía) arranca una nueva con 1. En una sola etapa `$set` todas las expresiones leen el
+  // documento tal como estaba, así `count` y `resetAt` se deciden con el mismo valor anterior.
+  const windowOpen = { $gt: [{ $ifNull: ["$resetAt", EPOCH] }, now] };
+  const update = [
+    {
+      $set: {
+        count: { $cond: [windowOpen, { $add: [{ $ifNull: ["$count", 0] }, 1] }, 1] },
+        resetAt: { $cond: [windowOpen, "$resetAt", newResetAt] },
+      },
+    },
+  ];
+
+  const run = () =>
+    RateLimitModel.collection.findOneAndUpdate({ _id: key as never }, update, {
+      upsert: true,
+      returnDocument: "after",
+    });
+
+  let doc;
+  try {
+    doc = await run();
+  } catch (error) {
+    // Dos peticiones a la vez crean el mismo contador: la segunda choca con el _id y basta repetirla.
+    if ((error as { code?: number }).code !== 11000) throw error;
+    doc = await run();
+  }
+  if (!doc) throw new Error("Mongo no devolvió el contador.");
+
+  if (doc.count <= max) return { allowed: true, retryAfterSeconds: 0 };
+  return { allowed: false, retryAfterSeconds: Math.max(1, Math.ceil((doc.resetAt.getTime() - now.getTime()) / 1000)) };
+}
+
+/**
+ * Registra un intento bajo `key` y dice si debe permitirse. `key` debe
+ * incluir tanto el identificador del cliente (IP) como la acción que se
+ * está limitando (ej. "login:203.0.113.4"), para que un límite no se mezcle
+ * con otro.
+ */
+export async function checkRateLimit(key: string, options: RateLimitOptions): Promise<RateLimitResult> {
+  try {
+    return await checkRateLimitMongo(key, options);
+  } catch (error) {
+    // Un aviso por minuto como máximo: con la base caída cada petición pasaría por aquí.
+    const now = Date.now();
+    if (now - lastFallbackWarning > 60_000) {
+      lastFallbackWarning = now;
+      console.warn(
+        JSON.stringify({
+          level: "warn",
+          context: "rate-limit.fallback",
+          message: "No se pudo usar MongoDB para el límite de intentos; se usa el contador en memoria de este proceso.",
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      );
+    }
+    return checkRateLimitMemory(key, options);
+  }
 }
 
 /** Borra todos los contadores. Solo para las pruebas: cada una debe empezar sin intentos previos. */

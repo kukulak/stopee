@@ -12,7 +12,7 @@ export const meta: MetaFunction = () => [{ title: "Confirmar correo — STOPee" 
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const headers = { "Referrer-Policy": "no-referrer" };
-  const limit = checkRateLimit(`verificar:${getClientIp(request)}`, { max: 30, windowMs: 10 * 60 * 1000 });
+  const limit = await checkRateLimit(`verificar:${getClientIp(request)}`, { max: 30, windowMs: 10 * 60 * 1000 });
   if (!limit.allowed) return data({ status: "invalid" as const }, { status: 429, headers });
 
   const token = new URL(request.url).searchParams.get("token");

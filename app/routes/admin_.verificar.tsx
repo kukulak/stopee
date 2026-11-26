@@ -24,8 +24,8 @@ export async function action({ request }: ActionFunctionArgs) {
   if (!pending) return redirect("/admin/login");
 
   // Un código de 6 dígitos tiene un millón de combinaciones: sin tope, se adivinaría a fuerza bruta.
-  const byAccount = checkRateLimit(`admin-2fa:${pending.userId}`, { max: 5, windowMs: 10 * 60 * 1000 });
-  const byIp = checkRateLimit(`admin-2fa-ip:${getClientIp(request)}`, { max: 20, windowMs: 10 * 60 * 1000 });
+  const byAccount = await checkRateLimit(`admin-2fa:${pending.userId}`, { max: 5, windowMs: 10 * 60 * 1000 });
+  const byIp = await checkRateLimit(`admin-2fa-ip:${getClientIp(request)}`, { max: 20, windowMs: 10 * 60 * 1000 });
   if (!byAccount.allowed || !byIp.allowed) {
     const wait = Math.max(byAccount.retryAfterSeconds, byIp.retryAfterSeconds);
     return data({ error: rateLimitMessage(wait) }, { status: 429 });

@@ -84,7 +84,7 @@ export async function action({ request }: ActionFunctionArgs) {
 
   if (intent === "apply-coupon") {
     // Sin tope, alguien podría probar códigos uno tras otro hasta dar con uno vigente.
-    const limit = checkRateLimit(`apply-coupon:${getClientIp(request)}`, { max: 15, windowMs: 10 * 60 * 1000 });
+    const limit = await checkRateLimit(`apply-coupon:${getClientIp(request)}`, { max: 15, windowMs: 10 * 60 * 1000 });
     if (!limit.allowed) {
       return data({ error: rateLimitMessage(limit.retryAfterSeconds) }, { status: 429 });
     }
