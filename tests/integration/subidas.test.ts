@@ -24,6 +24,10 @@ function multipart(fields: Record<string, string | File | File[]>) {
 
 const file = (bytes: Uint8Array | Buffer, name: string, type: string) => new File([new Uint8Array(bytes)], name, { type });
 
+/** Los primeros bytes de un .mp4 de verdad (caja "ftyp"): sin esto la subida lo rechaza por no parecer un video. */
+const MP4_HEAD = Buffer.from("00000018667479706d703432", "hex");
+const mp4 = (rest: Buffer) => Buffer.concat([MP4_HEAD, rest]);
+
 async function png(width: number, height: number) {
   return sharp({ create: { width, height, channels: 3, background: "#B5D334" } }).png().toBuffer();
 }
@@ -89,7 +93,7 @@ describe("subidas en disco (desarrollo)", () => {
   });
 
   it("un video se guarda completo y sin cambios", async () => {
-    const bytes = randomBytes(300_000);
+    const bytes = mp4(randomBytes(300_000));
     const form = await upload.parseCatalogFormData(multipart({ videoFile: file(bytes, "demo.mp4", "video/mp4") }));
     const url = form.get("videoFile") as string;
     expect(url).toMatch(/^\/uploads\/[0-9a-f-]{36}\.mp4$/);
@@ -121,6 +125,22 @@ describe("subidas en disco (desarrollo)", () => {
     const form = await upload.parseCatalogFormData(multipart({ images: file(Buffer.from("<script>alert(1)</script>"), name, type), nombre: "Producto" }));
     expect(form.get("images")).toBeNull();
     expect(form.get("nombre")).toBe("Producto"); // el resto del formulario sigue llegando
+    expect(await savedFiles()).toEqual([]);
+  });
+
+  it.each([
+    ["un .mp4 que en realidad es una página", "video.mp4", "video/mp4"],
+    ["un .gif que en realidad es una página", "animado.gif", "image/gif"],
+    ["un .webp que en realidad es una página", "foto.webp", "image/webp"],
+    ["un .pdf que en realidad es una página", "doc.pdf", "application/pdf"],
+    ["un .png que en realidad es una página (no se puede leer como imagen)", "foto.png", "image/png"],
+    ["un .jpg que en realidad es una página", "foto.jpg", "image/jpeg"],
+  ])("rechaza %s: el nombre y el tipo los escribe quien sube el archivo, los primeros bytes no", async (_nombre, name, type) => {
+    const form = await upload.parseCatalogFormData(
+      multipart({ images: file(Buffer.from("<html><script>alert(1)</script></html>".repeat(5)), name, type), nombre: "Producto" }),
+    );
+    expect(form.get("images")).toBeNull();
+    expect(form.get("nombre")).toBe("Producto");
     expect(await savedFiles()).toEqual([]);
   });
 
@@ -260,7 +280,7 @@ describe("subidas al bucket de Cloud Storage (producción)", () => {
   });
 
   it("un video se envía al bucket por partes, completo", async () => {
-    const bytes = randomBytes(500_000);
+    const bytes = mp4(randomBytes(500_000));
     const form = await upload.parseCatalogFormData(multipart({ videoFile: file(bytes, "demo.mp4", "video/mp4") }));
     const url = form.get("videoFile") as string;
 

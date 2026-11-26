@@ -153,6 +153,23 @@ export function verifyEmailEmail(data: { name?: string | null; url: string }) {
   return { subject: "Confirma tu correo en STOPee", html, text };
 }
 
+/**
+ * Para quien intentó crear una cuenta con un correo que ya tiene una. La pantalla del registro responde
+ * igual exista o no la cuenta (así nadie puede averiguar qué correos están registrados); la diferencia
+ * llega solo a la bandeja de ese correo.
+ */
+export function accountAlreadyExistsEmail() {
+  const { html, text } = renderLayout({
+    title: "Ya tienes una cuenta en STOPee",
+    paragraphs: [
+      "Alguien intentó crear una cuenta en STOPee con este correo, pero ya tienes una.",
+      "Si fuiste tú, entra con tu contraseña. Si no la recuerdas, puedes crear una nueva. Si no fuiste tú, ignora este mensaje: tu cuenta sigue igual.",
+    ],
+    action: { label: "Entrar a mi cuenta", url: appUrl("/cuenta/entrar") },
+  });
+  return { subject: "Ya tienes una cuenta en STOPee", html, text };
+}
+
 /** Enlace para crear una contraseña nueva. */
 export function resetPasswordEmail(data: { url: string }) {
   const { html, text } = renderLayout({

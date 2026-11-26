@@ -44,6 +44,38 @@ export function isAllowedUpload(filename: string, contentType: string): boolean 
   return Boolean(allowedContentTypes && allowedContentTypes.includes(contentType));
 }
 
+/**
+ * El nombre y el tipo que declara el navegador los escribe quien sube el archivo: no prueban nada. La firma
+ * (los primeros bytes) sí: un ".mp4" que empieza con "<html" no es un video. Devuelve si los bytes coinciden
+ * con lo que la extensión promete.
+ */
+/** El contenido no es lo que dice ser: el archivo se descarta (como un tipo no permitido), no se rompe el formulario. */
+class InvalidUploadError extends Error {}
+
+export function matchesFileSignature(ext: string, head: Uint8Array): boolean {
+  const ascii = (from: number, to: number) => Buffer.from(head.subarray(from, to)).toString("latin1");
+  switch (ext) {
+    case ".gif":
+      return ascii(0, 4) === "GIF8";
+    case ".webp":
+      return ascii(0, 4) === "RIFF" && ascii(8, 12) === "WEBP";
+    case ".pdf":
+      return ascii(0, 5) === "%PDF-";
+    case ".mp4":
+    case ".mov":
+      return ascii(4, 8) === "ftyp";
+    case ".webm":
+      return head.length >= 4 && head[0] === 0x1a && head[1] === 0x45 && head[2] === 0xdf && head[3] === 0xa3;
+    case ".jpg":
+    case ".jpeg":
+      return head.length >= 3 && head[0] === 0xff && head[1] === 0xd8 && head[2] === 0xff;
+    case ".png":
+      return head.length >= 4 && head[0] === 0x89 && ascii(1, 4) === "PNG";
+    default:
+      return false;
+  }
+}
+
 /** Nombre de archivo que este módulo asigna: <uuid>.<extensión permitida> (nunca el nombre que mandó el navegador). */
 const STORED_NAME = new RegExp(
   `^[0-9a-f-]{36}\\.(${Object.keys(ALLOWED_UPLOAD_TYPES)
@@ -79,13 +111,32 @@ async function optimizeImage(buffer: Buffer): Promise<Buffer | null> {
 /** Los bytes de un archivo subido, por partes (sin tenerlo completo en memoria), con tope de tamaño. */
 async function* chunksOf(upload: FileUpload, maxBytes: number): AsyncGenerator<Uint8Array> {
   const reader = upload.stream().getReader();
+  const ext = path.extname(upload.name).toLowerCase();
   let bytes = 0;
+  let head = Buffer.alloc(0);
+  let signatureChecked = false;
   try {
     for (;;) {
       const { done, value } = await reader.read();
-      if (done) return;
+      if (done) {
+        // Un archivo más corto que la firma tampoco pasa.
+        if (!signatureChecked) {
+          if (!matchesFileSignature(ext, head)) throw new InvalidUploadError("El contenido del archivo no coincide con su tipo.");
+          if (head.length > 0) yield head;
+        }
+        return;
+      }
       bytes += value.byteLength;
       if (bytes > maxBytes) throw new Error("El archivo es demasiado grande.");
+      if (!signatureChecked) {
+        // Se junta lo mínimo para ver la firma antes de dejar pasar el primer byte hacia el bucket o el disco.
+        head = Buffer.concat([head, Buffer.from(value)]);
+        if (head.length < 16) continue;
+        if (!matchesFileSignature(ext, head)) throw new InvalidUploadError("El contenido del archivo no coincide con su tipo.");
+        signatureChecked = true;
+        yield head;
+        continue;
+      }
       yield value;
     }
   } finally {
@@ -107,10 +158,12 @@ async function readLimited(upload: FileUpload, maxBytes: number): Promise<Buffer
 async function saveOptimizedImage(upload: FileUpload): Promise<string> {
   const original = await readLimited(upload, MAX_IMAGE_BYTES);
   const optimized = await optimizeImage(original);
-  const body = optimized ?? original;
-  const ext = optimized ? ".webp" : path.extname(upload.name).toLowerCase();
-  const outType = optimized ? "image/webp" : upload.type;
-  const name = `${randomUUID()}${ext}`;
+  // Si no se puede leer como imagen, no lo es: un archivo con nombre ".png" y otro contenido no se
+  // guarda "tal cual" en una carpeta pública.
+  if (!optimized) throw new InvalidUploadError("El archivo no es una imagen válida.");
+  const body = optimized;
+  const name = `${randomUUID()}.webp`;
+  const outType = "image/webp";
 
   if (GCS_BUCKET) {
     storageClient ??= new Storage();
@@ -166,8 +219,13 @@ async function saveToDisk(upload: FileUpload): Promise<string> {
  */
 const uploadHandler: FileUploadHandler = async (upload) => {
   if (!upload.name || !isAllowedUpload(upload.name, upload.type)) return null;
-  if (OPTIMIZABLE_IMAGE_TYPES.has(upload.type)) return saveOptimizedImage(upload);
-  return GCS_BUCKET ? saveToBucket(upload) : saveToDisk(upload);
+  try {
+    if (OPTIMIZABLE_IMAGE_TYPES.has(upload.type)) return await saveOptimizedImage(upload);
+    return await (GCS_BUCKET ? saveToBucket(upload) : saveToDisk(upload));
+  } catch (error) {
+    if (error instanceof InvalidUploadError) return null;
+    throw error;
+  }
 };
 
 /**

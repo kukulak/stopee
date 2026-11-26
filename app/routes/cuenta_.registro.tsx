@@ -9,7 +9,8 @@ import { connectDB } from "~/lib/db.server";
 import { hashPassword, UserModel } from "~/models/user.server";
 import { getUserId } from "~/lib/session.server";
 import { passwordProblem } from "~/lib/password";
-import { sendVerificationEmail, settleWithin } from "~/lib/accountEmails.server";
+import { sendAccountAlreadyExistsNotice, sendVerificationEmail, settleWithin } from "~/lib/accountEmails.server";
+import { maskEmail } from "~/lib/maskEmail";
 import { checkRateLimit, getClientIp, rateLimitMessage } from "~/lib/rateLimit.server";
 import { ResendVerification } from "~/components/ui/ResendVerification";
 import { CheckIcon } from "~/components/ui/Icons";
@@ -67,21 +68,46 @@ export async function action({ request }: ActionFunctionArgs) {
   const name = parsed.data.name ?? "";
   const dogName = parsed.data.dogName ?? "";
 
+  // Tope por correo: sin él, alguien podría llenar de mensajes la bandeja de un tercero.
+  const emailLimit = checkRateLimit(`registro-email:${email}`, { max: 3, windowMs: 60 * 60 * 1000 });
+
   await connectDB();
-  const existing = await UserModel.findOne({ email });
+  const existing = await UserModel.findOne({ email }).select("email name emailVerifiedAt").lean();
+
+  // La pantalla responde IGUAL exista o no la cuenta: decir "ese correo ya está registrado" le
+  // permitiría a cualquiera comprobar qué correos tienen cuenta. Lo que cambia llega solo a la
+  // bandeja de ese correo. El cifrado de la contraseña se paga también para una cuenta existente,
+  // así lo que tarda la respuesta tampoco delata el caso.
+  const passwordHash = await hashPassword(password);
+
   if (existing) {
-    return data({ error: "Ya existe una cuenta con ese correo." }, { status: 409 });
+    if (emailLimit.allowed) {
+      // Sin confirmar: lo útil es otro enlace de confirmación. Ya confirmada: un aviso de que ya tiene cuenta.
+      await settleWithin(
+        existing.emailVerifiedAt
+          ? sendAccountAlreadyExistsNotice(existing)
+          : sendVerificationEmail(existing).then(({ result }) => result),
+        2500,
+      );
+    }
+    return data({ error: null, sentTo: email, maskedEmail: maskEmail(email) });
   }
 
-  const passwordHash = await hashPassword(password);
-  const user = await UserModel.create({ email, passwordHash, name, dogName });
+  let user;
+  try {
+    user = await UserModel.create({ email, passwordHash, name, dogName });
+  } catch (error) {
+    // Dos registros del mismo correo a la vez: el segundo choca con el índice único y se trata como "ya existe".
+    if ((error as { code?: number }).code === 11000) return data({ error: null, sentTo: email, maskedEmail: maskEmail(email) });
+    throw error;
+  }
 
   // La cuenta no entra hasta confirmar el correo (ver emailVerification.server.ts), así
   // que no se abre sesión aquí. Si Brevo tarda no se hace esperar a la clienta (el envío
   // sigue en segundo plano) y siempre puede pedir otro enlace al intentar entrar.
-  await settleWithin(sendVerificationEmail(user), 2500);
+  if (emailLimit.allowed) await settleWithin(sendVerificationEmail(user), 2500);
 
-  return data({ error: null, sentTo: email });
+  return data({ error: null, sentTo: email, maskedEmail: maskEmail(email) });
 }
 
 export default function Registro() {
@@ -107,8 +133,8 @@ export default function Registro() {
             </span>
             <h1 className="mt-4 font-display text-2xl font-black text-carbon">Revisa tu correo</h1>
             <p className="mt-2 text-carbon/70">
-              Te enviamos un enlace a <span className="break-all font-semibold text-carbon">{actionData.sentTo}</span>.
-              Ábrelo para confirmar que es tu correo; después ya puedes entrar.
+              Enviamos un mensaje a <span className="break-all font-semibold text-carbon">{actionData.maskedEmail}</span>.
+              Ábrelo para continuar; después ya puedes entrar.
             </p>
             <p className="mt-2 text-sm text-carbon/60">Si no lo ves en unos minutos, revisa la carpeta de spam.</p>
             <div className="mt-5">

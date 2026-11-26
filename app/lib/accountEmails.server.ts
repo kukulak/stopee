@@ -1,6 +1,7 @@
 import { sendEmail, isMailConfigured } from "~/lib/mail.server";
 import { issueToken } from "~/lib/authTokens.server";
 import {
+  accountAlreadyExistsEmail,
   accountInvitationEmail,
   appUrl,
   passwordChangedEmail,
@@ -12,11 +13,13 @@ type Recipient = { _id: unknown; email: string; name?: string | null };
 
 /**
  * En desarrollo, sin Brevo configurado, el correo no sale: se imprime el enlace
- * en la terminal para poder probar el flujo completo. En producción nunca se
- * escribe un enlace (es una llave de acceso) en los registros.
+ * en la terminal para poder probar el flujo completo. Un enlace es una llave de
+ * acceso, así que esto falla hacia el lado seguro: solo se imprime si el servidor
+ * dice EXPLÍCITAMENTE que es de desarrollo (`npm run dev`) y no corre en Cloud Run.
+ * Una variable olvidada en el servidor real deja de imprimir, no empieza a hacerlo.
  */
 function devLog(kind: string, url: string) {
-  if (process.env.NODE_ENV === "production" || isMailConfigured()) return;
+  if (process.env.NODE_ENV !== "development" || process.env.K_SERVICE || isMailConfigured()) return;
   console.info(`[dev] ${kind}: ${url}`);
 }
 
@@ -27,6 +30,11 @@ export async function sendVerificationEmail(user: Recipient) {
   const result = await sendEmail({ to: { email: user.email, name: user.name || undefined }, ...verifyEmailEmail({ name: user.name, url }) });
   // El enlace también se devuelve para que un administrador pueda pasarlo a mano si el correo no sale.
   return { url, result };
+}
+
+/** Para quien intentó registrarse con un correo que ya tiene cuenta (ver accountAlreadyExistsEmail). */
+export async function sendAccountAlreadyExistsNotice(user: Recipient) {
+  return sendEmail({ to: { email: user.email, name: user.name || undefined }, ...accountAlreadyExistsEmail() });
 }
 
 export async function sendPasswordResetEmail(user: Recipient) {

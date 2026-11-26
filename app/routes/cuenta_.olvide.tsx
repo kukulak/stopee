@@ -8,6 +8,7 @@ import { UserModel } from "~/models/user.server";
 import { getUserId } from "~/lib/session.server";
 import { checkRateLimit, getClientIp, rateLimitMessage } from "~/lib/rateLimit.server";
 import { sendPasswordResetEmail } from "~/lib/accountEmails.server";
+import { maskEmail } from "~/lib/maskEmail";
 
 export const meta: MetaFunction = () => [{ title: "Recuperar contraseña — STOPee" }, { name: "robots", content: "noindex" }];
 
@@ -26,13 +27,13 @@ export async function action({ request }: ActionFunctionArgs) {
   const ip = getClientIp(request);
   const ipLimit = checkRateLimit(`olvide:${ip}`, { max: 5, windowMs: 60 * 60 * 1000 });
   if (!ipLimit.allowed) {
-    return data({ error: rateLimitMessage(ipLimit.retryAfterSeconds), sentTo: null }, { status: 429 });
+    return data({ error: rateLimitMessage(ipLimit.retryAfterSeconds), sentTo: null, maskedEmail: null }, { status: 429 });
   }
 
   const formData = await request.formData();
   const parsed = emailSchema.safeParse(formData.get("email"));
   if (!parsed.success) {
-    return data({ error: "Ingresa un correo válido.", sentTo: null }, { status: 400 });
+    return data({ error: "Ingresa un correo válido.", sentTo: null, maskedEmail: null }, { status: 400 });
   }
   const email = parsed.data;
 
@@ -52,7 +53,7 @@ export async function action({ request }: ActionFunctionArgs) {
   }
 
   // Misma respuesta exista o no la cuenta (o se haya llegado al tope): no se revela qué correos están registrados.
-  return data({ error: null, sentTo: email });
+  return data({ error: null, sentTo: email, maskedEmail: maskEmail(email) });
 }
 
 export default function Olvide() {
@@ -71,8 +72,8 @@ export default function Olvide() {
           <div role="status" className="mt-6">
             <h1 className="font-display text-2xl font-black text-carbon">Revisa tu correo</h1>
             <p className="mt-2 text-carbon/70">
-              Si hay una cuenta con <strong className="break-all text-carbon">{actionData.sentTo}</strong>, te enviamos un
-              enlace para crear una contraseña nueva. Funciona durante 1 hora.
+              Si los datos coinciden con una cuenta, enviaremos un enlace para crear una contraseña nueva a{" "}
+              <strong className="break-all text-carbon">{actionData.maskedEmail}</strong>. Funciona durante 1 hora.
             </p>
             <p className="mt-3 text-sm text-carbon/60">
               ¿No llega? Revisa la carpeta de spam o espera unos minutos antes de pedirlo otra vez.

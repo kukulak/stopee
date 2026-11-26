@@ -60,7 +60,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     {
       question: "¿Cómo se usa?",
       answer:
-        "Agita ligeramente el envase (sin exagerar, para que no se forme espuma), llena la tapa dosificadora de concentrado, vacíala en tu botella aplicadora de 500 ml, completa con agua y agita. Rocía sobre la zona afectada después de cada paseo.",
+        "Agita ligeramente el envase (sin exagerar, para que no se forme espuma), llena la tapa dosificadora de concentrado, vacíala en tu botella aplicadora de 500 ml, completa con agua y mezcla suavemente. Rocía sobre la zona afectada después de cada paseo.",
     },
     {
       question: "¿Cuánto tarda mi pedido en llegar?",

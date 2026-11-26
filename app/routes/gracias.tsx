@@ -8,6 +8,7 @@ import { ArrowIcon, CheckIcon } from "~/components/ui/Icons";
 import { clearCart, getCart } from "~/lib/cart.server";
 import { connectDB } from "~/lib/db.server";
 import { logError } from "~/lib/logger.server";
+import { maskEmail } from "~/lib/maskEmail";
 import { checkRateLimit, getClientIp } from "~/lib/rateLimit.server";
 import { getUser } from "~/lib/session.server";
 import { stripe } from "~/lib/stripe.server";
@@ -19,13 +20,6 @@ export const meta: MetaFunction = () => [{ title: "Gracias por tu compra — STO
 
 /** Los ids de sesión de Stripe son largos e imposibles de adivinar; solo se aceptan con su forma real. */
 const SESSION_ID = /^cs_(test|live)_[A-Za-z0-9]{10,200}$/;
-
-/** "ana.lopez@gmail.com" -> "a***@gmail.com": confirma a dónde llegó el correo sin mostrarlo completo. */
-function maskEmail(email: string) {
-  const [name, domain] = email.split("@");
-  if (!name || !domain) return "";
-  return `${name[0]}***@${domain}`;
-}
 
 type Item = { name: string; quantity: number };
 

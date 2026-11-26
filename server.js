@@ -60,6 +60,22 @@ app.use((req, res, next) => {
   res.status(403).type("text/plain").send("No pudimos verificar el origen de la solicitud.");
 });
 
+// Tamaño máximo de lo que se envía al servidor. Los formularios públicos (contacto, registro, pago…)
+// son texto corto: 1 MB sobra. Solo el panel de administración sube fotos y videos (hasta 80 MB cada
+// uno). Sin tope, una petición gigante se leería completa en memoria.
+const MAX_BODY_BYTES = 1024 * 1024;
+const MAX_ADMIN_BODY_BYTES = 100 * 1024 * 1024;
+app.use((req, res, next) => {
+  if (req.method === "GET" || req.method === "HEAD" || req.method === "OPTIONS") return next();
+  const declared = Number(req.get("content-length"));
+  const limit = req.path.startsWith("/admin") ? MAX_ADMIN_BODY_BYTES : MAX_BODY_BYTES;
+  if (Number.isFinite(declared) && declared > limit) {
+    res.status(413).type("text/plain").send("El envío es demasiado grande.");
+    return;
+  }
+  next();
+});
+
 app.use(
   "/assets",
   express.static("build/client/assets", { immutable: true, maxAge: "1y" }),

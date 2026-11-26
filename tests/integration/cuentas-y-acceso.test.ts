@@ -49,6 +49,7 @@ describe.skipIf(!hasTestDb)("cuentas y acceso", () => {
   });
 
   beforeEach(async () => {
+    (await import("~/lib/rateLimit.server")).resetRateLimits(); // los topes por correo no deben pasar de una prueba a otra
     await wipeDb();
     vi.restoreAllMocks();
     sendEmail.mockReset();
@@ -486,9 +487,51 @@ describe.skipIf(!hasTestDb)("cuentas y acceso", () => {
       expect(await UserModel.countDocuments()).toBe(0);
 
       await registro(args(post("/cuenta/registro", datos)));
-      const duplicado = await registro(args(post("/cuenta/registro", { ...datos, email: "luis@correo.com" })));
-      expect(duplicado.status).toBe(409);
       expect(await UserModel.countDocuments()).toBe(1);
+    });
+
+    it("registrarse con un correo que ya tiene cuenta se ve IGUAL que con uno nuevo (no revela qué correos existen)", async () => {
+      const nuevo = await registro(args(post("/cuenta/registro", datos)));
+      const repetido = await registro(args(post("/cuenta/registro", { ...datos, name: "Otra persona" })));
+
+      expect(repetido.status).toBe(nuevo.status);
+      const [a, b] = [await nuevo.json(), await repetido.json()];
+      expect(b).toEqual(a);
+      expect(JSON.stringify(b)).not.toMatch(/existe|registrad/i);
+      // La respuesta no repite el correo completo: lo muestra enmascarado.
+      expect(b.maskedEmail).toBe("l***s@correo.com");
+
+      expect(await UserModel.countDocuments()).toBe(1);
+      // La cuenta original no se toca: ni su nombre ni su contraseña.
+      expect((await UserModel.findOne({ email: "luis@correo.com" }).lean())!.name).toBe("Luis");
+    });
+
+    it("a una cuenta ya confirmada le llega un aviso de que ya tiene cuenta (y ningún enlace para tomarla)", async () => {
+      await UserModel.create({ email: "luis@correo.com", passwordHash: PASSWORD_HASH, name: "Luis", emailVerifiedAt: new Date() });
+      await registro(args(post("/cuenta/registro", datos)));
+
+      expect(sendEmail).toHaveBeenCalledTimes(1);
+      const correo = sendEmail.mock.calls[0][0];
+      expect(correo.to.email).toBe("luis@correo.com");
+      expect(correo.subject).toMatch(/ya tienes una cuenta/i);
+      expect(correo.text).not.toMatch(/token=/);
+    });
+
+    it("a una cuenta sin confirmar le llega un enlace de confirmación nuevo", async () => {
+      await UserModel.create({ email: "luis@correo.com", passwordHash: PASSWORD_HASH, name: "Luis" });
+      await registro(args(post("/cuenta/registro", datos)));
+
+      expect(sendEmail).toHaveBeenCalledTimes(1);
+      expect(sendEmail.mock.calls[0][0].text).toMatch(/\/cuenta\/verificar\?token=[\w-]{43}/);
+    });
+
+    it("un correo no puede recibir mensajes sin fin: pasado el tope deja de enviar, con la misma respuesta", async () => {
+      const respuestas: string[] = [];
+      for (let i = 0; i < 5; i++) {
+        respuestas.push(await (await registro(args(post("/cuenta/registro", datos)))).text());
+      }
+      expect(new Set(respuestas).size).toBe(1);
+      expect(sendEmail.mock.calls.length).toBeLessThanOrEqual(3);
     });
 
     it("recorrido completo: registrarse, no poder entrar, confirmar con el enlace del correo y entrar", async () => {

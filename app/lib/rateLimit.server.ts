@@ -45,6 +45,11 @@ export function checkRateLimit(
   return { allowed: true, retryAfterSeconds: 0 };
 }
 
+/** Borra todos los contadores. Solo para las pruebas: cada una debe empezar sin intentos previos. */
+export function resetRateLimits() {
+  buckets.clear();
+}
+
 // Rangos de IP publicados por Cloudflare (https://www.cloudflare.com/ips/).
 // Sirven para saber si el último salto antes de Cloud Run fue Cloudflare. Si
 // Cloudflare agrega rangos nuevos y falta alguno aquí, el efecto es el de
