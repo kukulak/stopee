@@ -11,7 +11,8 @@ import { AnalyticsEventModel } from "~/models/analyticsEvent.server";
 import { getCatalogItems } from "~/lib/catalog.server";
 import { ArrowLink } from "~/components/ui/ArrowLink";
 import { requireAdmin, requireSuperAdmin } from "~/lib/session.server";
-import { allyStationSchema } from "~/lib/refillPoints.server";
+import { allyStationSchema, syncRequestsWithAllyState } from "~/lib/refillPoints.server";
+import { AllyRequestModel } from "~/models/allyRequest.server";
 import { STATION_CITIES } from "~/lib/refillPoints";
 import { Types } from "mongoose";
 import { cleanPlainText } from "~/lib/formGuard.server";
@@ -100,8 +101,12 @@ async function saveAllyStation(viewer: { _id: unknown }, id: string | undefined,
 
   await connectDB();
   const station = { ...parsed.data, whatsapp: parsed.data.whatsapp ? (normalizePhone(parsed.data.whatsapp) ?? "") : "" };
-  const done = await UserModel.updateOne({ _id: id }, { $set: { isRefillAlly, allyStation: station } });
-  if (done.matchedCount === 0) return fail("Cuenta no encontrada.", 404);
+  const target = await UserModel.findOneAndUpdate({ _id: id }, { $set: { isRefillAlly, allyStation: station } }, { new: true }).select("email");
+  if (!target) return fail("Cuenta no encontrada.", 404);
+
+  // La solicitud de este correo se pone de acuerdo con lo que se acaba de guardar (aprobada si es aliado;
+  // pendiente si se desactivó), para que la pantalla de solicitudes y esta ficha no se contradigan.
+  const requestSync = await syncRequestsWithAllyState(target.email, isRefillAlly, id);
 
   logAudit("user.refill_ally_changed", {
     by: String((viewer as { _id: unknown })._id),
@@ -109,7 +114,7 @@ async function saveAllyStation(viewer: { _id: unknown }, id: string | undefined,
     isRefillAlly,
     isPublic: station.isPublic,
   });
-  return data({ ok: true, savedIntent: "set-ally" as const, error: null as string | null });
+  return data({ ok: true, savedIntent: "set-ally" as const, error: null as string | null, requestSync });
 }
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
@@ -159,6 +164,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       registeredAt: user.createdAt,
       role: user.role as UserRole,
     },
+    allyRequestStatus: ((await AllyRequestModel.findOne({ email: user.email }).sort({ createdAt: -1 }).select("status").lean())?.status ??
+      null) as "pending" | "approved" | "rejected" | null,
     ally: {
       isRefillAlly: Boolean(user.isRefillAlly),
       businessName: user.allyStation?.businessName ?? "",
@@ -216,7 +223,7 @@ function Card({ children, className = "" }: { children: React.ReactNode; classNa
 }
 
 export default function AdminCustomerDetail() {
-  const { profile, ally, canManageRole, insights, orders, subscriptions, timeline } = useLoaderData<typeof loader>();
+  const { profile, ally, allyRequestStatus, canManageRole, insights, orders, subscriptions, timeline } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const navigation = useNavigation();
   const isSavingRole = navigation.state !== "idle" && navigation.formData?.get("intent") === "set-role";
@@ -277,6 +284,14 @@ export default function AdminCustomerDetail() {
 
       <Card>
         <h2 className="font-display text-lg font-bold text-carbon">Punto de Recarga</h2>
+        {allyRequestStatus && (
+          <p className="mt-1 text-sm text-carbon/70">
+            Solicitud de este correo:{" "}
+            <strong>{{ pending: "Pendiente", approved: "Aprobada", rejected: "Rechazada" }[allyRequestStatus]}</strong>.{" "}
+            <a href="/admin/aliados" className="font-semibold text-bosque underline">Ver solicitudes</a>. Lo que cambies aquí se refleja
+            en la solicitud, y al revés.
+          </p>
+        )}
         <p className="mt-1 text-sm text-carbon/60">
           Actívalo cuando esta cuenta ya sea un aliado que recarga bidones. Aparece en el directorio público de
           /puntos-de-recarga solo si marcas «Publicar», y eso solo se hace con la autorización del aliado.
@@ -345,7 +360,13 @@ export default function AdminCustomerDetail() {
             >
               {isSavingAlly ? "Guardando…" : "Guardar punto de recarga"}
             </button>
-            {allyResult?.ok && <p role="status" className="text-sm font-semibold text-bosque">Punto de recarga guardado.</p>}
+            {allyResult?.ok && (
+              <p role="status" className="text-sm font-semibold text-bosque">
+                Punto de recarga guardado.
+                {"requestSync" in allyResult && allyResult.requestSync === "approved" && " Su solicitud quedó como Aprobada."}
+                {"requestSync" in allyResult && allyResult.requestSync === "pending" && " Su solicitud volvió a Pendiente."}
+              </p>
+            )}
             {allyResult && !allyResult.ok && allyResult.error && (
               <p role="alert" className="text-sm font-semibold text-red-600">{allyResult.error}</p>
             )}

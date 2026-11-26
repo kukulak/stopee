@@ -168,17 +168,44 @@ export async function activateAllyForRequest(requestId: string): Promise<Activat
 }
 
 /**
- * Si la solicitud aprobada vuelve a pendiente o se rechaza, la cuenta que se activó por ella deja de ser
- * aliado (y sale del directorio). Sus datos se conservan por si se reactiva.
+ * Si la solicitud deja de estar aprobada (vuelve a pendiente o se rechaza), la cuenta de esa persona deja de
+ * ser aliado y sale del directorio, sin importar cómo se activó: por aprobar la solicitud o a mano desde su
+ * ficha. La cuenta se encuentra por el enlace guardado al aprobar y, si no lo hay, por el correo de la
+ * solicitud (el mismo con el que se activa). Sus datos se conservan por si se reactiva.
+ * Devuelve si había una cuenta activa que se desactivó.
  */
 export async function deactivateAllyForRequest(requestId: string): Promise<boolean> {
   await connectDB();
-  const request = await AllyRequestModel.findById(requestId).select("userId");
-  if (!request?.userId) return false;
-  await UserModel.updateOne({ _id: request.userId }, { $set: { isRefillAlly: false, "allyStation.isPublic": false } });
+  const request = await AllyRequestModel.findById(requestId).select("userId email");
+  if (!request) return false;
+  const who = [{ email: request.email }, ...(request.userId ? [{ _id: request.userId }] : [])];
+  const done = await UserModel.updateMany(
+    { $or: who, isRefillAlly: true },
+    { $set: { isRefillAlly: false, "allyStation.isPublic": false } },
+  );
   await AllyRequestModel.updateOne({ _id: request._id }, { $unset: { userId: "" } });
-  logAudit("user.refill_ally_deactivated", { userId: String(request.userId), requestId: String(request._id), via: "request_unapproved" });
-  return true;
+  if (done.modifiedCount > 0) {
+    logAudit("user.refill_ally_deactivated", { requestId: String(request._id), via: "request_unapproved" });
+  }
+  return done.modifiedCount > 0;
+}
+
+/**
+ * La otra dirección del mismo vínculo: cuando el administrador activa o desactiva a la cuenta desde su ficha,
+ * las solicitudes de ese correo se ponen de acuerdo. Activar la deja «Aprobada» (y enlazada); desactivar una
+ * aprobada la regresa a «Pendiente». Así la solicitud y la cuenta nunca se contradicen. Devuelve el estado
+ * en que quedó alguna solicitud (para avisarlo) o null si no había nada que cambiar.
+ */
+export async function syncRequestsWithAllyState(email: string, isAlly: boolean, userId: unknown): Promise<"approved" | "pending" | null> {
+  await connectDB();
+  if (isAlly) {
+    const done = await AllyRequestModel.updateMany({ email, status: { $ne: "approved" } }, { $set: { status: "approved", userId } });
+    // Una solicitud que ya estaba aprobada también se enlaza con esta cuenta.
+    await AllyRequestModel.updateMany({ email, status: "approved", userId: { $exists: false } }, { $set: { userId } });
+    return done.modifiedCount > 0 ? "approved" : null;
+  }
+  const done = await AllyRequestModel.updateMany({ email, status: "approved" }, { $set: { status: "pending" }, $unset: { userId: "" } });
+  return done.modifiedCount > 0 ? "pending" : null;
 }
 
 /**

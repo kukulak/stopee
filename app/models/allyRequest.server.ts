@@ -30,5 +30,11 @@ allyRequestSchema.index({ email: 1 });
 
 export type AllyRequestDoc = InferSchemaType<typeof allyRequestSchema>;
 
+// En desarrollo se re-registra el modelo en cada recarga: si no, mongoose conserva el esquema viejo y descarta en
+// silencio los campos nuevos al guardar (igual que en Product y User).
+if (process.env.NODE_ENV !== "production" && models.AllyRequest) {
+  mongoose.deleteModel("AllyRequest");
+}
+
 export const AllyRequestModel =
   (models.AllyRequest as Model<AllyRequestDoc>) ?? model<AllyRequestDoc>("AllyRequest", allyRequestSchema);

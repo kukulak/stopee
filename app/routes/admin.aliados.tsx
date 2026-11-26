@@ -84,7 +84,7 @@ export async function action({ request }: ActionFunctionArgs) {
     let activation: ActivationResult | null = null;
     let deactivated = false;
     if (status === "approved") activation = await activateAllyForRequest(id);
-    else if (before.status === "approved") deactivated = await deactivateAllyForRequest(id);
+    else deactivated = await deactivateAllyForRequest(id);
     return data({ ok: true, activation, deactivated });
   }
 

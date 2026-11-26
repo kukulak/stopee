@@ -348,6 +348,39 @@ describe.skipIf(!hasTestDb)("puntos de recarga", () => {
       expect((await UserModel.findById(target._id).lean())!.role).toBe("admin");
     });
 
+    it("activar a la cuenta desde su ficha deja APROBADA la solicitud de ese correo (y enlazada)", async () => {
+      const admin = await adminCookie("admin");
+      const target = await user("ana@veterinaria.com");
+      const req = await AllyRequestModel.create({ ...SOLICITUD, whatsapp: "5512345678", email: "ana@veterinaria.com" });
+      const result = await run(admin.cookie, String(target._id), form());
+      expect(dataOf(result)).toMatchObject({ ok: true, requestSync: "approved" });
+      const saved = await AllyRequestModel.findById(req._id).lean();
+      expect(saved!.status).toBe("approved");
+      expect(String(saved!.userId)).toBe(String(target._id));
+    });
+
+    it("desactivar a la cuenta desde su ficha regresa a PENDIENTE la solicitud aprobada", async () => {
+      const admin = await adminCookie("admin");
+      const target = await user("ana@veterinaria.com", { isRefillAlly: true, allyStation: station() });
+      const req = await AllyRequestModel.create({ ...SOLICITUD, whatsapp: "5512345678", email: "ana@veterinaria.com", status: "approved", userId: target._id });
+      const result = await run(admin.cookie, String(target._id), form({ isRefillAlly: "" }));
+      expect(dataOf(result)).toMatchObject({ ok: true, requestSync: "pending" });
+      const saved = await AllyRequestModel.findById(req._id).lean();
+      expect(saved!.status).toBe("pending");
+      expect(saved!.userId).toBeUndefined();
+    });
+
+    it("guardar la ficha sin cambiar nada no toca solicitudes rechazadas ni de otros correos", async () => {
+      const admin = await adminCookie("admin");
+      const target = await user("ana@veterinaria.com");
+      const rechazada = await AllyRequestModel.create({ ...SOLICITUD, whatsapp: "5512345678", email: "ana@veterinaria.com", status: "rejected" });
+      const otra = await AllyRequestModel.create({ ...SOLICITUD, whatsapp: "5512345678", email: "otra@x.com", status: "approved" });
+      // Ficha sin activar: solo guarda datos.
+      await run(admin.cookie, String(target._id), form({ isRefillAlly: "" }));
+      expect((await AllyRequestModel.findById(rechazada._id).lean())!.status).toBe("rejected");
+      expect((await AllyRequestModel.findById(otra._id).lean())!.status).toBe("approved");
+    });
+
     it("un id inventado no rompe nada", async () => {
       const admin = await adminCookie("admin");
       const result = await run(admin.cookie, "no-es-un-id", form());
@@ -442,6 +475,22 @@ describe.skipIf(!hasTestDb)("puntos de recarga", () => {
       expect(saved!.isRefillAlly).toBe(false);
       expect(saved!.allyStation?.isPublic).toBe(false);
       expect(saved!.allyStation?.businessName).toBe("Veterinaria San Ángel"); // los datos se conservan
+    });
+
+    it("una cuenta activada A MANO en su ficha también se desactiva al volver la solicitud a pendiente", async () => {
+      // Al aprobar, la cuenta aún no había confirmado su correo: no quedó enlazada a la solicitud.
+      const cuenta = await UserModel.create({ email: "ana@veterinaria.com", passwordHash: "x" });
+      const req = await solicitud();
+      expect((await approve(req._id)).activation).toBe("unverified");
+
+      // El administrador la activa a mano desde la ficha.
+      await UserModel.updateOne({ _id: cuenta._id }, { $set: { isRefillAlly: true, allyStation: station({ isPublic: true }) } });
+
+      const result = await approve(req._id, "pending");
+      expect(result.deactivated).toBe(true);
+      const saved = await UserModel.findById(cuenta._id).lean();
+      expect(saved!.isRefillAlly).toBe(false);
+      expect(saved!.allyStation?.isPublic).toBe(false);
     });
 
     it("el formulario público guarda el nombre del negocio (opcional)", async () => {
