@@ -1,8 +1,9 @@
-import { useFetcher } from "react-router";
+import { Link, useFetcher } from "react-router";
 import { useState } from "react";
 import type { CatalogItem } from "~/lib/catalog.server";
 import type { ShippingQuote } from "~/models/shipping.server";
-import { CloseIcon } from "~/components/ui/Icons";
+import { CloseIcon, TrashIcon } from "~/components/ui/Icons";
+import { usePageShowReset } from "~/lib/usePageShowReset";
 import { LegalNotice } from "~/components/ui/LegalNotice";
 import { DeliveryAddressFields, type AddressDefaults } from "~/components/ecommerce/DeliveryAddressFields";
 import type { AddressErrors } from "~/lib/deliveryAddress";
@@ -32,7 +33,7 @@ function CartLineRow({ line }: { line: CartLine }) {
 
   return (
     <li className={`flex items-center justify-between gap-3 ${isUpdating ? "opacity-60" : ""}`}>
-      <div>
+      <div className="min-w-0">
         <p className="text-sm font-semibold text-carbon">{line.product.name}</p>
         <p className="text-xs text-carbon/50">${line.product.priceMxn} MXN c/u</p>
         {(fetcher.data?.error || fetcher.data?.notice || overStock || (atMax && stock > 0)) && (
@@ -47,27 +48,39 @@ function CartLineRow({ line }: { line: CartLine }) {
           </p>
         )}
       </div>
-      <div className="flex items-center gap-1">
+      <div className="flex shrink-0 items-center gap-4">
+        {/* La cantidad y el quitar van separados: restar nunca borra el producto por accidente. */}
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => updateQuantity(line.quantity - 1)}
+            disabled={isUpdating || line.quantity <= 1}
+            aria-label={`Reducir cantidad de ${line.product.name}`}
+            className="flex min-h-11 min-w-11 items-center justify-center rounded-full text-carbon/60 hover:bg-carbon/5 disabled:opacity-40"
+          >
+            −
+          </button>
+          <span className="w-6 text-center text-sm font-semibold text-carbon" aria-live="polite">
+            {line.quantity}
+          </span>
+          <button
+            type="button"
+            onClick={() => updateQuantity(line.quantity + 1)}
+            disabled={isUpdating || atMax}
+            aria-label={`Aumentar cantidad de ${line.product.name}`}
+            className="flex min-h-11 min-w-11 items-center justify-center rounded-full text-carbon/60 hover:bg-carbon/5 disabled:opacity-50"
+          >
+            +
+          </button>
+        </div>
         <button
           type="button"
-          onClick={() => updateQuantity(line.quantity - 1)}
+          onClick={() => updateQuantity(0)}
           disabled={isUpdating}
-          aria-label={line.quantity <= 1 ? `Quitar ${line.product.name} del carrito` : `Reducir cantidad de ${line.product.name}`}
-          className="flex min-h-11 min-w-11 items-center justify-center rounded-full text-carbon/60 hover:bg-carbon/5 disabled:opacity-50"
+          aria-label={`Quitar ${line.product.name} del carrito`}
+          className="flex min-h-11 min-w-11 items-center justify-center rounded-full text-carbon/40 transition-colors hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
         >
-          {line.quantity <= 1 ? <CloseIcon className="h-4 w-4" /> : "−"}
-        </button>
-        <span className="w-6 text-center text-sm font-semibold text-carbon" aria-live="polite">
-          {line.quantity}
-        </span>
-        <button
-          type="button"
-          onClick={() => updateQuantity(line.quantity + 1)}
-          disabled={isUpdating || atMax}
-          aria-label={`Aumentar cantidad de ${line.product.name}`}
-          className="flex min-h-11 min-w-11 items-center justify-center rounded-full text-carbon/60 hover:bg-carbon/5 disabled:opacity-50"
-        >
-          +
+          <TrashIcon className="h-5 w-5" />
         </button>
       </div>
     </li>
@@ -85,6 +98,7 @@ export function CartDrawer({
   shipping,
   deliveryZone,
   addressDefaults,
+  onClose,
 }: {
   lines: CartLine[];
   subtotalMxn: number;
@@ -99,8 +113,12 @@ export function CartDrawer({
   deliveryZone: DeliveryZone;
   /** Lo que ya sabemos de la persona (su perfil), para que no escriba su dirección otra vez. */
   addressDefaults?: AddressDefaults;
+  /** Cierra el panel del carrito (el botón del carrito vacío lo usa antes de llevar a la tienda). */
+  onClose?: () => void;
 }) {
-  const checkoutFetcher = useFetcher<{ error?: string; fieldErrors?: AddressErrors }>();
+  // Si la persona se va a pagar y regresa con «atrás», el botón vuelve a estar listo.
+  const restores = usePageShowReset();
+  const checkoutFetcher = useFetcher<{ error?: string; fieldErrors?: AddressErrors }>({ key: `checkout-${restores}` });
   const couponFetcher = useFetcher<{ error?: string; ok?: boolean; cta?: "login" | "verify" | null }>();
   const isCheckingOut = checkoutFetcher.state !== "idle";
   const isApplyingCoupon = couponFetcher.state !== "idle";
@@ -122,9 +140,16 @@ export function CartDrawer({
   return (
     <div id="carrito" className="flex flex-col gap-4">
       {lines.length === 0 ? (
-        <p className="text-sm text-carbon/60">
-          Aún no agregas productos. Elige tu STOPee 1L, tu Squishable o un paquete completo.
-        </p>
+        <div className="flex flex-col items-start gap-4">
+          <p className="text-sm text-carbon/70">Tu carrito está vacío. Explora nuestros productos.</p>
+          <Link
+            to="/tienda"
+            onClick={onClose}
+            className="inline-flex min-h-11 w-full items-center justify-center rounded-full bg-carbon px-6 text-sm font-bold text-hueso transition-transform hover:scale-105 active:scale-95"
+          >
+            Explorar productos
+          </Link>
+        </div>
       ) : (
         <>
           <ul className="flex flex-col gap-3">

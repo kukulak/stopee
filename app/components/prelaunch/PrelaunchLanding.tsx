@@ -12,6 +12,8 @@ import { EditableBrandSwirls } from '~/components/ui/EditableBrandSwirls'
 import { DEFAULT_PAGE_SWIRLS } from '~/components/ui/BrandSwirls'
 import { SocialIcon } from '~/components/ui/SocialIcon'
 import { CookieSettingsButton } from '~/components/ui/CookieConsent'
+import { BrandText } from "~/components/ui/BrandText";
+import { AnchorLink } from "~/components/ui/AnchorLink";
 
 // --- Iconos minimalistas (línea, currentColor) ------------------------
 
@@ -183,7 +185,7 @@ function PriceCard({
   return (
     <div className="mx-auto max-w-md rounded-3xl border border-limaNeon/25 bg-white/[0.04] p-6 text-center backdrop-blur-xl">
       <p className="font-body text-xs font-bold uppercase tracking-widest text-limaNeon">
-        Precio de STOPee
+        <BrandText>Precio de STOPee</BrandText>
       </p>
       <p className="mt-2 font-display text-5xl font-black leading-none text-white">
         {formatMxn(concentrate.priceMxn)}{' '}
@@ -205,12 +207,12 @@ function PriceCard({
           <p className="mt-4 text-sm font-semibold text-limaNeon">
             Regístrate y recibe tu descuento de bienvenida sobre este precio.
           </p>
-          <a
+          <AnchorLink
             href="#reservar-lugar"
             className="mt-4 inline-flex min-h-11 items-center justify-center rounded-full bg-limaNeon px-7 text-sm font-bold text-carbon transition-all duration-200 hover:scale-[1.02] hover:shadow-[0_0_24px_rgba(216,248,59,0.45)] active:scale-95"
           >
             Reservar mi lugar en preventa
-          </a>
+          </AnchorLink>
         </>
       )}
     </div>
@@ -344,12 +346,12 @@ function MobileStickyCta({ joined }: { joined: boolean }) {
       }`}
       aria-hidden={!visible}
     >
-      <a
+      <AnchorLink
         href="#lista-de-espera"
         className="flex min-h-11 items-center justify-center rounded-full bg-limaNeon px-6 text-sm font-bold text-carbon transition-all duration-200 hover:scale-[1.02] active:scale-95"
       >
         Reservar mi lugar en preventa
-      </a>
+      </AnchorLink>
     </div>
   )
 }

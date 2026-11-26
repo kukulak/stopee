@@ -42,12 +42,11 @@ export const MAX_FREQUENCY_WEEKS = 52;
 export const DEFAULT_SUBSCRIPTION_CONFIG: SubscriptionConfig = {
   programName: "Club STOPee",
   discountPercent: 10,
-  headline: "Arma tu caja y recíbela sin pensarlo, con {descuento}% de descuento",
+  headline: "Arma tu caja y recíbela con {descuento}% de descuento",
   description:
     "Elige qué productos y cuántos de cada uno quieres recibir — desde un litro para tu casa hasta varios para un negocio pet-friendly — y con qué frecuencia.",
   benefits: [
-    "Nunca te quedas sin STOPee a medio paseo",
-    "Precio congelado aunque suba el de lista",
+    "Nunca te quedas sin STOPee para tus paseos",
     "Pausa, cambia la frecuencia o cancela cuando quieras desde tu cuenta",
   ],
   ctaLabel: "Unirme al Club STOPee",

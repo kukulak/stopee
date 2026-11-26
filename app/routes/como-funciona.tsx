@@ -9,6 +9,7 @@ import { getCart } from "~/lib/cart.server";
 import { buildBreadcrumbJsonLd } from "~/lib/seo";
 import { getLegalSettings } from "~/models/legalSettings.server";
 import { siteOrigin } from "~/lib/siteOrigin.server";
+import { AnchorLink } from "~/components/ui/AnchorLink";
 
 export const meta: MetaFunction<typeof loader> = ({ data }) => [
   { title: "Cómo funciona — STOPee" },
@@ -262,19 +263,19 @@ export default function ComoFunciona() {
                 ["#datos", "Datos técnicos"],
                 ["#contacto", "Ficha y contacto"],
               ].map(([href, label]) => (
-                <a
+                <AnchorLink
                   key={href}
                   href={href}
                   className="min-h-10 rounded-full border border-carbon/15 px-4 py-2 text-carbon/80 hover:border-carbon/40 hover:text-carbon"
                 >
                   {label}
-                </a>
+                </AnchorLink>
               ))}
             </nav>
           </header>
 
           {/* 1. Mecanismo */}
-          <section id="mecanismo" className="mt-16 scroll-mt-24">
+          <section id="mecanismo" className="mt-16 scroll-mt-32">
             <h2 className="font-display text-2xl font-black text-carbon sm:text-3xl">
               Mecanismo de acción biotecnológico
             </h2>
@@ -282,7 +283,7 @@ export default function ComoFunciona() {
           </section>
 
           {/* 2. Aplicación */}
-          <section id="aplicacion" className="mt-16 scroll-mt-24">
+          <section id="aplicacion" className="mt-16 scroll-mt-32">
             <h2 className="font-display text-2xl font-black text-carbon sm:text-3xl">
               Preparación y aplicación operativa
             </h2>
@@ -302,7 +303,7 @@ export default function ComoFunciona() {
           {/* 3. Alcance */}
           <section
             id="alcance"
-            className="mt-16 scroll-mt-24 rounded-[2rem] bg-carbon p-6 text-hueso sm:p-10"
+            className="mt-16 scroll-mt-32 rounded-[2rem] bg-carbon p-6 text-hueso sm:p-10"
           >
             <p className="font-body text-sm font-bold uppercase tracking-widest text-limaNeon">
               Transparencia técnica
@@ -321,7 +322,7 @@ export default function ComoFunciona() {
           </section>
 
           {/* 4. Datos técnicos */}
-          <section id="datos" className="mt-16 scroll-mt-24">
+          <section id="datos" className="mt-16 scroll-mt-32">
             <h2 className="font-display text-2xl font-black text-carbon sm:text-3xl">
               Datos técnicos y rendimiento certificado
             </h2>
@@ -338,7 +339,7 @@ export default function ComoFunciona() {
           {/* 5. Documentación y contacto */}
           <section
             id="contacto"
-            className="mt-16 scroll-mt-24 rounded-[2rem] border border-carbon/10 bg-white p-6 sm:p-10"
+            className="mt-16 scroll-mt-32 rounded-[2rem] border border-carbon/10 bg-white p-6 sm:p-10"
           >
             <h2 className="font-display text-2xl font-black text-carbon sm:text-3xl">
               Documentación y contacto directo

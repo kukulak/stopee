@@ -275,7 +275,7 @@ function ProductFormFields({ defaults }: { defaults?: Product }) {
       {!defaults && (
         <p className="col-span-full -mt-3 text-xs text-carbon/50">
           Desmárcalo para artículos que solo existen para ir dentro de un paquete (por ejemplo, un
-          squishable de regalo más chico que nunca se vende suelto).
+          botella aplicadora de regalo más chica que nunca se vende suelto).
         </p>
       )}
       <label className="col-span-full flex min-h-11 items-center gap-2 text-sm font-medium text-carbon">

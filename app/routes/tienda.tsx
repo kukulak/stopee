@@ -10,7 +10,7 @@ import { Footer } from "~/components/layout/Footer";
 import { BundleSelector } from "~/components/ecommerce/BundleSelector";
 import { SubscriptionConfigurator } from "~/components/ecommerce/SubscriptionConfigurator";
 import { getSubscriptionConfig } from "~/models/subscriptionSettings.server";
-import { CartDrawer, type CartLine } from "~/components/ecommerce/CartDrawer";
+import { CartDrawer } from "~/components/ecommerce/CartDrawer";
 import { CartOverlay } from "~/components/ecommerce/CartOverlay";
 import { AddedToCartToast } from "~/components/ecommerce/AddedToCartToast";
 import { HeroBannerCarousel } from "~/components/ecommerce/HeroBannerCarousel";
@@ -19,33 +19,30 @@ import { getCatalogItems, getCatalogItemBySku } from "~/lib/catalog.server";
 import {
   addToCart,
   getCart,
-  getCartCoupon,
-  getCartShippingMethod,
   removeFromCart,
   setCartCoupon,
   setCartShippingMethod,
   setCartQuantity,
 } from "~/lib/cart.server";
-import { getShippingConfig, buildShippingQuote, isShippingMethodId } from "~/models/shipping.server";
+import { getShippingConfig, isShippingMethodId } from "~/models/shipping.server";
 import { getUser } from "~/lib/session.server";
 import { getSiteSettings } from "~/models/siteSettings.server";
 import { findRedeemableCoupon } from "~/models/promotion.server";
 import { checkCouponEligibility } from "~/lib/couponRules.server";
-import { stackPercents } from "~/lib/couponRules";
 import { checkRateLimit, getClientIp, rateLimitMessage } from "~/lib/rateLimit.server";
-import { evaluateRequirementPromotion } from "~/lib/promotionEngine.server";
 import { getTiendaHeroSlides } from "~/lib/heroBanner.server";
 import { getPasswordGateConfig, isGateWindowActive, isSkuGated } from "~/models/passwordGate.server";
 import { hasGateAccess } from "~/lib/gateSession.server";
 import { Breadcrumbs } from "~/components/ui/Breadcrumbs";
+import { buildCartView } from "~/lib/cartView.server";
 import { MobileCartCta } from "~/components/ecommerce/MobileCartCta";
-import { addressDefaultsFromProfile } from "~/lib/deliveryAddress";
+import { BrandText } from "~/components/ui/BrandText";
 
 export const meta: MetaFunction = () => [
   { title: "Tienda STOPee — Higiene urbana canina" },
   {
     name: "description",
-    content: "Compra STOPee Concentrado 1L, la Botella Squishable o paquetes completos. Activa tu suscripción periódica con 10% de descuento.",
+    content: "Compra STOPee Concentrado 1L, la botella aplicadora o paquetes completos. Activa tu suscripción periódica con 10% de descuento.",
   },
 ];
 
@@ -59,121 +56,24 @@ export async function loader({ request }: LoaderFunctionArgs) {
     throw redirect("/");
   }
 
-  const [cartItems, couponCode, heroSlides, catalogItems, cartShippingMethod, shippingConfig, subscriptionConfig] = await Promise.all([
-    getCart(request),
-    getCartCoupon(request),
+  const [heroSlides, catalogItems, shippingConfig, subscriptionConfig] = await Promise.all([
     getTiendaHeroSlides(),
     getCatalogItems(),
-    getCartShippingMethod(request),
     getShippingConfig(),
     getSubscriptionConfig(),
   ]);
 
-  const bySku = new Map(catalogItems.map((item) => [item.sku, item]));
-
-  const lines: CartLine[] = cartItems
-    .filter((item) => bySku.has(item.sku))
-    .map((item) => ({
-      sku: item.sku,
-      quantity: item.quantity,
-      product: bySku.get(item.sku)!,
-    }));
-
-  const subtotalMxn = lines.reduce((sum, line) => sum + line.product.priceMxn * line.quantity, 0);
-
-  let coupon: { code: string; percentage: number } | null = null;
-  let couponStackable = false;
-  let couponNotice: { code: string; message: string; cta: "login" | "verify" | null } | null = null;
-  let gateBenefitLabel: string | null = null;
-  if (couponCode) {
-    const promo = await findRedeemableCoupon(couponCode);
-    if (promo?.coupon?.percentage) {
-      // Las reglas del cupón (compra mínima, producto requerido, un uso por cliente…)
-      // se revisan aquí cada vez: si el carrito deja de cumplirlas, el cupón queda
-      // guardado pero sin aplicar, con un aviso de qué falta.
-      const eligibility = await checkCouponEligibility(promo, {
-        lines: lines.map((l) => ({ sku: l.sku, quantity: l.quantity, unitPriceMxn: l.product.priceMxn })),
-        user,
-        nameBySku: new Map(catalogItems.map((item) => [item.sku, item.name])),
-      });
-      if (eligibility.ok) {
-        coupon = { code: couponCode, percentage: promo.coupon.percentage };
-        couponStackable = Boolean(promo.coupon.stackable);
-        const gateConfigForBanner = await getPasswordGateConfig();
-        if (gateConfigForBanner.linkedPromotionId === String(promo._id)) {
-          gateBenefitLabel = gateConfigForBanner.cartBannerMessage;
-        }
-      } else {
-        couponNotice = {
-          code: couponCode,
-          message: eligibility.reason,
-          cta: eligibility.kind === "login" || eligibility.kind === "verify" ? eligibility.kind : null,
-        };
-      }
-    }
-  }
-
-  const isFirstPurchase = Boolean(user && user.individualPurchaseCount === 0);
-  const requirementMatch = await evaluateRequirementPromotion(
-    lines.map((l) => ({ sku: l.sku, quantity: l.quantity, unitPriceMxn: l.product.priceMxn })),
-    isFirstPurchase,
-  );
-  const requirementGift = requirementMatch?.rewardGiftSku
-    ? (bySku.get(requirementMatch.rewardGiftSku) ?? (await getCatalogItemBySku(requirementMatch.rewardGiftSku, { includeUnavailable: true })))?.name ?? null
-    : null;
-
-  // La recompensa de lealtad (si la tiene) es para SU SIGUIENTE compra, nunca
-  // permanente — ver app/lib/loyalty.ts y webhooks.stripe.tsx.
-  const pendingReward = user?.loyaltyPendingReward;
-  const loyaltyGift = pendingReward?.rewardType === "gift" ? pendingReward.giftDescription ?? null : null;
-  const loyaltyDiscountPercent = pendingReward?.rewardType === "discount" ? pendingReward.percentage ?? 0 : 0;
-
-  // Prioridad para el DESCUENTO: un cupón explícito del cliente gana sobre
-  // una promoción condicional, y esta a su vez gana sobre la lealtad. Los
-  // regalos (requisito + lealtad) no compiten entre sí, ambos se muestran.
-  let discountPercent = 0;
-  let discountLabel = "";
-  if (coupon) {
-    discountPercent = coupon.percentage;
-    discountLabel = gateBenefitLabel ?? `Cupón ${coupon.code}`;
-    // Solo si el cupón lo permite se suma a la recompensa de lealtad ya ganada.
-    if (couponStackable && loyaltyDiscountPercent > 0) {
-      discountPercent = stackPercents(coupon.percentage, loyaltyDiscountPercent);
-      discountLabel = `${discountLabel} + ${pendingReward?.promotionName ?? "Recompensa de lealtad"}`;
-    }
-  } else if (requirementMatch?.rewardDiscountPercentage) {
-    discountPercent = requirementMatch.rewardDiscountPercentage;
-    discountLabel = requirementMatch.name;
-  } else if (loyaltyDiscountPercent > 0) {
-    discountPercent = loyaltyDiscountPercent;
-    discountLabel = pendingReward?.promotionName ?? "Recompensa de lealtad";
-  }
-
-  const gifts = [requirementGift, loyaltyGift].filter((g): g is string => Boolean(g));
-
+  const cartView = await buildCartView(request, { user, catalogItems, shippingConfig });
   const subscribableItems = catalogItems.filter((item) => item.isSubscribable);
-
-  // El envío gratis se evalúa sobre lo que realmente se paga por productos (ya con descuento).
-  const discountedSubtotal = Math.round(subtotalMxn * (1 - discountPercent / 100));
-  const shipping = buildShippingQuote(shippingConfig, discountedSubtotal, cartShippingMethod);
 
   return data({
     catalogItems,
-    lines,
-    subtotalMxn,
-    discountPercent,
-    discountLabel,
-    coupon,
-    couponNotice,
-    gifts,
+    ...cartView,
     isAuthenticated: Boolean(user),
-    deliveryZone: shippingConfig.zone,
-    addressDefaults: addressDefaultsFromProfile(user),
     isPreview,
     heroSlides,
     subscribableItems,
     subscriptionConfig,
-    shipping,
   });
 }
 
@@ -366,14 +266,13 @@ export default function Tienda() {
           )}
 
           <p className="font-body text-sm font-bold uppercase tracking-widest text-oliva">
-            Tienda STOPee
+            <BrandText>Tienda STOPee</BrandText>
           </p>
           <h1 className="mt-2 max-w-2xl font-display text-3xl font-black text-carbon sm:text-4xl">
             Elige tu STOPee y equipa tus paseos
           </h1>
           <p className="mt-3 max-w-2xl text-carbon/70">
-            Compra individual o en paquete. Cuando sepas cuánto te dura tu primer litro, activa
-            el auto-envío periódico
+            Compra individual o en paquete, o únete al {subscriptionConfig.programName || "Club STOPee"}
             {subscriptionConfig.discountPercent > 0 && ` y ahorra ${subscriptionConfig.discountPercent}% en cada entrega`}.
           </p>
 
@@ -407,6 +306,7 @@ export default function Tienda() {
           shipping={shipping}
           deliveryZone={deliveryZone}
           addressDefaults={addressDefaults}
+          onClose={() => setCartOpen(false)}
         />
       </CartOverlay>
 

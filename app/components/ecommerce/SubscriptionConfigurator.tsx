@@ -12,9 +12,11 @@ import {
   type SubscriptionConfig,
 } from "~/lib/subscriptionConfig";
 import { LegalNotice } from "~/components/ui/LegalNotice";
+import { usePageShowReset } from "~/lib/usePageShowReset";
 import { DeliveryAddressFields, type AddressDefaults } from "~/components/ecommerce/DeliveryAddressFields";
 import type { AddressErrors } from "~/lib/deliveryAddress";
 import type { DeliveryZone } from "~/lib/deliveryZone";
+import { BrandText } from "~/components/ui/BrandText";
 
 const SUBSCRIPTION_FORM_ID = "subscription-form";
 
@@ -34,14 +36,19 @@ export function SubscriptionConfigurator({
   /** Lo que ya sabemos de la persona (su perfil), para que no escriba su dirección otra vez. */
   addressDefaults?: AddressDefaults;
 }) {
-  const [quantities, setQuantities] = useState<Record<string, number>>(() =>
-    preselectedSku && products.some((p) => p.sku === preselectedSku) ? { [preselectedSku]: 1 } : {},
-  );
+  // Arranca con 1 unidad (la del producto elegido o, si no hay, el primero): así la frecuencia, el
+  // precio con descuento y el botón se ven activos desde el primer momento, no bloqueados.
+  const [quantities, setQuantities] = useState<Record<string, number>>(() => {
+    const first = preselectedSku && products.some((p) => p.sku === preselectedSku) ? preselectedSku : products[0]?.sku;
+    return first ? { [first]: 1 } : {};
+  });
   const { discountPercent } = config;
   const frequencies = activeFrequencies(config);
   const [frequency, setFrequency] = useState(() => defaultFrequencyKey(config));
   const selectedWeeks = frequencies.find((f) => frequencyKey(f.weeks) === frequency)?.weeks;
-  const fetcher = useFetcher<{ error?: string; fieldErrors?: AddressErrors }>();
+  // Si la persona se va a pagar y regresa con «atrás», el botón vuelve a estar listo.
+  const restores = usePageShowReset();
+  const fetcher = useFetcher<{ error?: string; fieldErrors?: AddressErrors }>({ key: `subscription-${restores}` });
   const isSubmitting = fetcher.state !== "idle";
   const [outOfZone, setOutOfZone] = useState(false);
 
@@ -59,9 +66,12 @@ export function SubscriptionConfigurator({
   }
 
   return (
-    <div id="suscripcion" className="rounded-3xl border border-lima/30 bg-bosque/5 p-6 sm:p-8">
-      <p className="font-body text-sm font-bold uppercase tracking-widest text-oliva">{programEyebrow(config)}</p>
+    <div id="suscripcion" className="scroll-mt-32 rounded-3xl border border-lima/30 bg-bosque/5 p-6 sm:p-8">
+      <p className="font-body text-sm font-bold uppercase tracking-widest text-oliva"><BrandText>{programEyebrow(config)}</BrandText></p>
       <h3 className="mt-2 font-display text-2xl font-black text-carbon">{fillDiscount(config.headline, config)}</h3>
+      <p className="mt-2 max-w-2xl text-sm font-semibold text-carbon">
+        Cuando sepas cuánto te dura tu primer litro, activa el auto-envío periódico.
+      </p>
       {config.description && <p className="mt-2 max-w-2xl text-sm text-carbon/70">{config.description}</p>}
 
       {config.benefits.length > 0 && (

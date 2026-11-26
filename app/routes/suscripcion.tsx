@@ -15,6 +15,7 @@ import { getShippingConfig } from "~/models/shipping.server";
 import { addressDefaultsFromProfile } from "~/lib/deliveryAddress";
 import { buildOgMeta, DEFAULT_OG_IMAGE } from "~/lib/seo";
 import { siteOrigin } from "~/lib/siteOrigin.server";
+import { BrandText } from "~/components/ui/BrandText";
 
 export const meta: MetaFunction<typeof loader> = ({ data }) => {
   if (!data) return [{ title: "Auto-envío periódico — STOPee" }];
@@ -25,7 +26,7 @@ export const meta: MetaFunction<typeof loader> = ({ data }) => {
     { name: "description", content: `Arma tu caja de STOPee y recíbela ${data.frequencySummary}${discount}.` },
     ...buildOgMeta({
       title,
-      description: `Arma tu caja de STOPee y recíbela sin pensarlo${discount}.`,
+      description: `Arma tu caja de STOPee y recíbela${discount}.`,
       url: data.origin,
       image: `${data.origin}${DEFAULT_OG_IMAGE}`,
       type: "website",
@@ -76,7 +77,7 @@ export default function Suscripcion() {
             <Breadcrumbs items={[{ label: "Inicio", href: "/" }, { label: "Tienda", href: "/tienda" }, { label: programDisplayName(subscriptionConfig) }]} />
           </div>
 
-          <p className="font-body text-sm font-bold uppercase tracking-widest text-oliva">{programDisplayName(subscriptionConfig)}</p>
+          <p className="font-body text-sm font-bold uppercase tracking-widest text-oliva"><BrandText>{programDisplayName(subscriptionConfig)}</BrandText></p>
           <h1 className="mt-2 max-w-2xl font-display text-3xl font-black text-carbon sm:text-4xl">
             Tu auto-envío periódico, armado a tu medida
           </h1>

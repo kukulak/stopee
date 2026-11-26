@@ -12,6 +12,7 @@ import { EditableBrandSwirls } from "~/components/ui/EditableBrandSwirls";
 import { COMPACT_PAGE_SWIRLS } from "~/components/ui/BrandSwirls";
 import { Logo } from "~/components/ui/Logo";
 import { safeRedirectTarget } from "~/lib/safeRedirect";
+import { BrandText } from "~/components/ui/BrandText";
 
 export const meta: MetaFunction = () => [{ title: "Acceso privado — STOPee" }];
 
@@ -91,7 +92,7 @@ export default function AccesoPrivado() {
         <Logo variant="compact" className="mx-auto h-16 w-auto" />
 
         <p className="mt-6 text-center font-body text-xs font-bold uppercase tracking-widest text-limaNeon">
-          {kicker}
+          <BrandText>{kicker}</BrandText>
         </p>
         <h1 className="mt-3 text-center font-display text-2xl font-black leading-tight text-white sm:text-3xl">
           {title}

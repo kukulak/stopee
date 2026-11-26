@@ -6,7 +6,7 @@
  * bundle del navegador.
  */
 export const DEFAULT_GATE_COPY = {
-  kicker: "ACCESO PRIVADO · COMUNIDAD STOPEE",
+  kicker: "Acceso privado · Comunidad STOPee",
   title: "Tu semana exclusiva comienza aquí.",
   description:
     "Has formado parte de nuestra lista prioritaria y hoy tienes el primer acceso a STOPee antes de la apertura oficial. Ingresa la clave que recibiste en tu correo para desbloquear la tienda. Tu clave funciona también como cupón de descuento y se aplicará de forma automática en todas las compras que realices a lo largo de esta semana exclusiva.",

@@ -143,3 +143,11 @@ export function EyeOffIcon({ className }: IconProps) {
     </Svg>
   );
 }
+
+export function TrashIcon({ className }: IconProps) {
+  return (
+    <Svg className={className}>
+      <path d="M4 7h16M9 7V4.5h6V7M6.5 7l.8 12a1.5 1.5 0 0 0 1.5 1.4h6.4a1.5 1.5 0 0 0 1.5-1.4l.8-12M10 11v6M14 11v6" {...STROKE} />
+    </Svg>
+  );
+}

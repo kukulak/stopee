@@ -1,5 +1,8 @@
-/** Imagen de respaldo para og:image cuando la página no tiene una foto propia (p. ej. un producto sin fotos subidas en /admin/catalog todavía). Ruta relativa: quien la use debe anteponer el origin, igual que cualquier otra imagen de og:image. */
-export const DEFAULT_OG_IMAGE = "/elementos-design/logo-STOPee.png";
+/** Imagen de respaldo para og:image (1200×630, logo centrado con margen de seguridad para que WhatsApp y otras redes no lo recorten) cuando la página no tiene una foto propia (p. ej. un producto sin fotos subidas en /admin/catalog todavía). Ruta relativa: quien la use debe anteponer el origin, igual que cualquier otra imagen de og:image. */
+export const DEFAULT_OG_IMAGE = "/elementos-design/og-STOPee.png";
+
+export const DEFAULT_OG_IMAGE_WIDTH = 1200;
+export const DEFAULT_OG_IMAGE_HEIGHT = 630;
 
 type OgMetaInput = {
   title: string;
@@ -19,6 +22,13 @@ export function buildOgMeta({ title, description, url, image, type = "website" }
     { property: "og:description", content: description },
     { property: "og:url", content: url },
     { property: "og:image", content: image },
+    // Con las medidas a la mano, WhatsApp y Facebook muestran la imagen sin esperar a descargarla.
+    ...(image.endsWith(DEFAULT_OG_IMAGE)
+      ? [
+          { property: "og:image:width", content: String(DEFAULT_OG_IMAGE_WIDTH) },
+          { property: "og:image:height", content: String(DEFAULT_OG_IMAGE_HEIGHT) },
+        ]
+      : []),
     { property: "og:locale", content: "es_MX" },
     { property: "og:site_name", content: "STOPee" },
     { name: "twitter:card", content: "summary_large_image" },

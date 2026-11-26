@@ -241,7 +241,7 @@ export default function ProductDetail() {
                       : "¿Lo quieres en auto-envío?"}
                   </p>
                   <p className="mt-1 text-sm text-carbon/70">
-                    Arma tu caja de auto-envío con {product.name} y recíbela sin pensarlo
+                    Arma tu caja de auto-envío con {product.name} y recíbela
                     {subscription.frequencies && `, ${subscription.frequencies}`}.
                   </p>
                   <Link

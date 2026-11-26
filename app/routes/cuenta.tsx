@@ -29,6 +29,8 @@ import {
 } from "~/lib/subscriptionConfig";
 import { getActiveLoyaltyConfig } from "~/models/promotion.server";
 import { ArrowIcon, CloseIcon } from "~/components/ui/Icons";
+import { firstNameOf } from "~/lib/names";
+import { describeLoyaltyReward, resolveLoyaltyTier } from "~/lib/loyalty";
 
 const ORDER_STATUS_LABELS: Record<string, string> = {
   paid: "Pagado",
@@ -75,6 +77,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
     loyalty: {
       count: user.loyaltyCycleCount ?? 0,
       required: loyaltyConfig.purchasesRequired,
+      // Lo que gana al completar el ciclo en el que va, para mostrarlo como protagonista de la tarjeta.
+      nextReward: describeLoyaltyReward(resolveLoyaltyTier(user.loyaltyCyclesCompleted ?? 0, loyaltyConfig.tiers)),
       pendingReward: user.loyaltyPendingReward
         ? {
             rewardType: user.loyaltyPendingReward.rewardType,
@@ -295,7 +299,7 @@ export default function Cuenta() {
             Mi cuenta
           </p>
           <h1 className="mt-2 font-display text-3xl font-black text-carbon">
-            Hola{user.name ? `, ${user.name}` : ""}
+            Hola{firstNameOf(user.name) ? `, ${firstNameOf(user.name)}` : ""}
             {user.dogs[0]?.name ? ` y ${user.dogs[0].name}` : ""}
           </h1>
           <p className="mt-1 text-carbon/60">{user.email}</p>
@@ -488,21 +492,23 @@ export default function Cuenta() {
           <div className="mt-8 rounded-3xl border border-lima/30 bg-bosque/5 p-6">
             <p className="font-display font-bold text-carbon">Programa de fidelidad</p>
             {loyalty.pendingReward ? (
-              <p className="mt-1 text-sm text-bosque">
-                ¡Ya ganaste{" "}
-                {loyalty.pendingReward.rewardType === "gift"
-                  ? loyalty.pendingReward.giftDescription
-                  : `${loyalty.pendingReward.percentage}% de descuento`}{" "}
-                para tu próxima compra! Se aplica automáticamente al pagar.
-              </p>
+              <div className="mt-3">
+                <p className="text-sm text-carbon/70">¡Ya ganaste esto para tu próxima compra!</p>
+                <p className="mt-1 inline-block rounded-2xl bg-lima px-4 py-2 font-display text-xl font-black text-carbon">
+                  {describeLoyaltyReward(loyalty.pendingReward)}
+                </p>
+                <p className="mt-2 text-sm text-carbon/70">Se aplica automáticamente al pagar.</p>
+              </div>
             ) : (
               <>
-                <p className="mt-1 text-sm text-carbon/70">
-                  Llevas {loyalty.count} de {loyalty.required} compras individuales. Al completar
-                  tu {loyalty.required}ª compra, desbloqueas una recompensa para tu siguiente
-                  pedido.
+                <p className="mt-3 text-sm text-carbon/70">Al completar tu {loyalty.required}ª compra individual ganas:</p>
+                <p className="mt-1 inline-block rounded-2xl bg-lima px-4 py-2 font-display text-xl font-black text-carbon">
+                  {loyalty.nextReward}
                 </p>
-                <div className="mt-3 flex gap-1.5">
+                <p className="mt-3 text-sm text-carbon/70">
+                  Llevas <strong className="text-bosque">{loyalty.count} de {loyalty.required}</strong> compras.
+                </p>
+                <div className="mt-2 flex gap-1.5">
                   {Array.from({ length: loyalty.required }).map((_, i: number) => (
                     <span
                       key={i}
@@ -660,12 +666,17 @@ export default function Cuenta() {
           </div>
 
           <Form method="post" action="/cuenta/salir" className="mt-12">
-            <button type="submit" className="text-sm font-semibold text-carbon/50 hover:text-carbon">
+            <button
+              type="submit"
+              className="min-h-11 rounded-full border border-carbon/25 px-6 text-sm font-semibold text-carbon transition-colors hover:bg-carbon/5"
+            >
               Cerrar sesión
             </button>
           </Form>
 
-          <div className="mt-10 rounded-3xl border border-red-200 bg-red-50/50 p-6">
+          {/* Borrar la cuenta va aparte, con su propio espacio y divisor: nadie debe confundirlo con salir. */}
+          <div className="mt-20 border-t border-carbon/10 pt-12">
+          <div className="rounded-3xl border border-red-200 bg-red-50/50 p-6">
             <p className="font-display font-bold text-red-900">Eliminar mi cuenta</p>
             <p className="mt-1 text-sm text-red-900/70">
               Se borra tu perfil (datos de contacto, mascotas, dirección) de forma permanente. Tus
@@ -715,6 +726,7 @@ export default function Cuenta() {
                 </div>
               </Form>
             )}
+          </div>
           </div>
         </section>
       </main>

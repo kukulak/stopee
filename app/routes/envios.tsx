@@ -8,6 +8,7 @@ import { getCart } from "~/lib/cart.server";
 import { renderMarkdown } from "~/lib/markdown.server";
 import { getShippingConfig } from "~/models/shipping.server";
 import { SHIPPING_METHOD_IDS, type ShippingMethodId } from "~/lib/shippingMethods";
+import { AnchorLink } from "~/components/ui/AnchorLink";
 
 export const meta: MetaFunction = () => [
   { title: "Envíos — STOPee" },
@@ -77,7 +78,7 @@ export default function Envios() {
           {shippingEnabled && methods.length > 1 && (
             <nav aria-label="Opciones de envío" className="mt-8 grid grid-cols-1 gap-3 sm:grid-cols-2">
               {methods.map((method) => (
-                <a
+                <AnchorLink
                   key={method.id}
                   href={`#${method.anchor}`}
                   className="flex min-h-14 flex-col justify-center rounded-2xl border-2 border-carbon/10 bg-white px-4 py-3 transition-colors hover:border-lima"
@@ -86,7 +87,7 @@ export default function Envios() {
                   <span className="text-sm text-carbon/60">
                     ${method.cost} MXN{method.deliveryTime ? ` · ${method.deliveryTime}` : ""}
                   </span>
-                </a>
+                </AnchorLink>
               ))}
             </nav>
           )}
@@ -97,7 +98,7 @@ export default function Envios() {
                 <section
                   key={method.id}
                   id={method.anchor}
-                  className="scroll-mt-24 rounded-3xl border-2 border-carbon/10 bg-white p-6 target:border-lima sm:p-8"
+                  className="scroll-mt-32 rounded-3xl border-2 border-carbon/10 bg-white p-6 target:border-lima sm:p-8"
                 >
                   <h2 className="font-display text-2xl font-black text-carbon">{method.label}</h2>
 

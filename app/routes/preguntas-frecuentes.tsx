@@ -55,12 +55,12 @@ export async function loader({ request }: LoaderFunctionArgs) {
     {
       question: "¿Cuánto rinde un litro?",
       answer:
-        "1 litro de concentrado rinde 30 litros de solución activa lista para usar — se diluye con agua de la llave en tu botella Squishable.",
+        "1 litro de concentrado rinde 30 litros de solución activa lista para usar — se diluye con agua de la llave en tu botella aplicadora.",
     },
     {
       question: "¿Cómo se usa?",
       answer:
-        "Agita el envase, llena la tapa dosificadora de concentrado, vacíala en tu botella Squishable de 500 ml, completa con agua y agita. Rocía sobre la zona afectada después de cada paseo.",
+        "Agita ligeramente el envase (sin exagerar, para que no se forme espuma), llena la tapa dosificadora de concentrado, vacíala en tu botella aplicadora de 500 ml, completa con agua y agita. Rocía sobre la zona afectada después de cada paseo.",
     },
     {
       question: "¿Cuánto tarda mi pedido en llegar?",
@@ -73,7 +73,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     {
       question: "¿Puedo pausar, cambiar o cancelar mi suscripción?",
       answer:
-        "Sí — desde /cuenta puedes pausar y reanudar tu suscripción, cambiar la frecuencia de envío, o cancelarla por completo desde el portal de facturación, cuando quieras.",
+        'Sí — desde <a href="/cuenta" class="font-bold text-bosque underline">Mi cuenta</a> puedes pausar y reanudar tu suscripción, cambiar la frecuencia de envío, o cancelarla por completo desde el portal de facturación, cuando quieras.',
     },
     {
       question: "¿Qué métodos de pago aceptan?",
@@ -107,7 +107,7 @@ export default function PreguntasFrecuentes() {
                 key={faq.question}
                 className="group rounded-2xl border border-carbon/10 bg-white p-5 open:border-oliva/30"
               >
-                <summary className="flex cursor-pointer list-none items-center justify-between gap-4 font-display font-bold text-carbon">
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-4 rounded-lg font-display font-bold text-carbon focus:outline-none focus-visible:ring-2 focus-visible:ring-bosque/40">
                   {faq.question}
                   <span className="shrink-0 text-lima transition-transform group-open:rotate-45" aria-hidden="true">
                     +

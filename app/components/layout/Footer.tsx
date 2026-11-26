@@ -17,9 +17,12 @@ export function Footer() {
         <div className="md:col-span-2">
           <Logo className="h-28 w-auto" />
           <p className="mt-4 max-w-sm text-sm text-hueso/70">
-            Concentrado biotecnológico de higiene urbana canina. 1 litro rinde 30 litros de
-            solución activa. Ciudades limpias, paseos impecables.
+            Concentrado biotecnológico de higiene urbana canina.
+            <br />
+            {/* Espacios sin corte: «1 litro» nunca se parte entre dos renglones. */}
+            1&nbsp;litro rinde 30&nbsp;litros de solución activa.
           </p>
+          <p className="mt-4 max-w-sm text-base font-bold text-hueso">Ciudades limpias, paseos impecables.</p>
         </div>
 
         {storeVisible && (

@@ -15,3 +15,14 @@ export function resolveLoyaltyTier(cyclesCompleted: number, tiers: LoyaltyTier[]
   const index = Math.min(Math.max(cyclesCompleted, 0), tiers.length - 1);
   return tiers[index];
 }
+
+/** La recompensa en palabras para mostrarla al cliente: «10% de descuento» o el regalo que sea. */
+export function describeLoyaltyReward(reward: {
+  rewardType?: "discount" | "gift" | null;
+  percentage?: number | null;
+  giftDescription?: string | null;
+}): string {
+  if (reward.rewardType === "gift" && reward.giftDescription) return reward.giftDescription;
+  if (reward.percentage) return `${reward.percentage}% de descuento en tu siguiente pedido`;
+  return "una recompensa para tu siguiente pedido";
+}

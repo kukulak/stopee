@@ -34,7 +34,7 @@ const productSchema = new Schema(
     isSubscribable: { type: Boolean, default: true },
     /**
      * false para productos que solo existen para formar parte de un paquete
-     * (p. ej. un squishable de regalo más chico que nunca se vende suelto).
+     * (p. ej. una botella aplicadora de regalo más chica que nunca se vende suelto).
      * La tienda pública nunca debe listarlos como compra individual.
      */
     isIndividuallySellable: { type: Boolean, default: true },

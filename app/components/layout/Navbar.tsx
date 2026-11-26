@@ -3,6 +3,7 @@ import { useState } from "react";
 import type { loader as RootLoader } from "~/root";
 import { Logo } from "~/components/ui/Logo";
 import { CloseIcon, MenuIcon } from "~/components/ui/Icons";
+import { RemoteCart } from "~/components/ecommerce/RemoteCart";
 
 const links = [
   { to: "/tienda", label: "Tienda", isStore: true },
@@ -13,16 +14,20 @@ const links = [
 
 export function Navbar({ cartCount = 0, onOpenCart }: { cartCount?: number; onOpenCart?: () => void }) {
   const [open, setOpen] = useState(false);
+  // En la tienda el carrito lo maneja la propia página (`onOpenCart`). En cualquier otra, se abre
+  // aquí como panel lateral: quien lee el blog ve su carrito y sigue leyendo, sin que lo mande a la tienda.
+  const [cartOpen, setCartOpen] = useState(false);
   // Mientras la tienda no es pública (y quien navega no es admin) se oculta
   // todo lo que lleva a ella: Tienda, carrito y cuenta de cliente.
   const storeVisible = useRouteLoaderData<typeof RootLoader>("root")?.storeVisible ?? false;
   const visibleLinks = links.filter((link) => storeVisible || !link.isStore);
 
   return (
+    <>
     <header className="sticky top-0 z-50 border-b border-carbon/5 bg-hueso/90 backdrop-blur">
-      <div className="mx-auto flex h-20 max-w-6xl items-center justify-between px-4 sm:px-6">
+      <div className="mx-auto flex h-24 max-w-6xl items-center justify-between px-4 sm:h-28 sm:px-6">
         <Link to="/" aria-label="STOPee, inicio">
-          <Logo variant="compact" className="h-14 w-auto sm:h-16" />
+          <Logo variant="compact" className="h-20 w-auto sm:h-24" />
         </Link>
 
         <nav className="hidden items-center gap-8 md:flex">
@@ -65,8 +70,9 @@ export function Navbar({ cartCount = 0, onOpenCart }: { cartCount?: number; onOp
                 )}
               </button>
             ) : (
-              <Link
-                to="/tienda#carrito"
+              <button
+                type="button"
+                onClick={() => setCartOpen(true)}
                 className="relative inline-flex min-h-11 min-w-11 items-center justify-center rounded-full bg-lima px-5 py-2.5 text-sm font-bold text-carbon transition-transform hover:scale-105 active:scale-95"
                 aria-label={`Carrito, ${cartCount} artículos`}
               >
@@ -76,7 +82,7 @@ export function Navbar({ cartCount = 0, onOpenCart }: { cartCount?: number; onOp
                     {cartCount}
                   </span>
                 )}
-              </Link>
+              </button>
             )}
             </>
           )}
@@ -116,5 +122,8 @@ export function Navbar({ cartCount = 0, onOpenCart }: { cartCount?: number; onOp
         </nav>
       )}
     </header>
+    {/* Fuera del <header>: su desenfoque (backdrop-blur) haría que un panel fijo se midiera contra la barra y no contra la pantalla. */}
+    {storeVisible && !onOpenCart && <RemoteCart open={cartOpen} onClose={() => setCartOpen(false)} />}
+    </>
   );
 }

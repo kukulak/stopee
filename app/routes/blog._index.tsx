@@ -59,9 +59,7 @@ export default function BlogIndex() {
             Convivencia urbana, un hábito a la vez
           </h1>
           <p className="mx-auto mt-4 max-w-2xl text-carbon/70">
-            Como comunidad ya aprendimos a recoger la popa de nuestros perros. Este es el
-            espacio para dar el siguiente paso: paseos más seguros, respetuosos y limpios para
-            todos.
+            Un espacio para paseos más seguros, respetuosos y limpios para todos.
           </p>
         </section>
 
