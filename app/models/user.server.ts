@@ -49,6 +49,25 @@ const savedAddressSchema = new Schema({
 });
 
 /**
+ * Punto de Recarga STOPee: veterinaria, pet shop o vecino aliado que recarga bidones. Solo lo
+ * activa un administrador (ver /admin/aliados y la ficha del cliente). Sus datos se publican en
+ * /puntos-de-recarga únicamente si `isPublic` está activo, y eso lo marca el admin cuando el
+ * aliado lo autoriza: nunca por defecto.
+ */
+const allyStationSchema = new Schema(
+  {
+    businessName: { type: String, trim: true, default: "", maxlength: 80 },
+    neighborhood: { type: String, trim: true, default: "", maxlength: 80 },
+    city: { type: String, trim: true, default: "CDMX", maxlength: 60 },
+    address: { type: String, trim: true, default: "", maxlength: 160 },
+    schedule: { type: String, trim: true, default: "", maxlength: 120 },
+    whatsapp: { type: String, trim: true, default: "", maxlength: 20 },
+    isPublic: { type: Boolean, default: false },
+  },
+  { _id: false },
+);
+
+/**
  * Recompensa ganada al completar un ciclo de lealtad, pendiente de usarse en
  * la SIGUIENTE compra (nunca permanente) — se limpia sola en cuanto se aplica.
  * Se copia aquí (en vez de solo referenciar la promoción) porque el ciclo en
@@ -81,6 +100,9 @@ const userSchema = new Schema(
     phone: { type: String, trim: true, default: "" },
     address: { type: addressSchema, default: () => ({}) },
     savedAddresses: { type: [savedAddressSchema], default: [] },
+    /** Aliado de recarga: lo activa un administrador. No es un rol (el rol es solo del equipo). */
+    isRefillAlly: { type: Boolean, default: false },
+    allyStation: { type: allyStationSchema, default: undefined },
     dogs: { type: [dogSchema], default: [] },
     /** Compras individuales confirmadas de por vida (no cuenta envíos de suscripción). */
     individualPurchaseCount: { type: Number, default: 0 },

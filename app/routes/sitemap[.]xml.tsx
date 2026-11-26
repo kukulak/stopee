@@ -18,6 +18,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     { path: "/como-funciona", changefreq: "monthly", priority: "0.6" },
     { path: "/nosotros", changefreq: "yearly", priority: "0.4" },
     { path: "/contacto", changefreq: "yearly", priority: "0.4" },
+    { path: "/puntos-de-recarga", changefreq: "weekly", priority: "0.5" },
     { path: "/preguntas-frecuentes", changefreq: "monthly", priority: "0.5" },
     { path: "/envios", changefreq: "monthly", priority: "0.4" },
     { path: "/aviso-de-privacidad", changefreq: "yearly", priority: "0.2" },

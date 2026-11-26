@@ -1,0 +1,30 @@
+import mongoose, { type InferSchemaType, type Model } from "mongoose";
+
+const { Schema, model, models } = mongoose;
+
+/**
+ * Solicitud para ser Punto de Recarga STOPee, enviada desde /puntos-de-recarga. No es un `Lead`
+ * (esa colección es la lista de espera con cupón de bienvenida). Se revisa en /admin/aliados.
+ */
+const allyRequestSchema = new Schema(
+  {
+    name: { type: String, required: true, trim: true, maxlength: 80 },
+    businessOrType: { type: String, required: true, trim: true, maxlength: 40 },
+    neighborhood: { type: String, required: true, trim: true, maxlength: 80 },
+    address: { type: String, required: true, trim: true, maxlength: 160 },
+    /** 10 dígitos, ya normalizado. */
+    whatsapp: { type: String, required: true, trim: true, maxlength: 20 },
+    email: { type: String, required: true, trim: true, lowercase: true, maxlength: 100 },
+    status: { type: String, enum: ["pending", "approved", "rejected"], default: "pending" },
+    /** Cuándo aceptó el aviso de privacidad al enviar la solicitud. */
+    privacyAcceptedAt: { type: Date, default: Date.now },
+  },
+  { timestamps: true },
+);
+allyRequestSchema.index({ status: 1, createdAt: -1 });
+allyRequestSchema.index({ email: 1 });
+
+export type AllyRequestDoc = InferSchemaType<typeof allyRequestSchema>;
+
+export const AllyRequestModel =
+  (models.AllyRequest as Model<AllyRequestDoc>) ?? model<AllyRequestDoc>("AllyRequest", allyRequestSchema);

@@ -11,6 +11,11 @@ import { AnalyticsEventModel } from "~/models/analyticsEvent.server";
 import { getCatalogItems } from "~/lib/catalog.server";
 import { ArrowLink } from "~/components/ui/ArrowLink";
 import { requireAdmin, requireSuperAdmin } from "~/lib/session.server";
+import { allyStationSchema } from "~/lib/refillPoints.server";
+import { STATION_CITIES } from "~/lib/refillPoints";
+import { Types } from "mongoose";
+import { cleanPlainText } from "~/lib/formGuard.server";
+import { normalizePhone } from "~/lib/deliveryAddress";
 
 export const meta: MetaFunction = () => [{ title: "Cliente — Admin STOPee" }];
 
@@ -33,26 +38,35 @@ const ORDER_STATUS_LABELS: Record<string, string> = {
   refunded: "Reembolsado",
 };
 
-/** Cambiar el rol de una cuenta: solo un super administrador, y nunca el de otro super administrador ni el propio. */
+/**
+ * Dos acciones con permisos distintos, y cada una pide el suyo antes de tocar nada:
+ *  - cambiar el rol de la cuenta: solo un super administrador, y nunca el de otro super administrador ni el propio.
+ *  - activar la cuenta como Punto de Recarga y editar sus datos: cualquier administrador (es operación del negocio, no seguridad).
+ */
 export async function action({ request, params }: ActionFunctionArgs) {
+  // El guardia va antes de leer el formulario: quien no es administrador no llega a nada.
+  const admin = await requireAdmin(request);
+  const formData = await request.formData();
+  const intent = formData.get("intent");
+
+  if (intent === "set-ally") return saveAllyStation(admin, params.id, formData);
+
   const viewer = await requireSuperAdmin(request);
   await connectDB();
-
-  const formData = await request.formData();
-  if (formData.get("intent") !== "set-role") return data({ ok: false, error: "Acción no reconocida." }, { status: 400 });
+  if (intent !== "set-role") return data({ ok: false, savedIntent: null, error: "Acción no reconocida." }, { status: 400 });
 
   const role = formData.get("role");
   if (role !== "customer" && role !== "admin") {
-    return data({ ok: false, error: "Elige un rol válido." }, { status: 400 });
+    return data({ ok: false, savedIntent: "set-role" as const, error: "Elige un rol válido." }, { status: 400 });
   }
 
   const target = await UserModel.findById(params.id);
-  if (!target) return data({ ok: false, error: "Cuenta no encontrada." }, { status: 404 });
+  if (!target) return data({ ok: false, savedIntent: "set-role" as const, error: "Cuenta no encontrada." }, { status: 404 });
   if (target.role === "superadmin") {
-    return data({ ok: false, error: "El rol de un super administrador solo se cambia desde la terminal." }, { status: 403 });
+    return data({ ok: false, savedIntent: "set-role" as const, error: "El rol de un super administrador solo se cambia desde la terminal." }, { status: 403 });
   }
   if (String(target._id) === String(viewer._id)) {
-    return data({ ok: false, error: "No puedes cambiar tu propio rol." }, { status: 403 });
+    return data({ ok: false, savedIntent: "set-role" as const, error: "No puedes cambiar tu propio rol." }, { status: 403 });
   }
 
   if (target.role !== role) {
@@ -61,7 +75,40 @@ export async function action({ request, params }: ActionFunctionArgs) {
     await target.save();
     logAudit("user.role_changed", { by: String(viewer._id), userId: String(target._id), from: previousRole, to: role });
   }
-  return data({ ok: true, error: null as string | null });
+  return data({ ok: true, savedIntent: "set-role" as const, error: null as string | null });
+}
+
+/** Activa o desactiva a una cuenta como Punto de Recarga y guarda los datos de su punto. */
+async function saveAllyStation(viewer: { _id: unknown }, id: string | undefined, formData: FormData) {
+  const fail = (error: string, status = 400) => data({ ok: false, savedIntent: "set-ally" as const, error }, { status });
+  if (!id || !Types.ObjectId.isValid(id)) return fail("Cuenta no encontrada.", 404);
+
+  const isRefillAlly = formData.get("isRefillAlly") === "on";
+  const parsed = allyStationSchema.safeParse({
+    businessName: cleanPlainText(formData.get("businessName")),
+    neighborhood: cleanPlainText(formData.get("neighborhood")),
+    city: String(formData.get("city") ?? "CDMX"),
+    address: cleanPlainText(formData.get("address")),
+    schedule: cleanPlainText(formData.get("schedule")),
+    whatsapp: cleanPlainText(formData.get("whatsapp")),
+    // Solo un aliado activo puede estar en el directorio.
+    isPublic: isRefillAlly && formData.get("isPublic") === "on",
+  });
+  if (!parsed.success) return fail(parsed.error.issues[0]?.message ?? "Revisa los datos del punto.");
+  if (isRefillAlly && !parsed.data.businessName) return fail("Escribe el nombre del punto para activarlo.");
+
+  await connectDB();
+  const station = { ...parsed.data, whatsapp: parsed.data.whatsapp ? (normalizePhone(parsed.data.whatsapp) ?? "") : "" };
+  const done = await UserModel.updateOne({ _id: id }, { $set: { isRefillAlly, allyStation: station } });
+  if (done.matchedCount === 0) return fail("Cuenta no encontrada.", 404);
+
+  logAudit("user.refill_ally_changed", {
+    by: String((viewer as { _id: unknown })._id),
+    userId: id,
+    isRefillAlly,
+    isPublic: station.isPublic,
+  });
+  return data({ ok: true, savedIntent: "set-ally" as const, error: null as string | null });
 }
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
@@ -111,6 +158,16 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       registeredAt: user.createdAt,
       role: user.role as UserRole,
     },
+    ally: {
+      isRefillAlly: Boolean(user.isRefillAlly),
+      businessName: user.allyStation?.businessName ?? "",
+      neighborhood: user.allyStation?.neighborhood ?? "",
+      city: user.allyStation?.city || "CDMX",
+      address: user.allyStation?.address ?? "",
+      schedule: user.allyStation?.schedule ?? "",
+      whatsapp: user.allyStation?.whatsapp ?? "",
+      isPublic: Boolean(user.allyStation?.isPublic),
+    },
     canManageRole: isSuperAdmin(viewer.role) && user.role !== "superadmin" && String(user._id) !== String(viewer._id),
     insights: {
       ltv: Math.round(user.totalSpentLTV ?? 0),
@@ -157,10 +214,13 @@ function Card({ children, className = "" }: { children: React.ReactNode; classNa
 }
 
 export default function AdminCustomerDetail() {
-  const { profile, canManageRole, insights, orders, subscriptions, timeline } = useLoaderData<typeof loader>();
+  const { profile, ally, canManageRole, insights, orders, subscriptions, timeline } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const navigation = useNavigation();
   const isSavingRole = navigation.state !== "idle" && navigation.formData?.get("intent") === "set-role";
+  const isSavingAlly = navigation.state !== "idle" && navigation.formData?.get("intent") === "set-ally";
+  const roleResult = actionData && actionData.savedIntent === "set-role" ? actionData : null;
+  const allyResult = actionData && actionData.savedIntent === "set-ally" ? actionData : null;
 
   return (
     <div className="flex min-w-0 flex-col gap-6">
@@ -206,12 +266,83 @@ export default function AdminCustomerDetail() {
               {isSavingRole ? "Guardando…" : "Guardar rol"}
             </button>
           </Form>
-          {actionData?.ok && <p role="status" className="mt-2 text-sm font-semibold text-bosque">Rol actualizado.</p>}
-          {actionData && !actionData.ok && actionData.error && (
-            <p role="alert" className="mt-2 text-sm font-semibold text-red-600">{actionData.error}</p>
+          {roleResult?.ok && <p role="status" className="mt-2 text-sm font-semibold text-bosque">Rol actualizado.</p>}
+          {roleResult && !roleResult.ok && roleResult.error && (
+            <p role="alert" className="mt-2 text-sm font-semibold text-red-600">{roleResult.error}</p>
           )}
         </Card>
       )}
+
+      <Card>
+        <h2 className="font-display text-lg font-bold text-carbon">Punto de Recarga</h2>
+        <p className="mt-1 text-sm text-carbon/60">
+          Actívalo cuando esta cuenta ya sea un aliado que recarga bidones. Aparece en el directorio público de
+          /puntos-de-recarga solo si marcas «Publicar», y eso solo se hace con la autorización del aliado.
+        </p>
+        <Form method="post" className="mt-4 flex flex-col gap-4">
+          <input type="hidden" name="intent" value="set-ally" />
+          <label htmlFor="isRefillAlly" className="flex min-h-11 cursor-pointer items-center gap-3 text-sm font-semibold text-carbon">
+            <input id="isRefillAlly" name="isRefillAlly" type="checkbox" defaultChecked={ally.isRefillAlly} className="h-5 w-5 accent-bosque" />
+            Esta cuenta es un Punto de Recarga
+          </label>
+
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div>
+              <label htmlFor="businessName" className="text-sm font-semibold text-carbon">Nombre del punto</label>
+              <input id="businessName" name="businessName" defaultValue={ally.businessName} maxLength={80} placeholder="Veterinaria San Ángel" className="mt-1 block min-h-11 w-full rounded-xl border border-carbon/15 px-3 focus:border-oliva focus:outline-none" />
+            </div>
+            <div>
+              <label htmlFor="neighborhood" className="text-sm font-semibold text-carbon">Colonia</label>
+              <input id="neighborhood" name="neighborhood" defaultValue={ally.neighborhood} maxLength={80} className="mt-1 block min-h-11 w-full rounded-xl border border-carbon/15 px-3 focus:border-oliva focus:outline-none" />
+            </div>
+            <div>
+              <label htmlFor="city" className="text-sm font-semibold text-carbon">Zona</label>
+              <select id="city" name="city" defaultValue={ally.city} className="mt-1 block min-h-11 w-full rounded-xl border border-carbon/15 px-3 focus:border-oliva focus:outline-none">
+                {STATION_CITIES.map((city) => (
+                  <option key={city} value={city}>{city}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label htmlFor="whatsapp" className="text-sm font-semibold text-carbon">WhatsApp del punto</label>
+              <input id="whatsapp" name="whatsapp" type="tel" inputMode="tel" defaultValue={ally.whatsapp} maxLength={20} className="mt-1 block min-h-11 w-full rounded-xl border border-carbon/15 px-3 focus:border-oliva focus:outline-none" />
+            </div>
+            <div className="sm:col-span-2">
+              <label htmlFor="address" className="text-sm font-semibold text-carbon">Dirección pública o referencia</label>
+              <input id="address" name="address" defaultValue={ally.address} maxLength={160} className="mt-1 block min-h-11 w-full rounded-xl border border-carbon/15 px-3 focus:border-oliva focus:outline-none" />
+            </div>
+            <div className="sm:col-span-2">
+              <label htmlFor="schedule" className="text-sm font-semibold text-carbon">Horario de recarga</label>
+              <input id="schedule" name="schedule" defaultValue={ally.schedule} maxLength={120} placeholder="Lunes a sábado, 10:00 a 18:00" className="mt-1 block min-h-11 w-full rounded-xl border border-carbon/15 px-3 focus:border-oliva focus:outline-none" />
+            </div>
+          </div>
+
+          <label htmlFor="isPublic" className="flex min-h-11 cursor-pointer items-start gap-3 text-sm text-carbon">
+            <input id="isPublic" name="isPublic" type="checkbox" defaultChecked={ally.isPublic} className="mt-1 h-5 w-5 shrink-0 accent-bosque" />
+            <span>
+              <span className="font-semibold">Publicar en el directorio</span>
+              <span className="block text-carbon/60">
+                Muestra nombre, colonia, dirección, horario y WhatsApp a cualquier visitante. Requiere todos esos datos y
+                que el aliado lo haya autorizado.
+              </span>
+            </span>
+          </label>
+
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              type="submit"
+              disabled={isSavingAlly}
+              className="min-h-11 rounded-full bg-carbon px-6 text-sm font-bold text-hueso disabled:opacity-60"
+            >
+              {isSavingAlly ? "Guardando…" : "Guardar punto de recarga"}
+            </button>
+            {allyResult?.ok && <p role="status" className="text-sm font-semibold text-bosque">Punto de recarga guardado.</p>}
+            {allyResult && !allyResult.ok && allyResult.error && (
+              <p role="alert" className="text-sm font-semibold text-red-600">{allyResult.error}</p>
+            )}
+          </div>
+        </Form>
+      </Card>
 
       {insights.isSubscriptionCandidate && (
         <Card className="border-oliva/40 bg-oliva/5">

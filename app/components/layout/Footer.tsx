@@ -71,6 +71,11 @@ export function Footer() {
               </Link>
             </li>
             <li>
+              <Link to="/puntos-de-recarga" className="hover:text-hueso">
+                Puntos de Recarga
+              </Link>
+            </li>
+            <li>
               <Link to="/contacto" className="hover:text-hueso">
                 Contacto
               </Link>

@@ -34,6 +34,7 @@ const NAV_ITEMS: {
   { to: "/admin/banners", label: "Banners" },
   { to: "/admin/blog", label: "Blog" },
   { to: "/admin/customers", label: "Clientes" },
+  { to: "/admin/aliados", label: "Puntos de recarga" },
   { to: "/admin/leads", label: "Lista de espera" },
   { to: "/admin/messages", label: "Mensajes" },
   { to: "/admin/exit-intent", label: "Popup de salida" },

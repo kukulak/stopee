@@ -71,6 +71,28 @@ export function contactNotificationEmail(data: { name: string; email: string; me
   return { subject: `Contacto STOPee: mensaje de ${data.name}`, html, text };
 }
 
+/** Aviso interno: llegó una solicitud para ser Punto de Recarga. */
+export function allyRequestNotificationEmail(data: {
+  name: string;
+  businessOrType: string;
+  neighborhood: string;
+  address: string;
+  whatsapp: string;
+  email: string;
+}) {
+  const { html, text } = renderLayout({
+    title: "Nueva solicitud de Punto de Recarga",
+    paragraphs: [
+      `${data.name} (${data.businessOrType})`,
+      `Colonia: ${data.neighborhood}\nDirección: ${data.address}`,
+      `WhatsApp: ${data.whatsapp}\nCorreo: ${data.email}`,
+      "Revísala en el backoffice y respóndele por WhatsApp o por correo.",
+    ],
+    action: { label: "Ver solicitudes", url: appUrl("/admin/aliados") },
+  });
+  return { subject: `Punto de Recarga: solicitud de ${data.name}`, html, text };
+}
+
 /** Confirmación a quien se registró en la lista de espera. */
 export function waitlistWelcomeEmail() {
   const { html, text } = renderLayout({
