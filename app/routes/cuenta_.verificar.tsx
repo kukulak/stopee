@@ -7,6 +7,8 @@ import { connectDB } from "~/lib/db.server";
 import { UserModel } from "~/models/user.server";
 import { consumeToken } from "~/lib/authTokens.server";
 import { checkRateLimit, getClientIp } from "~/lib/rateLimit.server";
+import { activateApprovedAllyForUser } from "~/lib/refillPoints.server";
+import { logError } from "~/lib/logger.server";
 
 export const meta: MetaFunction = () => [{ title: "Confirmar correo — STOPee" }, { name: "robots", content: "noindex" }];
 
@@ -24,6 +26,12 @@ export async function loader({ request }: LoaderFunctionArgs) {
     { _id: consumed.userId, emailVerifiedAt: { $exists: false } },
     { $set: { emailVerifiedAt: new Date() } },
   );
+  // Si ya le habían aprobado ser Punto de Recarga antes de tener cuenta, se activa en cuanto confirma su correo.
+  try {
+    await activateApprovedAllyForUser(consumed.userId);
+  } catch (error) {
+    logError("verificar.activate-ally", error);
+  }
   return data({ status: "verified" as const }, { headers });
 }
 

@@ -32,6 +32,13 @@ import { ArrowIcon, CloseIcon } from "~/components/ui/Icons";
 import { firstNameOf } from "~/lib/names";
 import { describeLoyaltyReward, resolveLoyaltyTier } from "~/lib/loyalty";
 import { AddressBookCard } from "~/components/account/AddressBookCard";
+import { AllyCard } from "~/components/account/AllyCard";
+import { AllyRequestModel } from "~/models/allyRequest.server";
+import { ProductModel } from "~/models/product.server";
+import { cleanPlainText } from "~/lib/formGuard.server";
+import { normalizeMapsUrl, type RequestStatus } from "~/lib/refillPoints";
+import { MAPS_URL_ERROR } from "~/lib/refillPoints.server";
+import { normalizePhone } from "~/lib/deliveryAddress";
 import { addressOptionsFromProfile } from "~/lib/addressBook";
 import { makePrincipalAddress, removeSavedAddress, renameAddress } from "~/lib/addressBook.server";
 
@@ -60,6 +67,27 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
   if (!user) throw new Response("Usuario no encontrado", { status: 404 });
 
+  // Punto de Recarga: su punto y sus pedidos de bidón, o el estado de su solicitud si todavía no es aliado.
+  const isAlly = Boolean(user.isRefillAlly);
+  const [allyOnlySkus, latestRequest] = await Promise.all([
+    isAlly ? ProductModel.distinct("sku", { visibility: "ALLY_ONLY" }) : Promise.resolve([] as string[]),
+    isAlly ? null : AllyRequestModel.findOne({ email: user.email }).sort({ createdAt: -1 }).select("status").lean(),
+  ]);
+  const allyOrders = isAlly
+    ? orders
+        .filter((o) => (o.items as { sku: string }[]).some((item) => allyOnlySkus.includes(item.sku)))
+        .slice(0, 8)
+        .map((o) => ({
+          id: String(o._id),
+          createdAt: new Date(o.createdAt as unknown as string).toISOString(),
+          status: o.status,
+          netAmount: o.netAmount,
+          items: (o.items as { sku: string; name: string; quantity: number }[])
+            .filter((item) => allyOnlySkus.includes(item.sku))
+            .map((item) => ({ name: item.name, quantity: item.quantity })),
+        }))
+    : [];
+
   const dogs = (user.dogs && user.dogs.length > 0
     ? user.dogs
     : user.dogName
@@ -68,6 +96,20 @@ export async function loader({ request }: LoaderFunctionArgs) {
   ) as { name: string; birthday: string | Date | null }[];
 
   return data({
+    ally: isAlly
+      ? {
+          businessName: user.allyStation?.businessName ?? "",
+          neighborhood: user.allyStation?.neighborhood ?? "",
+          city: user.allyStation?.city ?? "",
+          address: user.allyStation?.address ?? "",
+          schedule: user.allyStation?.schedule ?? "",
+          whatsapp: user.allyStation?.whatsapp ?? "",
+          mapsUrl: user.allyStation?.mapsUrl ?? "",
+          isPublic: Boolean(user.allyStation?.isPublic),
+        }
+      : null,
+    allyRequestStatus: (latestRequest?.status ?? null) as RequestStatus | null,
+    allyOrders,
     user: {
       name: user.name,
       email: user.email,
@@ -133,6 +175,31 @@ export async function action({ request }: ActionFunctionArgs) {
       { ok: result.ok, savedIntent: intent, error: result.ok ? null : result.error },
       { status: result.ok ? 200 : 400 },
     );
+  }
+
+  if (intent === "ally-update") {
+    // Un aliado mantiene al día su horario, WhatsApp y mapa. El nombre, la dirección y publicar el punto en el
+    // directorio siguen siendo de un administrador.
+    const fail = (error: string) => data({ ok: false, savedIntent: "ally-update" as const, error }, { status: 400 });
+    const me = await UserModel.findById(userId).select("isRefillAlly allyStation");
+    if (!me?.isRefillAlly) return fail("Tu cuenta no es un Punto de Recarga.");
+
+    const schedule = cleanPlainText(formData.get("schedule")).slice(0, 120);
+    const whatsappRaw = cleanPlainText(formData.get("whatsapp"));
+    const whatsapp = whatsappRaw ? normalizePhone(whatsappRaw) : "";
+    const mapsUrl = normalizeMapsUrl(String(formData.get("mapsUrl") ?? ""));
+    if (whatsapp === null) return fail("El WhatsApp debe tener 10 dígitos.");
+    if (mapsUrl === null) return fail(MAPS_URL_ERROR);
+    // Un punto que ya está en el directorio no puede quedarse sin horario ni WhatsApp.
+    if (me.allyStation?.isPublic && (!schedule || !whatsapp)) {
+      return fail("Tu punto ya aparece en el directorio: necesita horario y WhatsApp.");
+    }
+
+    await UserModel.updateOne(
+      { _id: userId, isRefillAlly: true },
+      { $set: { "allyStation.schedule": schedule, "allyStation.whatsapp": whatsapp, "allyStation.mapsUrl": mapsUrl } },
+    );
+    return data({ ok: true, savedIntent: "ally-update" as const, error: null as string | null });
   }
 
   if (intent === "update-profile") {
@@ -292,7 +359,8 @@ export async function action({ request }: ActionFunctionArgs) {
 }
 
 export default function Cuenta() {
-  const { user, loyalty, orders, subscriptions, subscriptionProgram } = useLoaderData<typeof loader>();
+  const { user, loyalty, orders, subscriptions, subscriptionProgram, ally, allyRequestStatus, allyOrders } =
+    useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const navigation = useNavigation();
   const isBusy = navigation.state !== "idle";
@@ -362,6 +430,8 @@ export default function Cuenta() {
               <ArrowIcon />
             </Link>
           )}
+
+          <AllyCard ally={ally} requestStatus={allyRequestStatus} orders={allyOrders} orderStatusLabels={ORDER_STATUS_LABELS} />
 
           {/* Perfil: teléfono, dirección y perros */}
           <div className="mt-8 rounded-3xl border border-carbon/10 bg-white p-6">

@@ -126,9 +126,18 @@ export async function buildPromotionDocFromFormData(
         return { ok: false, error: "La compra mínima no puede ser negativa.", status: 400 };
       }
 
+      // ¿Para quién es? Clientes, aliados o los dos; al menos uno.
+      const forCustomers = formData.get("couponForCustomers") === "on";
+      const forAllies = formData.get("couponForAllies") === "on";
+      if (!forCustomers && !forAllies) {
+        return { ok: false, error: "Elige para quién es el cupón: clientes, aliados o los dos.", status: 400 };
+      }
+
       doc.coupon = {
         code,
         percentage,
+        forCustomers,
+        forAllies,
         oncePerCustomer: formData.get("couponOncePerCustomer") === "on",
         firstPurchaseOnly: formData.get("couponFirstPurchaseOnly") === "on",
         stackable: formData.get("couponStackable") === "on",

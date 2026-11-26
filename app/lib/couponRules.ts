@@ -12,14 +12,32 @@ export type CouponRules = {
   minQuantity?: number | null;
   requiredSkus?: string[] | null;
   stackable?: boolean | null;
+  /** Para clientes normales. Vacío (cupones anteriores) = sí. */
+  forCustomers?: boolean | null;
+  /** Para Puntos de Recarga (aliados). Vacío (cupones anteriores) = sí. */
+  forAllies?: boolean | null;
 };
+
+/**
+ * ¿Puede usar este cupón quien compra? Un aliado usa los cupones marcados «para aliados» y un cliente
+ * normal los marcados «para clientes»; si están los dos, es para todos. Un campo vacío (cupón anterior
+ * a esta opción) cuenta como «sí», para que nada de lo que ya existe cambie de pronto.
+ */
+export function couponAudienceAllows(rules: CouponRules | null | undefined, buyerIsAlly: boolean): boolean {
+  if (!rules) return true;
+  return buyerIsAlly ? rules.forAllies !== false : rules.forCustomers !== false;
+}
 
 export const mxn = (n: number) => `$${Math.round(n).toLocaleString("es-MX")}`;
 
 export function couponNeedsAccount(rules: CouponRules | null | undefined): boolean {
   return Boolean(
     rules &&
-      (rules.oncePerCustomer || rules.firstPurchaseOnly || (rules.allowedEmails && rules.allowedEmails.length > 0)),
+      (rules.oncePerCustomer ||
+        rules.firstPurchaseOnly ||
+        // Un cupón solo para aliados: sin sesión no hay forma de saber si quien compra lo es.
+        rules.forCustomers === false ||
+        (rules.allowedEmails && rules.allowedEmails.length > 0)),
   );
 }
 
@@ -32,6 +50,8 @@ export function stackPercents(a: number, b: number): number {
 export function describeCouponRules(rules: CouponRules | null | undefined): string[] {
   if (!rules) return [];
   const out: string[] = [];
+  if (rules.forCustomers === false) out.push("solo aliados");
+  else if (rules.forAllies === false) out.push("solo clientes");
   if (rules.oncePerCustomer) out.push("1 uso por cliente");
   if (rules.firstPurchaseOnly) out.push("solo primera compra");
   if (rules.allowedEmails?.length) {

@@ -1,5 +1,5 @@
 import { OrderModel } from "~/models/order.server";
-import { couponNeedsAccount, mxn, type CouponRules } from "~/lib/couponRules";
+import { couponAudienceAllows, couponNeedsAccount, mxn, type CouponRules } from "~/lib/couponRules";
 
 /**
  * Reglas de un cupón más allá del código y el porcentaje. Todas son opcionales:
@@ -13,7 +13,14 @@ export type CouponPromoLike = { _id: unknown; coupon?: CouponRules | null };
 
 export type CouponContext = {
   lines: { sku: string; quantity: number; unitPriceMxn: number }[];
-  user: { _id: unknown; email: string; individualPurchaseCount?: number | null; emailVerifiedAt?: Date | null } | null;
+  user: {
+    _id: unknown;
+    email: string;
+    individualPurchaseCount?: number | null;
+    emailVerifiedAt?: Date | null;
+    /** ¿Es un Punto de Recarga activo? Decide si le toca un cupón de clientes o de aliados. */
+    isRefillAlly?: boolean | null;
+  } | null;
   /** Nombre legible de un SKU, para los mensajes ("Agrega Concentrado 1L…"). */
   nameBySku?: Map<string, string>;
 };
@@ -45,6 +52,17 @@ export async function checkCouponEligibility(
 
   if (couponNeedsAccount(rules) && !ctx.user) {
     return { ok: false, kind: "login", reason: "Inicia sesión para usar este cupón." };
+  }
+
+  // Quién compra decide qué cupones le tocan: sin sesión es un cliente normal.
+  if (!couponAudienceAllows(rules, Boolean(ctx.user?.isRefillAlly))) {
+    return {
+      ok: false,
+      kind: "identity",
+      reason: ctx.user?.isRefillAlly
+        ? "Este cupón es para clientes. Tu cuenta de Punto de Recarga tiene sus propios cupones."
+        : "Este cupón es solo para Puntos de Recarga (aliados).",
+    };
   }
 
   if (ctx.user) {

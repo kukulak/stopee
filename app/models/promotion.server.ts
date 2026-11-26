@@ -72,6 +72,13 @@ const promotionSchema = new Schema(
       minQuantity: { type: Number, min: 1 },
       /** El carrito debe traer al menos uno de estos productos o paquetes (SKU). */
       requiredSkus: { type: [String], default: [] },
+      /**
+       * ¿Para quién es el cupón? Clientes normales, Puntos de Recarga (aliados) o ambos. Los cupones
+       * anteriores a este campo no lo traen y cuentan como "para los dos": siguen funcionando como siempre.
+       * Un cupón nuevo se crea solo para clientes salvo que el administrador marque también a los aliados.
+       */
+      forCustomers: { type: Boolean },
+      forAllies: { type: Boolean },
       /** Puede sumarse a la recompensa de lealtad del cliente. Por defecto, no se combina con nada. */
       stackable: { type: Boolean, default: false },
     },

@@ -21,11 +21,6 @@ export async function loader({ request }: LoaderFunctionArgs) {
   await connectDB();
   const banners = await SiteBannerModel.find().sort({ createdAt: -1 }).lean();
 
-  // En la portada solo se muestra un banner a la vez: el activo editado más recientemente.
-  const shownHomeId = banners
-    .filter((b) => b.isActive && b.placement === "home")
-    .sort((a, b) => new Date(b.updatedAt as unknown as string).getTime() - new Date(a.updatedAt as unknown as string).getTime())[0]?._id;
-
   return data({
     banners: banners.map((b) => ({
       id: String(b._id),
@@ -36,9 +31,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
       text: b.text ?? "",
       subtitle: b.subtitle ?? "",
       ctaText: b.ctaText ?? "",
-      ctaHref: b.ctaHref ?? "/tienda",
+      ctaHref: b.ctaHref ?? "",
       isActive: b.isActive,
-      isShownOnHome: shownHomeId !== undefined && String(shownHomeId) === String(b._id),
     })),
   });
 }
@@ -51,9 +45,12 @@ function buildBannerDoc(formData: FormData, existingImageUrl?: string) {
   const removeImage = formData.get("removeImage") === "on";
   const imageUrl = uploadedImageUrl ?? (removeImage ? "" : existingImageUrl ?? "");
 
+  // El destino es del botón o, si el banner es solo imagen, de toda la imagen. Vacío: con botón cae a
+  // /tienda; sin botón, el banner simplemente no es clicable.
+  const ctaText = String(formData.get("ctaText") ?? "").trim();
   const rawCtaHref = String(formData.get("ctaHref") ?? "").trim();
-  const ctaHref = rawCtaHref ? normalizeLinkTarget(rawCtaHref) : "/tienda";
-  if (!ctaHref) return { ok: false as const, error: LINK_TARGET_ERROR };
+  const ctaHref = rawCtaHref ? normalizeLinkTarget(rawCtaHref) : ctaText ? "/tienda" : "";
+  if (ctaHref === null) return { ok: false as const, error: LINK_TARGET_ERROR };
 
   return {
     ok: true as const,
@@ -64,7 +61,7 @@ function buildBannerDoc(formData: FormData, existingImageUrl?: string) {
       imageAlt: String(formData.get("imageAlt") ?? "").trim(),
       text: String(formData.get("text") ?? "").trim(),
       subtitle: String(formData.get("subtitle") ?? "").trim().slice(0, SUBTITLE_MAX),
-      ctaText: String(formData.get("ctaText") ?? "").trim(),
+      ctaText,
       ctaHref,
     },
   };
@@ -129,12 +126,12 @@ function BannerFormFields({ defaults }: { defaults?: Banner }) {
           onChange={(e) => setPlacement(e.target.value as BannerPlacement)}
           className={inputClass}
         >
-          <option value="home">Inicio (banner grande, de borde a borde)</option>
+          <option value="home">Inicio (carrusel grande, de borde a borde)</option>
           <option value="tienda">Tienda (carrusel con productos y promociones)</option>
         </select>
         <p className="mt-1 text-xs text-carbon/60">
           {placement === "home"
-            ? "En Inicio habla de beneficios y de quién eres. Se muestra un banner a la vez: el activo editado más recientemente."
+            ? "En Inicio habla de beneficios y de quién eres. Si hay varios activos, rotan en un carrusel: el más nuevo primero."
             : "En Tienda habla de productos, paquetes u ofertas. Pueden rotar varios a la vez."}
         </p>
       </Field>
@@ -156,8 +153,12 @@ function BannerFormFields({ defaults }: { defaults?: Banner }) {
       <Field label="Texto del botón (opcional)" htmlFor="ctaText">
         <input id="ctaText" name="ctaText" defaultValue={defaults?.ctaText} placeholder="Comprar ahora" className={inputClass} />
       </Field>
-      <Field label="Destino del botón" htmlFor="ctaHref">
-        <input id="ctaHref" name="ctaHref" defaultValue={defaults?.ctaHref ?? "/tienda"} placeholder="/tienda" className={inputClass} />
+      <Field label="Destino (del botón o de la imagen)" htmlFor="ctaHref">
+        <input id="ctaHref" name="ctaHref" defaultValue={defaults ? defaults.ctaHref : "/tienda"} placeholder="/puntos-de-recarga" className={inputClass} />
+        <p className="mt-1 text-xs text-carbon/60">
+          Si el banner es <strong>solo imagen</strong>, toda la imagen lleva a este destino: no hace falta dibujar un botón.
+          Déjalo vacío para que no sea clicable. Usa una ruta del sitio (/tienda) o una dirección https://.
+        </p>
       </Field>
       <div className="sm:col-span-2">
         <Field label="Imagen de fondo" htmlFor="image">
@@ -199,8 +200,8 @@ export default function AdminBanners() {
     <div>
       <h1 className="font-display text-2xl sm:text-3xl font-black text-carbon">Banners</h1>
       <p className="mt-1 text-sm text-carbon/60">
-        Cada banner se muestra en un solo lugar. <strong>Inicio:</strong> un banner a todo lo ancho, un
-        banner a la vez. <strong>Tienda:</strong> el carrusel, junto con las promociones que tengan su propio
+        Cada banner se muestra en un solo lugar. <strong>Inicio:</strong> banners a todo lo ancho que rotan en un
+        carrusel (con uno solo se queda fijo). <strong>Tienda:</strong> el carrusel, junto con las promociones que tengan su propio
         banner activado en <a href="/admin/discounts" className="underline">Descuentos</a>; pueden estar varios activos.
       </p>
 
@@ -239,11 +240,13 @@ export default function AdminBanners() {
                     {b.isActive && b.placement === "tienda" && (
                       <span className="rounded-full bg-lima px-2.5 py-1 text-xs font-bold text-carbon">En el carrusel</span>
                     )}
-                    {b.isActive && b.placement === "home" && b.isShownOnHome && (
-                      <span className="rounded-full bg-lima px-2.5 py-1 text-xs font-bold text-carbon">Se está mostrando</span>
+                    {b.isActive && b.placement === "home" && (
+                      <span className="rounded-full bg-lima px-2.5 py-1 text-xs font-bold text-carbon">En el carrusel de Inicio</span>
                     )}
-                    {b.isActive && b.placement === "home" && !b.isShownOnHome && (
-                      <span className="rounded-full bg-carbon/10 px-2.5 py-1 text-xs font-semibold text-carbon/60">En espera: hay uno más reciente</span>
+                    {!b.text && !b.ctaText && b.imageUrl && b.ctaHref && (
+                      <span className="rounded-full border border-carbon/15 px-2.5 py-1 text-xs font-semibold text-carbon/70">
+                        Imagen clicable → {b.ctaHref}
+                      </span>
                     )}
                     <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${b.isActive ? "bg-lima/20 text-bosque" : "bg-carbon/10 text-carbon/50"}`}>
                       {b.isActive ? "Activo" : "Inactivo"}

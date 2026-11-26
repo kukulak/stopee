@@ -9,6 +9,8 @@ const { Schema, model, models } = mongoose;
 const allyRequestSchema = new Schema(
   {
     name: { type: String, required: true, trim: true, maxlength: 80 },
+    /** Nombre del negocio o punto, si lo tiene (un vecino puede no tener uno). */
+    businessName: { type: String, trim: true, default: "", maxlength: 80 },
     businessOrType: { type: String, required: true, trim: true, maxlength: 40 },
     neighborhood: { type: String, required: true, trim: true, maxlength: 80 },
     address: { type: String, required: true, trim: true, maxlength: 160 },
@@ -16,6 +18,8 @@ const allyRequestSchema = new Schema(
     whatsapp: { type: String, required: true, trim: true, maxlength: 20 },
     email: { type: String, required: true, trim: true, lowercase: true, maxlength: 100 },
     status: { type: String, enum: ["pending", "approved", "rejected"], default: "pending" },
+    /** La cuenta que se activó como aliado al aprobar esta solicitud (si ya existía o cuando se registró). */
+    userId: { type: Schema.Types.ObjectId, ref: "User" },
     /** Cuándo aceptó el aviso de privacidad al enviar la solicitud. */
     privacyAcceptedAt: { type: Date, default: Date.now },
   },

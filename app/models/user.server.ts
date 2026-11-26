@@ -62,6 +62,8 @@ const allyStationSchema = new Schema(
     address: { type: String, trim: true, default: "", maxlength: 160 },
     schedule: { type: String, trim: true, default: "", maxlength: 120 },
     whatsapp: { type: String, trim: true, default: "", maxlength: 20 },
+    /** Enlace de Google Maps al punto (opcional). Sin él, el botón del directorio busca la dirección en Maps. */
+    mapsUrl: { type: String, trim: true, default: "", maxlength: 500 },
     isPublic: { type: Boolean, default: false },
   },
   { _id: false },

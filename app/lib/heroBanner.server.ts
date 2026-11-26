@@ -1,33 +1,30 @@
-import { linkTargetOr } from "~/lib/inputValidation";
+import { linkTargetOr, normalizeLinkTarget } from "~/lib/inputValidation";
+import { type HeroBanner } from "~/lib/heroBanner";
 import { getActiveBannerPromotions } from "~/models/promotion.server";
-import { getActiveCustomBanners, getActiveHomeBanner } from "~/models/siteBanner.server";
+import { getActiveCustomBanners, getActiveHomeBanners } from "~/models/siteBanner.server";
 
-export type HeroBanner = {
-  text: string;
-  /** Frase de apoyo bajo el título (solo la usa el banner de la portada). */
-  subtitle: string;
-  imageUrl: string | null;
-  imageAlt: string;
-  ctaText: string;
-  ctaHref: string;
-};
+/** El destino guardado, ya validado: con botón nunca queda vacío; sin botón, vacío significa «sin enlace». */
+function bannerTarget(raw: string | null | undefined, hasButton: boolean): string {
+  return hasButton ? linkTargetOr(raw) : (normalizeLinkTarget(raw) ?? "");
+}
 
 /**
- * El banner de la portada: el banner activo más reciente que se haya marcado para la portada en
- * /admin/banners (solo se muestra uno a la vez). Las promociones con banner van solo al carrusel de
- * /tienda, porque la portada habla de beneficios y la tienda de productos y ofertas.
+ * Los banners de la portada: todos los activos marcados para Inicio en /admin/banners, que rotan en un
+ * carrusel (con uno solo se muestra fijo). Las promociones con banner van solo al carrusel de /tienda,
+ * porque la portada habla de beneficios y la tienda de productos y ofertas.
  */
-export async function getActiveHeroBanner(): Promise<HeroBanner | null> {
-  const custom = await getActiveHomeBanner();
-  if (!custom) return null;
-  return {
-    text: custom.text ?? "",
-    subtitle: custom.subtitle ?? "",
-    imageUrl: custom.imageUrl || null,
-    imageAlt: custom.imageAlt ?? "",
-    ctaText: custom.ctaText ?? "",
-    ctaHref: linkTargetOr(custom.ctaHref),
-  };
+export async function getActiveHeroBanners(): Promise<HeroBanner[]> {
+  const banners = await getActiveHomeBanners();
+  return banners
+    .map((custom) => ({
+      text: custom.text ?? "",
+      subtitle: custom.subtitle ?? "",
+      imageUrl: custom.imageUrl || null,
+      imageAlt: custom.imageAlt ?? "",
+      ctaText: custom.ctaText ?? "",
+      ctaHref: bannerTarget(custom.ctaHref, Boolean(custom.ctaText)),
+    }))
+    .filter((banner) => banner.text || banner.subtitle || banner.ctaText || banner.imageUrl);
 }
 
 /**
@@ -47,7 +44,7 @@ export async function getTiendaHeroSlides(): Promise<HeroBanner[]> {
       imageUrl: promo.banner?.imageUrl || null,
       imageAlt: promo.banner?.imageAlt ?? "",
       ctaText: promo.banner?.ctaText ?? "",
-      ctaHref: linkTargetOr(promo.banner?.ctaHref),
+      ctaHref: bannerTarget(promo.banner?.ctaHref, Boolean(promo.banner?.ctaText)),
     },
   }));
 
@@ -59,7 +56,7 @@ export async function getTiendaHeroSlides(): Promise<HeroBanner[]> {
       imageUrl: custom.imageUrl || null,
       imageAlt: custom.imageAlt ?? "",
       ctaText: custom.ctaText ?? "",
-      ctaHref: linkTargetOr(custom.ctaHref),
+      ctaHref: bannerTarget(custom.ctaHref, Boolean(custom.ctaText)),
     },
   }));
 

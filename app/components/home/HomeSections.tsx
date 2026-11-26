@@ -1,12 +1,12 @@
 import { Link } from "react-router";
 import { DefaultHero } from "~/components/ecommerce/DefaultHero";
-import { HeroBannerSection } from "~/components/ecommerce/HeroBannerSection";
+import { HomeBannerCarousel } from "~/components/ecommerce/HomeBannerCarousel";
 import { TestimonialsSection } from "~/components/ecommerce/TestimonialsSection";
 import { ArrowLink } from "~/components/ui/ArrowLink";
 import { HOME_HERO_SWIRLS, HOME_PAGE_SWIRLS } from "~/components/ui/BrandSwirls";
 import { EditableBrandSwirls } from "~/components/ui/EditableBrandSwirls";
 import { ArrowLabel } from "~/components/ui/Icons";
-import type { HeroBanner } from "~/lib/heroBanner.server";
+import type { HeroBanner } from "~/lib/heroBanner";
 import type { CatalogItem } from "~/lib/catalog.server";
 
 /**
@@ -16,9 +16,12 @@ import type { CatalogItem } from "~/lib/catalog.server";
  */
 export type HomeContent = Record<string, string>;
 
-/** Banner de /admin/banners; sin banner activo para Inicio, el hero por defecto sobre fondo oscuro. */
-export function HeroBlock({ banner, exploreHref }: { banner: HeroBanner | null; exploreHref: string }) {
-  if (banner) return <HeroBannerSection banner={banner} />;
+/**
+ * Banners de /admin/banners marcados para Inicio: uno solo se muestra fijo y varios rotan en un carrusel.
+ * Sin ninguno activo, el hero por defecto sobre fondo oscuro.
+ */
+export function HeroBlock({ banners, exploreHref }: { banners: HeroBanner[]; exploreHref: string }) {
+  if (banners.length > 0) return <HomeBannerCarousel banners={banners} />;
   return (
     <div className="relative overflow-hidden bg-carbon">
       <EditableBrandSwirls swirls={HOME_HERO_SWIRLS} id="home-hero-v2" />

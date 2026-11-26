@@ -51,6 +51,8 @@ export type PromotionDefaults = {
     minQuantity?: number | null;
     requiredSkus?: string[];
     stackable?: boolean;
+    forCustomers?: boolean | null;
+    forAllies?: boolean | null;
   } | null;
   bogo?: { buyQuantity?: number; getQuantity?: number; getDiscountPercentage?: number; applicableSku?: string } | null;
   freeGift?: { minSpendMxn?: number; giftProduct?: string } | null;
@@ -136,6 +138,32 @@ export function PromotionFormFields({
               <input id="usageLimit" name="usageLimit" type="number" min={1} placeholder="Sin límite" defaultValue={defaults?.usageLimit ?? undefined} className={inputClass} />
             </Field>
           </div>
+
+          <fieldset className="flex flex-col gap-1 rounded-2xl border border-carbon/10 p-3 sm:p-4">
+            <legend className="px-1 text-sm font-bold text-carbon">¿Para quién es este cupón?</legend>
+            <label className="flex min-h-11 items-center gap-3 text-sm text-carbon">
+              <input
+                type="checkbox"
+                name="couponForCustomers"
+                // Cupón nuevo: para clientes. Cupón anterior sin este dato: para los dos (como ya funcionaba).
+                defaultChecked={defaults?.coupon ? defaults.coupon.forCustomers !== false : true}
+                className="h-5 w-5 shrink-0 accent-lima"
+              />
+              Clientes
+            </label>
+            <label className="flex min-h-11 items-center gap-3 text-sm text-carbon">
+              <input
+                type="checkbox"
+                name="couponForAllies"
+                defaultChecked={defaults?.coupon ? defaults.coupon.forAllies !== false : false}
+                className="h-5 w-5 shrink-0 accent-lima"
+              />
+              Aliados (Puntos de Recarga)
+            </label>
+            <p className="text-xs text-carbon/50">
+              Marca los dos si es para todos. Un aliado solo puede usar cupones marcados para aliados.
+            </p>
+          </fieldset>
 
           <details
             className="group rounded-2xl border border-carbon/10 p-3 sm:p-4"

@@ -29,6 +29,8 @@ export type PublicRefillPoint = {
   schedule: string;
   /** 10 dígitos. */
   whatsapp: string;
+  /** Enlace de Google Maps puesto por el administrador; vacío = se busca la dirección en Maps. */
+  mapsUrl: string;
 };
 
 /** Enlace directo a WhatsApp con un mensaje inicial; null si el número no es de 10 dígitos. */
@@ -58,4 +60,41 @@ export function filterByNeighborhood<T extends Pick<PublicRefillPoint, "neighbor
   const wanted = (neighborhood ?? "").trim();
   if (!wanted) return points;
   return points.filter((point) => sameNeighborhood(point.neighborhood, wanted));
+}
+
+const GOOGLE_MAPS_HOSTS = /^(www\.|maps\.)?google\.(com|com\.mx)$/i;
+
+/**
+ * Un enlace de Google Maps válido, o "" si se dejó vacío, o null si no lo es. Solo se aceptan direcciones
+ * https de Google Maps (google.com/maps…, maps.app.goo.gl/… o goo.gl/maps…): este enlace lo publicamos para
+ * cualquier visitante, así que no se admite cualquier destino.
+ */
+export function normalizeMapsUrl(raw: unknown): string | null {
+  if (raw === null || raw === undefined) return "";
+  if (typeof raw !== "string") return null;
+  const value = raw.trim();
+  if (!value) return "";
+  if (value.length > 500 || /[\u0000-\u001f\u007f\s]/.test(value)) return null;
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return null;
+  }
+  if (url.protocol !== "https:" || url.username || url.password) return null;
+  const host = url.hostname.toLowerCase();
+  const isGoogleMaps = GOOGLE_MAPS_HOSTS.test(host) && url.pathname.startsWith("/maps");
+  const isShortLink = host === "maps.app.goo.gl" || (host === "goo.gl" && url.pathname.startsWith("/maps"));
+  return isGoogleMaps || isShortLink ? url.toString() : null;
+}
+
+/** Búsqueda en Google Maps de la dirección del punto, para cuando no hay un enlace exacto. */
+export function mapsSearchUrl(point: Pick<PublicRefillPoint, "businessName" | "address" | "neighborhood" | "city">): string {
+  const query = [point.businessName, point.address, point.neighborhood, point.city].filter(Boolean).join(", ");
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
+}
+
+/** A dónde lleva «Cómo llegar»: el enlace exacto si lo hay y, si no, la búsqueda de su dirección. */
+export function directionsUrl(point: Pick<PublicRefillPoint, "businessName" | "address" | "neighborhood" | "city" | "mapsUrl">): string {
+  return normalizeMapsUrl(point.mapsUrl) || mapsSearchUrl(point);
 }

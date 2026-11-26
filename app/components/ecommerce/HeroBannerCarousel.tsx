@@ -55,6 +55,15 @@ export function HeroBannerCarousel({ slides }: { slides: Slide[] }) {
           className={`absolute inset-0 h-full w-full object-cover ${slide.text || slide.ctaText ? "opacity-60" : ""}`}
         />
       )}
+      {!slide.text && !slide.ctaText && slide.imageUrl && slide.ctaHref && (
+        // Banner solo imagen con destino: toda la imagen es el enlace (las flechas quedan por encima).
+        <Link
+          to={slide.ctaHref}
+          onClick={() => trackEvent("banner_click")}
+          aria-label={slide.imageAlt || "Ver más"}
+          className="absolute inset-0 z-10 focus-visible:outline focus-visible:outline-4 focus-visible:-outline-offset-4 focus-visible:outline-lima"
+        />
+      )}
       <div
         // Texto arriba y botón abajo, centrados; el degradado de fondo es
         // vertical (oscuro arriba, verde abajo). Más padding lateral cuando hay
@@ -80,7 +89,7 @@ export function HeroBannerCarousel({ slides }: { slides: Slide[] }) {
             type="button"
             onClick={() => setIndex((i) => (i - 1 + slides.length) % slides.length)}
             aria-label="Banner anterior"
-            className="absolute left-2 top-1/2 flex min-h-11 min-w-11 -translate-y-1/2 items-center justify-center rounded-full bg-carbon/30 text-hueso hover:bg-carbon/50"
+            className="absolute left-2 top-1/2 z-20 flex min-h-11 min-w-11 -translate-y-1/2 items-center justify-center rounded-full bg-carbon/30 text-hueso hover:bg-carbon/50"
           >
             <ChevronIcon direction="left" className="h-5 w-5" />
           </button>
@@ -88,11 +97,11 @@ export function HeroBannerCarousel({ slides }: { slides: Slide[] }) {
             type="button"
             onClick={() => setIndex((i) => (i + 1) % slides.length)}
             aria-label="Siguiente banner"
-            className="absolute right-2 top-1/2 flex min-h-11 min-w-11 -translate-y-1/2 items-center justify-center rounded-full bg-carbon/30 text-hueso hover:bg-carbon/50"
+            className="absolute right-2 top-1/2 z-20 flex min-h-11 min-w-11 -translate-y-1/2 items-center justify-center rounded-full bg-carbon/30 text-hueso hover:bg-carbon/50"
           >
             <ChevronIcon direction="right" className="h-5 w-5" />
           </button>
-          <div className="absolute bottom-3 left-1/2 flex -translate-x-1/2 gap-1.5">
+          <div className="absolute bottom-3 left-1/2 z-20 flex -translate-x-1/2 gap-1.5">
             {slides.map((s, i) => (
               <button
                 key={`${s.imageUrl ?? ""}-${i}`}

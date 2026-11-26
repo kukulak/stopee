@@ -21,7 +21,8 @@ import { sendEmail } from '~/lib/mail.server'
 import { waitlistWelcomeEmail } from '~/lib/emailTemplates.server'
 import { logError } from '~/lib/logger.server'
 import { getAttribution } from '~/lib/attribution.server'
-import { getActiveHeroBanner, type HeroBanner } from '~/lib/heroBanner.server'
+import { getActiveHeroBanners } from '~/lib/heroBanner.server'
+import type { HeroBanner } from '~/lib/heroBanner'
 import { getHomeBlocks } from '~/models/homeLayout.server'
 import type { HomeBlockState } from '~/lib/homeBlocks'
 import {
@@ -84,9 +85,9 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const blocks = (await getHomeBlocks()).filter(b => b.enabled)
   const has = (type: HomeBlockState['type']) => blocks.some(b => b.type === type)
 
-  const [cart, heroBanner, recentPosts, testimonials, catalogItems, subscriptionConfig] = await Promise.all([
+  const [cart, heroBanners, recentPosts, testimonials, catalogItems, subscriptionConfig] = await Promise.all([
     getCart(request),
-    has('banner') ? getActiveHeroBanner() : null,
+    has('banner') ? getActiveHeroBanners() : [],
     has('blog')
       ? BlogPostModel.find({ publishedAt: { $lte: new Date() } })
           .sort({ publishedAt: -1 })
@@ -113,7 +114,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     origin,
     cartCount: cart.reduce((sum, item) => sum + item.quantity, 0),
     blocks,
-    heroBanner,
+    heroBanners,
     featured,
     subscriptionPitch: subscriptionConfig
       ? `Activa el auto-envío periódico y recibe tu concentrado ${describeFrequencies(subscriptionConfig)}${
@@ -221,7 +222,7 @@ export default function Index() {
     <LaunchedLanding
       cartCount={data.cartCount}
       blocks={data.blocks}
-      heroBanner={data.heroBanner}
+      heroBanners={data.heroBanners}
       featured={data.featured}
       subscriptionPitch={data.subscriptionPitch}
       recentPosts={data.recentPosts}
@@ -233,7 +234,7 @@ export default function Index() {
 function LaunchedLanding({
   cartCount,
   blocks,
-  heroBanner,
+  heroBanners,
   featured,
   subscriptionPitch,
   recentPosts,
@@ -241,7 +242,7 @@ function LaunchedLanding({
 }: {
   cartCount: number
   blocks: HomeBlockState[]
-  heroBanner: HeroBanner | null
+  heroBanners: HeroBanner[]
   featured: CatalogItem | null
   subscriptionPitch: string
   recentPosts: { slug: string; title: string; excerpt: string }[]
@@ -259,7 +260,7 @@ function LaunchedLanding({
         {blocks.map(block => {
           switch (block.type) {
             case 'banner':
-              return <HeroBlock key={block.type} banner={heroBanner} exploreHref={exploreHref} />
+              return <HeroBlock key={block.type} banners={heroBanners} exploreHref={exploreHref} />
             case 'start':
               return (
                 <StartBlock

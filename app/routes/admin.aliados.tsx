@@ -1,5 +1,5 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs, MetaFunction } from "react-router";
-import { data, Form, Link, useLoaderData, useNavigation } from "react-router";
+import { data, Form, Link, useActionData, useLoaderData, useNavigation } from "react-router";
 import { Types } from "mongoose";
 import { connectDB } from "~/lib/db.server";
 import { requireAdmin } from "~/lib/session.server";
@@ -7,6 +7,7 @@ import { logAudit } from "~/lib/logger.server";
 import { UserModel } from "~/models/user.server";
 import { AllyRequestModel } from "~/models/allyRequest.server";
 import { REQUEST_STATUSES, REQUEST_STATUS_LABELS, whatsappUrl, type RequestStatus } from "~/lib/refillPoints";
+import { activateAllyForRequest, deactivateAllyForRequest, type ActivationResult } from "~/lib/refillPoints.server";
 
 export const meta: MetaFunction = () => [{ title: "Puntos de recarga — Admin STOPee" }];
 
@@ -40,6 +41,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     requests: sorted.map((r) => ({
       id: String(r._id),
       name: r.name,
+      businessName: r.businessName ?? "",
       businessOrType: r.businessOrType,
       neighborhood: r.neighborhood,
       address: r.address,
@@ -73,10 +75,17 @@ export async function action({ request }: ActionFunctionArgs) {
     if (!(REQUEST_STATUSES as readonly string[]).includes(status)) {
       return data({ ok: false, error: "Elige un estado válido." }, { status: 400 });
     }
-    const done = await AllyRequestModel.updateOne({ _id: id }, { $set: { status } });
-    if (done.matchedCount === 0) return data({ ok: false, error: "Solicitud no encontrada." }, { status: 404 });
+    const before = await AllyRequestModel.findById(id).select("status");
+    if (!before) return data({ ok: false, error: "Solicitud no encontrada." }, { status: 404 });
+    await AllyRequestModel.updateOne({ _id: id }, { $set: { status } });
     logAudit("ally_request.status_changed", { by: String(admin._id), requestId: id, status });
-    return data({ ok: true });
+
+    // Aprobar activa a la cuenta como aliado (si ya existe y confirmó su correo); quitar la aprobación la desactiva.
+    let activation: ActivationResult | null = null;
+    let deactivated = false;
+    if (status === "approved") activation = await activateAllyForRequest(id);
+    else if (before.status === "approved") deactivated = await deactivateAllyForRequest(id);
+    return data({ ok: true, activation, deactivated });
   }
 
   if (intent === "delete") {
@@ -99,8 +108,16 @@ const STATUS_STYLE: Record<RequestStatus, string> = {
 const quietButton =
   "min-h-11 w-full rounded-full border border-carbon/15 px-4 text-xs font-semibold text-carbon hover:border-carbon/30 sm:w-auto";
 
+const ACTIVATION_MESSAGE: Record<ActivationResult, string> = {
+  activated: "Aprobada y activada: su cuenta ya es un Punto de Recarga. Completa su horario y su mapa en su ficha, y publícalo cuando lo autorice.",
+  "no-account": "Aprobada. Aún no tiene cuenta: en cuanto se registre con ese correo y lo confirme, se activa sola.",
+  unverified: "Aprobada. Su cuenta aún no confirma el correo: se activa sola cuando lo confirme.",
+  "not-found": "No encontramos la solicitud.",
+};
+
 export default function AdminAliados() {
   const { view, pendingCount, requests, allies } = useLoaderData<typeof loader>();
+  const actionData = useActionData<typeof action>() as { activation?: ActivationResult | null; deactivated?: boolean } | undefined;
   const navigation = useNavigation();
   const busyId = navigation.state !== "idle" ? String(navigation.formData?.get("id") ?? "") : "";
 
@@ -122,6 +139,17 @@ export default function AdminAliados() {
       <p className="mt-1 text-sm text-carbon/60">
         Solicitudes de /puntos-de-recarga y aliados activos. Para activar a un aliado, abre su ficha en Clientes.
       </p>
+
+      {actionData?.activation && (
+        <p role="status" className="mt-4 rounded-2xl border border-lima bg-lima/10 p-3 text-sm font-semibold text-carbon">
+          {ACTIVATION_MESSAGE[actionData.activation]}
+        </p>
+      )}
+      {actionData?.deactivated && (
+        <p role="status" className="mt-4 rounded-2xl border border-carbon/15 bg-white p-3 text-sm font-semibold text-carbon">
+          Se quitó la aprobación: su cuenta dejó de ser Punto de Recarga y salió del directorio.
+        </p>
+      )}
 
       <div className="mt-5 flex flex-wrap gap-2">
         {tab("/admin/aliados", `Solicitudes${pendingCount > 0 ? ` (${pendingCount} pendientes)` : ""}`, view === "solicitudes")}
@@ -151,7 +179,10 @@ export default function AdminAliados() {
                           {REQUEST_STATUS_LABELS[r.status]}
                         </span>
                       </p>
-                      <p className="text-sm text-carbon/70">{r.businessOrType}</p>
+                      <p className="text-sm text-carbon/70">
+                        {r.businessOrType}
+                        {r.businessName ? ` · ${r.businessName}` : ""}
+                      </p>
                       <p className="mt-1 text-xs text-carbon/50">
                         {new Date(r.createdAt).toLocaleString("es-MX", { dateStyle: "medium", timeStyle: "short" })}
                       </p>
@@ -208,7 +239,7 @@ export default function AdminAliados() {
                       <p className="text-carbon/70">
                         Ya tiene cuenta con este correo.{" "}
                         <Link to={`/admin/customers/${r.account.id}`} className="font-semibold text-bosque underline">
-                          {r.account.isRefillAlly ? "Ver su ficha" : "Abrir su ficha para activarlo"}
+                          {r.account.isRefillAlly ? "Es aliado activo: ver su ficha" : "Abrir su ficha para activarlo"}
                         </Link>
                       </p>
                     ) : (

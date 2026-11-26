@@ -91,6 +91,7 @@ async function saveAllyStation(viewer: { _id: unknown }, id: string | undefined,
     address: cleanPlainText(formData.get("address")),
     schedule: cleanPlainText(formData.get("schedule")),
     whatsapp: cleanPlainText(formData.get("whatsapp")),
+    mapsUrl: String(formData.get("mapsUrl") ?? "").trim(),
     // Solo un aliado activo puede estar en el directorio.
     isPublic: isRefillAlly && formData.get("isPublic") === "on",
   });
@@ -166,6 +167,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       address: user.allyStation?.address ?? "",
       schedule: user.allyStation?.schedule ?? "",
       whatsapp: user.allyStation?.whatsapp ?? "",
+      mapsUrl: user.allyStation?.mapsUrl ?? "",
       isPublic: Boolean(user.allyStation?.isPublic),
     },
     canManageRole: isSuperAdmin(viewer.role) && user.role !== "superadmin" && String(user._id) !== String(viewer._id),
@@ -310,6 +312,13 @@ export default function AdminCustomerDetail() {
             <div className="sm:col-span-2">
               <label htmlFor="address" className="text-sm font-semibold text-carbon">Dirección pública o referencia</label>
               <input id="address" name="address" defaultValue={ally.address} maxLength={160} className="mt-1 block min-h-11 w-full rounded-xl border border-carbon/15 px-3 focus:border-oliva focus:outline-none" />
+            </div>
+            <div className="sm:col-span-2">
+              <label htmlFor="mapsUrl" className="text-sm font-semibold text-carbon">Enlace de Google Maps (opcional)</label>
+              <input id="mapsUrl" name="mapsUrl" type="url" inputMode="url" defaultValue={ally.mapsUrl} maxLength={500} placeholder="https://maps.app.goo.gl/…" className="mt-1 block min-h-11 w-full rounded-xl border border-carbon/15 px-3 focus:border-oliva focus:outline-none" />
+              <p className="mt-1 text-xs text-carbon/60">
+                En Google Maps: busca el lugar, pulsa «Compartir» y copia el enlace. Sin enlace, el botón «Abrir mapa» busca la dirección en Maps.
+              </p>
             </div>
             <div className="sm:col-span-2">
               <label htmlFor="schedule" className="text-sm font-semibold text-carbon">Horario de recarga</label>

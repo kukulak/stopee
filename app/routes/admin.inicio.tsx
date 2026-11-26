@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Field, inputClass } from "~/components/admin/MediaFields";
 import { ArrowIcon, ChevronIcon } from "~/components/ui/Icons";
 import { getCatalogItems } from "~/lib/catalog.server";
-import { getActiveHeroBanner } from "~/lib/heroBanner.server";
+import { getActiveHeroBanners } from "~/lib/heroBanner.server";
 import {
   HOME_BLOCKS,
   parseHomeBlocksPayload,
@@ -23,10 +23,10 @@ export const meta: MetaFunction = () => [{ title: "Página de inicio — Admin S
 
 export async function loader({ request }: LoaderFunctionArgs) {
   await requireAdmin(request);
-  const [{ blocks, updatedAt }, items, banner, testimonials, postCount, settings] = await Promise.all([
+  const [{ blocks, updatedAt }, items, banners, testimonials, postCount, settings] = await Promise.all([
     getHomeBlocksWithMeta(),
     getCatalogItems(),
-    getActiveHeroBanner(),
+    getActiveHeroBanners(),
     getPublishedTestimonials(),
     BlogPostModel.countDocuments({ publishedAt: { $lte: new Date() } }),
     getSiteSettings(),
@@ -35,9 +35,12 @@ export async function loader({ request }: LoaderFunctionArgs) {
   // Un aviso por bloque cuando lo que muestra depende de otra pantalla: así se entiende por qué
   // un bloque encendido puede no verse.
   const notes: Partial<Record<HomeBlockType, string>> = {
-    banner: banner
-      ? `Banner activo: «${banner.text || "solo imagen"}».`
-      : "No hay un banner activo para Inicio: se muestra el hero por defecto.",
+    banner:
+      banners.length === 0
+        ? "No hay un banner activo para Inicio: se muestra el hero por defecto."
+        : banners.length === 1
+          ? `Banner activo: «${banners[0].text || "solo imagen"}».`
+          : `${banners.length} banners activos rotando en un carrusel.`,
     testimonials:
       testimonials.length > 0
         ? `${testimonials.length} testimonio${testimonials.length === 1 ? "" : "s"} publicado${testimonials.length === 1 ? "" : "s"}.`

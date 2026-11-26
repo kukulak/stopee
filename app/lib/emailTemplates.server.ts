@@ -74,6 +74,7 @@ export function contactNotificationEmail(data: { name: string; email: string; me
 /** Aviso interno: llegó una solicitud para ser Punto de Recarga. */
 export function allyRequestNotificationEmail(data: {
   name: string;
+  businessName?: string;
   businessOrType: string;
   neighborhood: string;
   address: string;
@@ -83,7 +84,7 @@ export function allyRequestNotificationEmail(data: {
   const { html, text } = renderLayout({
     title: "Nueva solicitud de Punto de Recarga",
     paragraphs: [
-      `${data.name} (${data.businessOrType})`,
+      `${data.name} (${data.businessOrType}${data.businessName ? `: ${data.businessName}` : ""})`,
       `Colonia: ${data.neighborhood}\nDirección: ${data.address}`,
       `WhatsApp: ${data.whatsapp}\nCorreo: ${data.email}`,
       "Revísala en el backoffice y respóndele por WhatsApp o por correo.",

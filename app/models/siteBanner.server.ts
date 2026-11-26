@@ -31,6 +31,10 @@ const siteBannerSchema = new Schema(
     /** Frase de apoyo bajo el título; solo la usa el banner de la portada. */
     subtitle: { type: String, default: "", trim: true },
     ctaText: { type: String, default: "", trim: true },
+    /**
+     * Destino del botón o, si el banner es solo imagen, de toda la imagen. Vacío = sin enlace (un
+     * banner solo imagen deja de ser clicable); con botón, vacío cae a /tienda.
+     */
     ctaHref: { type: String, default: "/tienda", trim: true },
     isActive: { type: Boolean, default: false },
   },
@@ -42,9 +46,12 @@ export type SiteBannerDoc = InferSchemaType<typeof siteBannerSchema>;
 export const SiteBannerModel =
   (models.SiteBanner as Model<SiteBannerDoc>) ?? model<SiteBannerDoc>("SiteBanner", siteBannerSchema);
 
-/** El banner activo más reciente de la portada (solo se muestra uno a la vez). */
-export async function getActiveHomeBanner() {
-  return SiteBannerModel.findOne({ isActive: true, placement: "home" }).sort({ updatedAt: -1 }).lean();
+/**
+ * Todos los banners activos de la portada, para su carrusel. Van del más nuevo al más viejo según su
+ * fecha de creación (no la de edición): corregir un texto no debe cambiar el orden en que rotan.
+ */
+export async function getActiveHomeBanners() {
+  return SiteBannerModel.find({ isActive: true, placement: "home" }).sort({ createdAt: -1 }).lean();
 }
 
 /** Todos los banners activos de la tienda, para el carrusel del hero de /tienda. */

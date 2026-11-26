@@ -13,6 +13,7 @@ import { cleanPlainText, rejectForeignOrigin } from "~/lib/formGuard.server";
 import { allyRequestSchema, createAllyRequest, getPublicRefillPoints } from "~/lib/refillPoints.server";
 import {
   BUSINESS_TYPES,
+  directionsUrl,
   filterByNeighborhood,
   neighborhoodOptions,
   whatsappUrl,
@@ -74,6 +75,7 @@ export async function action({ request }: ActionFunctionArgs) {
 
   const parsed = allyRequestSchema.safeParse({
     name: cleanPlainText(formData.get("name")),
+    businessName: cleanPlainText(formData.get("businessName")),
     businessOrType: cleanPlainText(formData.get("businessOrType")),
     neighborhood: cleanPlainText(formData.get("neighborhood")),
     address: cleanPlainText(formData.get("address")),
@@ -89,8 +91,8 @@ export async function action({ request }: ActionFunctionArgs) {
   const emailLimit = await checkRateLimit(`aliados-email:${parsed.data.email}`, { max: 2, windowMs: 24 * 60 * 60 * 1000 });
   if (!emailLimit.allowed) return data({ ok: true, error: undefined as string | undefined });
 
-  const { name, businessOrType, neighborhood, address, whatsapp, email } = parsed.data;
-  const submitted = { name, businessOrType, neighborhood, address, whatsapp, email };
+  const { name, businessName, businessOrType, neighborhood, address, whatsapp, email } = parsed.data;
+  const submitted = { name, businessName, businessOrType, neighborhood, address, whatsapp, email };
   const { created } = await createAllyRequest(submitted);
 
   // El aviso al negocio va después de guardar (la solicitud nunca se pierde) y solo si es nueva.
@@ -209,122 +211,139 @@ export default function PuntosDeRecarga() {
             )}
           </section>
 
-          {/* Captación */}
-          <section id="solicitud" aria-labelledby="ser-punto" className="mt-16 scroll-mt-28 rounded-3xl border border-lima/30 bg-bosque/5 p-6 sm:p-8">
-            <p className="font-body text-sm font-bold uppercase tracking-widest text-oliva">Para negocios y vecinos</p>
-            <h2 id="ser-punto" className="mt-2 font-display text-2xl font-black text-carbon sm:text-3xl">
-              Conviértete en Punto de Recarga STOPee
-            </h2>
-            <p className="mt-3 max-w-2xl text-carbon/70">
-              Genera ingresos extra con economía circular, sin envases desechables. Tu comunidad recarga cerca de casa y
-              tu negocio suma una razón más para que vuelvan.
-            </p>
-            <ul className="mt-4 flex max-w-2xl flex-col gap-1.5 text-sm text-carbon/80">
-              <li>Recibes concentrado en bidón y recargas las botellas de tus vecinos y clientes.</li>
-              <li>Apareces en este directorio para que te encuentren por colonia.</li>
-              <li>Platicamos contigo por WhatsApp antes de empezar, sin compromiso.</li>
-            </ul>
+          {/* Captación: el texto a la izquierda y el formulario a la derecha, para aprovechar el ancho. */}
+          <section
+            id="solicitud"
+            aria-labelledby="ser-punto"
+            className="mt-16 scroll-mt-28 rounded-3xl border border-lima/30 bg-bosque/5 p-6 sm:p-8 lg:grid lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)] lg:gap-12 lg:p-10"
+          >
+            <div className="lg:pt-2">
+              <p className="font-body text-sm font-bold uppercase tracking-widest text-oliva">Para negocios y vecinos</p>
+              <h2 id="ser-punto" className="mt-2 text-balance font-display text-2xl font-black text-carbon sm:text-3xl">
+                Conviértete en Punto de Recarga STOPee
+              </h2>
+              <p className="mt-3 text-carbon/70">
+                Genera ingresos extra con economía circular, sin envases desechables. Tu comunidad recarga cerca de casa y
+                tu negocio suma una razón más para que vuelvan.
+              </p>
+              <ul className="mt-5 flex flex-col gap-2 text-sm text-carbon/80">
+                <li>Recibes concentrado en bidón y recargas las botellas de tus vecinos y clientes.</li>
+                <li>Apareces en este directorio para que te encuentren por colonia.</li>
+                <li>Te enlazamos a tu cuenta de STOPee y la identificamos como aliado.</li>
+                <li>Platicamos contigo por WhatsApp antes de empezar, sin compromiso.</li>
+              </ul>
+            </div>
 
-            {actionData?.ok ? (
-              <div role="status" className="mt-8 rounded-3xl border-2 border-lima bg-white p-6 text-center sm:p-8">
-                <p className="font-display text-xl font-black text-carbon">Recibimos tu solicitud</p>
-                <p className="mx-auto mt-2 max-w-md text-carbon/70">
-                  Gracias por querer sumarte. Revisamos tus datos y te escribimos por WhatsApp o por correo para platicar
-                  los siguientes pasos.
-                </p>
-                <Link to="/" className="mt-4 inline-flex min-h-11 items-center rounded-full border border-carbon/15 px-5 text-sm font-semibold text-carbon hover:border-carbon/30">
-                  Volver al inicio
-                </Link>
-              </div>
-            ) : (
-              <Form method="post" className="mt-8 flex max-w-2xl flex-col gap-4">
-                {/* Campo trampa para programas que llenan todo: una persona no lo ve. */}
-                <div aria-hidden="true" className="absolute -left-[9999px] h-0 w-0 overflow-hidden">
-                  <label htmlFor="website">No llenar este campo</label>
-                  <input id="website" name="website" tabIndex={-1} autoComplete="off" />
+            <div className="mt-8 lg:mt-0">
+              {actionData?.ok ? (
+                <div role="status" className="rounded-3xl border-2 border-lima bg-white p-6 text-center sm:p-8">
+                  <p className="font-display text-xl font-black text-carbon">Recibimos tu solicitud</p>
+                  <p className="mx-auto mt-2 max-w-md text-carbon/70">
+                    Gracias por querer sumarte. Revisamos tus datos y te escribimos por WhatsApp o por correo para platicar
+                    los siguientes pasos. Si aún no tienes cuenta de STOPee, créala con este mismo correo: al aprobarte, se
+                    activa sola como aliada.
+                  </p>
+                  <Link to="/" className="mt-4 inline-flex min-h-11 items-center rounded-full border border-carbon/15 px-5 text-sm font-semibold text-carbon hover:border-carbon/30">
+                    Volver al inicio
+                  </Link>
                 </div>
-
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  <div>
-                    <label htmlFor="name" className="block text-sm font-semibold text-carbon">
-                      Tu nombre
-                    </label>
-                    <input id="name" name="name" required minLength={2} maxLength={80} autoComplete="name" className={inputClass} />
+              ) : (
+                <Form method="post" className="flex flex-col gap-4 rounded-3xl bg-white/60 p-0 lg:bg-transparent">
+                  {/* Campo trampa para programas que llenan todo: una persona no lo ve. */}
+                  <div aria-hidden="true" className="absolute -left-[9999px] h-0 w-0 overflow-hidden">
+                    <label htmlFor="website">No llenar este campo</label>
+                    <input id="website" name="website" tabIndex={-1} autoComplete="off" />
                   </div>
-                  <div>
-                    <label htmlFor="businessOrType" className="block text-sm font-semibold text-carbon">
-                      ¿Qué tipo de punto serías?
-                    </label>
-                    <select id="businessOrType" name="businessOrType" required defaultValue="" className={inputClass}>
-                      <option value="" disabled>
-                        Elige una opción
-                      </option>
-                      {BUSINESS_TYPES.map((type) => (
-                        <option key={type} value={type}>
-                          {type}
+
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <div>
+                      <label htmlFor="name" className="block text-sm font-semibold text-carbon">
+                        Tu nombre
+                      </label>
+                      <input id="name" name="name" required minLength={2} maxLength={80} autoComplete="name" className={inputClass} />
+                    </div>
+                    <div>
+                      <label htmlFor="businessOrType" className="block text-sm font-semibold text-carbon">
+                        ¿Qué tipo de punto serías?
+                      </label>
+                      <select id="businessOrType" name="businessOrType" required defaultValue="" className={inputClass}>
+                        <option value="" disabled>
+                          Elige una opción
                         </option>
-                      ))}
-                    </select>
+                        {BUSINESS_TYPES.map((type) => (
+                          <option key={type} value={type}>
+                            {type}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
                   </div>
-                </div>
 
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div>
-                    <label htmlFor="neighborhood" className="block text-sm font-semibold text-carbon">
-                      Colonia
+                    <label htmlFor="businessName" className="block text-sm font-semibold text-carbon">
+                      Nombre de tu negocio <span className="font-normal text-carbon/50">(opcional)</span>
                     </label>
-                    <input id="neighborhood" name="neighborhood" required minLength={2} maxLength={80} className={inputClass} />
+                    <input id="businessName" name="businessName" maxLength={80} autoComplete="organization" placeholder="Veterinaria San Ángel" className={inputClass} />
                   </div>
+
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <div>
+                      <label htmlFor="neighborhood" className="block text-sm font-semibold text-carbon">
+                        Colonia
+                      </label>
+                      <input id="neighborhood" name="neighborhood" required minLength={2} maxLength={80} className={inputClass} />
+                    </div>
+                    <div>
+                      <label htmlFor="whatsapp" className="block text-sm font-semibold text-carbon">
+                        WhatsApp
+                      </label>
+                      <input id="whatsapp" name="whatsapp" type="tel" inputMode="tel" required autoComplete="tel" maxLength={20} className={inputClass} />
+                    </div>
+                  </div>
+
                   <div>
                     <label htmlFor="address" className="block text-sm font-semibold text-carbon">
                       Dirección o referencia
                     </label>
                     <input id="address" name="address" required minLength={5} maxLength={160} autoComplete="street-address" className={inputClass} />
                   </div>
-                </div>
 
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  <div>
-                    <label htmlFor="whatsapp" className="block text-sm font-semibold text-carbon">
-                      WhatsApp
-                    </label>
-                    <input id="whatsapp" name="whatsapp" type="tel" inputMode="tel" required autoComplete="tel" maxLength={20} className={inputClass} />
-                  </div>
                   <div>
                     <label htmlFor="email" className="block text-sm font-semibold text-carbon">
                       Correo
                     </label>
                     <input id="email" name="email" type="email" inputMode="email" required maxLength={100} autoComplete="email" className={inputClass} />
+                    <p className="mt-1 text-xs text-carbon/60">Usa el mismo correo de tu cuenta de STOPee (o con el que la crearás).</p>
                   </div>
-                </div>
 
-                <label htmlFor="privacy" className="flex min-h-11 items-start gap-3 text-sm text-carbon/80">
-                  <input id="privacy" name="privacy" type="checkbox" required className="mt-1 h-5 w-5 shrink-0 accent-bosque" />
-                  <span>
-                    Al enviar esta solicitud acepto el{" "}
-                    <a href="/aviso-de-privacidad" target="_blank" rel="noreferrer" className="font-semibold text-bosque underline">
-                      aviso de privacidad
-                    </a>
-                    . Mis datos de contacto y ubicación solo se publicarán en el directorio si autorizo activar mi punto
-                    al público.
-                  </span>
-                </label>
+                  <label htmlFor="privacy" className="flex min-h-11 items-start gap-3 text-sm text-carbon/80">
+                    <input id="privacy" name="privacy" type="checkbox" required className="mt-1 h-5 w-5 shrink-0 accent-bosque" />
+                    <span>
+                      Al enviar esta solicitud acepto el{" "}
+                      <a href="/aviso-de-privacidad" target="_blank" rel="noreferrer" className="font-semibold text-bosque underline">
+                        aviso de privacidad
+                      </a>
+                      . Mis datos de contacto y ubicación solo se publicarán en el directorio si autorizo activar mi punto
+                      al público.
+                    </span>
+                  </label>
 
-                {actionData && !actionData.ok && actionData.error && (
-                  <p role="alert" className="text-sm font-semibold text-red-600">
-                    {actionData.error}
-                  </p>
-                )}
+                  {actionData && !actionData.ok && actionData.error && (
+                    <p role="alert" className="text-sm font-semibold text-red-600">
+                      {actionData.error}
+                    </p>
+                  )}
 
-                <button
-                  type="submit"
-                  disabled={isSubmitting}
-                  className="inline-flex min-h-12 items-center justify-center self-end rounded-full bg-lima px-8 text-sm font-bold text-carbon transition-transform enabled:hover:scale-105 enabled:active:scale-95 disabled:opacity-60"
-                >
-                  {isSubmitting ? "Enviando…" : "Enviar mi solicitud"}
-                </button>
-              </Form>
-            )}
+                  <button
+                    type="submit"
+                    disabled={isSubmitting}
+                    className="inline-flex min-h-12 items-center justify-center self-end rounded-full bg-lima px-8 text-sm font-bold text-carbon transition-transform enabled:hover:scale-105 enabled:active:scale-95 disabled:opacity-60"
+                  >
+                    {isSubmitting ? "Enviando…" : "Enviar mi solicitud"}
+                  </button>
+                </Form>
+              )}
+            </div>
           </section>
         </div>
       </main>
@@ -356,16 +375,26 @@ function PointCard({ point }: { point: PublicRefillPoint }) {
           </div>
         )}
       </dl>
-      {link && (
+      <div className="mt-4 flex flex-col gap-2">
         <a
-          href={link}
+          href={directionsUrl(point)}
           target="_blank"
           rel="noreferrer"
-          className="mt-4 inline-flex min-h-11 items-center justify-center rounded-full bg-carbon px-5 text-sm font-bold text-hueso transition-colors hover:bg-bosque"
+          className="inline-flex min-h-11 items-center justify-center rounded-full bg-carbon px-5 text-sm font-bold text-hueso transition-colors hover:bg-bosque"
         >
-          Escribir por WhatsApp
+          Abrir mapa
         </a>
-      )}
+        {link && (
+          <a
+            href={link}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex min-h-11 items-center justify-center rounded-full border border-carbon/15 px-5 text-sm font-semibold text-carbon transition-colors hover:border-carbon/30"
+          >
+            Escribir por WhatsApp
+          </a>
+        )}
+      </div>
     </li>
   );
 }
