@@ -10,6 +10,9 @@ import { getSubscriptionConfig } from "~/models/subscriptionSettings.server";
 import { describeFrequencies, programDisplayName } from "~/lib/subscriptionConfig";
 import { getCatalogItems } from "~/lib/catalog.server";
 import { getCart } from "~/lib/cart.server";
+import { getUser } from "~/lib/session.server";
+import { getShippingConfig } from "~/models/shipping.server";
+import { addressDefaultsFromProfile } from "~/lib/deliveryAddress";
 import { buildOgMeta, DEFAULT_OG_IMAGE } from "~/lib/seo";
 import { siteOrigin } from "~/lib/siteOrigin.server";
 
@@ -35,10 +38,12 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const url = new URL(request.url);
   const highlightSku = url.searchParams.get("sku");
 
-  const [catalogItems, cart, subscriptionConfig] = await Promise.all([
+  const [catalogItems, cart, subscriptionConfig, shippingConfig, user] = await Promise.all([
     getCatalogItems(),
     getCart(request),
     getSubscriptionConfig(),
+    getShippingConfig(),
+    getUser(request),
   ]);
   const subscribableItems = catalogItems.filter((item) => item.isSubscribable);
 
@@ -51,12 +56,15 @@ export async function loader({ request }: LoaderFunctionArgs) {
     frequencySummary: describeFrequencies(subscriptionConfig),
     subscribableItems,
     highlightSku,
+    deliveryZone: shippingConfig.zone,
+    addressDefaults: addressDefaultsFromProfile(user),
     cartCount: cart.reduce((sum, item) => sum + item.quantity, 0),
   });
 }
 
 export default function Suscripcion() {
-  const { subscribableItems, subscriptionConfig, highlightSku, cartCount } = useLoaderData<typeof loader>();
+  const { subscribableItems, subscriptionConfig, highlightSku, cartCount, deliveryZone, addressDefaults } =
+    useLoaderData<typeof loader>();
 
   return (
     <div className="flex min-h-screen flex-col bg-hueso">
@@ -82,6 +90,8 @@ export default function Suscripcion() {
               products={subscribableItems}
               config={subscriptionConfig}
               preselectedSku={highlightSku}
+              deliveryZone={deliveryZone}
+              addressDefaults={addressDefaults}
             />
           </div>
         </section>

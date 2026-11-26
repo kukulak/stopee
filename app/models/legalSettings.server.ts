@@ -12,7 +12,8 @@ export const DEFAULT_PRIVACY_MARKDOWN = `**{{razonSocial}}** ("STOPee", "nosotro
 Dependiendo de cómo interactúes con nosotros, podemos recabar:
 
 - **Datos de identificación y contacto:** nombre, correo electrónico, teléfono.
-- **Datos de envío:** dirección de entrega.
+- **Datos de envío:** nombre de quien recibe, teléfono y dirección de entrega (calle, alcaldía o municipio y código postal).
+- **Aviso de cobertura:** si tu código postal está fuera de nuestra zona de entrega y nos dejas tu correo para avisarte cuando lleguemos, guardamos tu correo y tu código postal.
 - **Datos de tu(s) perro(s):** si decides agregarlos a tu cuenta (nombre, raza u otros datos que tú captures), únicamente para personalizar tu experiencia.
 - **Datos de pago:** no almacenamos los datos completos de tu tarjeta. El cobro lo procesa directamente Stripe, Inc., conforme a sus propias políticas de privacidad y seguridad (certificación PCI-DSS).
 - **Historial de pedidos y suscripciones** asociado a tu cuenta.
@@ -25,6 +26,7 @@ Dependiendo de cómo interactúes con nosotros, podemos recabar:
 - Procesar y dar seguimiento a tus pedidos y suscripciones.
 - Gestionar tu cuenta, tu historial de compras y tu programa de lealtad.
 - Contactarte sobre el estado de tu pedido o para brindarte soporte.
+- Avisarte cuando lleguemos a tu zona, si nos pediste que lo hiciéramos, y saber en qué zonas hay más interés para decidir a dónde crecer.
 - Cumplir con obligaciones fiscales y legales.
 
 **Finalidades secundarias** (puedes oponerte sin que esto afecte tu compra):

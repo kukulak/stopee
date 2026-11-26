@@ -4,6 +4,11 @@ import type { CatalogItem } from "~/lib/catalog.server";
 import type { ShippingQuote } from "~/models/shipping.server";
 import { CloseIcon } from "~/components/ui/Icons";
 import { LegalNotice } from "~/components/ui/LegalNotice";
+import { DeliveryAddressFields, type AddressDefaults } from "~/components/ecommerce/DeliveryAddressFields";
+import type { AddressErrors } from "~/lib/deliveryAddress";
+import type { DeliveryZone } from "~/lib/deliveryZone";
+
+const CHECKOUT_FORM_ID = "checkout-form";
 
 export type CartLine = {
   sku: string;
@@ -78,6 +83,8 @@ export function CartDrawer({
   couponNotice,
   gifts,
   shipping,
+  deliveryZone,
+  addressDefaults,
 }: {
   lines: CartLine[];
   subtotalMxn: number;
@@ -88,14 +95,20 @@ export function CartDrawer({
   couponNotice?: { code: string; message: string; cta: "login" | "verify" | null } | null;
   gifts?: string[];
   shipping: ShippingQuote;
+  /** Zona donde se entrega: fuera de ella no se puede pagar. */
+  deliveryZone: DeliveryZone;
+  /** Lo que ya sabemos de la persona (su perfil), para que no escriba su dirección otra vez. */
+  addressDefaults?: AddressDefaults;
 }) {
-  const checkoutFetcher = useFetcher<{ error?: string }>();
+  const checkoutFetcher = useFetcher<{ error?: string; fieldErrors?: AddressErrors }>();
   const couponFetcher = useFetcher<{ error?: string; ok?: boolean; cta?: "login" | "verify" | null }>();
   const isCheckingOut = checkoutFetcher.state !== "idle";
   const isApplyingCoupon = couponFetcher.state !== "idle";
   // Sin internet la petición ni sale, y Remix mandaría a la pantalla de "Algo salió mal". Se avisa aquí, con el carrito a la vista.
   const [offline, setOffline] = useState(false);
   const [codeInput, setCodeInput] = useState("");
+  // El código postal escrito está fuera de la zona de entrega: no se puede pagar hasta corregirlo.
+  const [outOfZone, setOutOfZone] = useState(false);
   const discountedSubtotal = Math.round(subtotalMxn * (1 - discountPercent / 100));
   // La opción que el cliente acaba de tocar se refleja al instante en el total, sin esperar al servidor.
   const [pendingMethod, setPendingMethod] = useState<string | null>(null);
@@ -205,6 +218,16 @@ export function CartDrawer({
 
           <ShippingMethods shipping={shipping} selectedId={selectedShipping?.id ?? null} onPending={setPendingMethod} />
 
+          <DeliveryAddressFields
+            formId={CHECKOUT_FORM_ID}
+            // Sin método elegido (envío apagado) también se necesita la dirección completa.
+            mode={selectedShipping?.id === "pickup" ? "pickup" : "home"}
+            zone={deliveryZone}
+            defaults={addressDefaults}
+            errors={checkoutFetcher.data?.fieldErrors}
+            onOutOfZoneChange={setOutOfZone}
+          />
+
           <div className="border-t border-carbon/10 pt-4">
             {discountPercent > 0 && (
               <div className="mb-1 flex justify-between text-sm text-bosque">
@@ -229,6 +252,7 @@ export function CartDrawer({
           <CheckoutSteps />
 
           <checkoutFetcher.Form
+            id={CHECKOUT_FORM_ID}
             method="post"
             action="/api/checkout"
             onSubmit={(event) => {
@@ -242,7 +266,7 @@ export function CartDrawer({
           >
             <button
               type="submit"
-              disabled={isCheckingOut || hasStockProblem}
+              disabled={isCheckingOut || hasStockProblem || outOfZone}
               className="min-h-11 w-full rounded-full bg-carbon px-6 text-sm font-bold text-hueso transition-transform hover:scale-105 active:scale-95 disabled:opacity-60"
             >
               {isCheckingOut ? "Redirigiendo a pago…" : "Ir a pagar"}
@@ -252,6 +276,11 @@ export function CartDrawer({
           {hasStockProblem && (
             <p className="text-center text-xs font-semibold text-red-600">
               Ajusta las cantidades marcadas en rojo para poder pagar.
+            </p>
+          )}
+          {outOfZone && (
+            <p className="text-center text-xs font-semibold text-red-600">
+              Para pagar, usa un código postal de {deliveryZone.name}.
             </p>
           )}
           {offline ? (

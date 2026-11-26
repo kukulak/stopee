@@ -39,6 +39,7 @@ import { getPasswordGateConfig, isGateWindowActive, isSkuGated } from "~/models/
 import { hasGateAccess } from "~/lib/gateSession.server";
 import { Breadcrumbs } from "~/components/ui/Breadcrumbs";
 import { MobileCartCta } from "~/components/ecommerce/MobileCartCta";
+import { addressDefaultsFromProfile } from "~/lib/deliveryAddress";
 
 export const meta: MetaFunction = () => [
   { title: "Tienda STOPee — Higiene urbana canina" },
@@ -166,6 +167,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
     couponNotice,
     gifts,
     isAuthenticated: Boolean(user),
+    deliveryZone: shippingConfig.zone,
+    addressDefaults: addressDefaultsFromProfile(user),
     isPreview,
     heroSlides,
     subscribableItems,
@@ -311,6 +314,8 @@ export default function Tienda() {
     subscribableItems,
     subscriptionConfig,
     shipping,
+    deliveryZone,
+    addressDefaults,
   } = useLoaderData<typeof loader>();
   const itemCount = lines.reduce((sum, l) => sum + l.quantity, 0);
 
@@ -378,7 +383,12 @@ export default function Tienda() {
               onAdded={(name) => setAddedItem({ name })}
               inCart={Object.fromEntries(lines.map((l) => [l.sku, l.quantity]))}
             />
-            <SubscriptionConfigurator products={subscribableItems} config={subscriptionConfig} />
+            <SubscriptionConfigurator
+              products={subscribableItems}
+              config={subscriptionConfig}
+              deliveryZone={deliveryZone}
+              addressDefaults={addressDefaults}
+            />
           </div>
         </section>
       </main>
@@ -395,6 +405,8 @@ export default function Tienda() {
           couponNotice={couponNotice}
           gifts={gifts}
           shipping={shipping}
+          deliveryZone={deliveryZone}
+          addressDefaults={addressDefaults}
         />
       </CartOverlay>
 

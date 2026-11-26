@@ -5,7 +5,10 @@ import type Stripe from "stripe";
 import { getCatalogItems, getCatalogItemBySku } from "~/lib/catalog.server";
 import { getCart, getCartCoupon, getCartShippingMethod } from "~/lib/cart.server";
 import { getUser } from "~/lib/session.server";
-import { getShippingQuote } from "~/models/shipping.server";
+import { buildShippingQuote, getShippingConfig } from "~/models/shipping.server";
+import { UserModel } from "~/models/user.server";
+import { addressToMetadata, outOfZoneMessage, readAddressFields, validateDeliveryAddress } from "~/lib/deliveryAddress";
+import { connectDB } from "~/lib/db.server";
 import { createOneTimeCheckoutSession } from "~/lib/stripe.server";
 import { getAttribution } from "~/lib/attribution.server";
 import { logEvent, getOrCreateVisitorId } from "~/lib/tracking.server";
@@ -155,11 +158,30 @@ export async function action({ request }: ActionFunctionArgs) {
   // navegador) y sobre el subtotal ya con descuento.
   const productsSubtotal = validItems.reduce((sum, item) => sum + bySku.get(item.sku)!.priceMxn * item.quantity, 0);
   const discountedSubtotal = Math.round(productsSubtotal * (1 - (discountPercent ?? 0) / 100));
-  const shippingQuote = await getShippingQuote(discountedSubtotal, await getCartShippingMethod(request));
+  const shippingConfig = await getShippingConfig();
+  const shippingQuote = buildShippingQuote(shippingConfig, discountedSubtotal, await getCartShippingMethod(request));
   const shippingChoice = shippingQuote.selected;
   if (shippingQuote.enabled && !shippingChoice) {
     return data({ error: "No hay opciones de envío disponibles por ahora. Escríbenos y te ayudamos." }, { status: 400 });
   }
+
+  // Candado de zona: la dirección se valida AQUÍ, en el servidor, con la misma regla que ve el
+  // carrito. Nada de lo que mande el navegador basta para saltarse la zona de entrega. El punto
+  // de entrega solo necesita nombre, teléfono y código postal; el domicilio, la dirección completa.
+  const addressResult = validateDeliveryAddress(readAddressFields(await request.formData()), {
+    mode: shippingChoice?.id === "pickup" ? "pickup" : "home",
+    zone: shippingConfig.zone,
+  });
+  if (!addressResult.ok) {
+    return data(
+      {
+        error: addressResult.outOfZone ? outOfZoneMessage(shippingConfig.zone) : "Revisa los datos de entrega marcados en rojo.",
+        fieldErrors: addressResult.errors,
+      },
+      { status: 400 },
+    );
+  }
+  const deliveryAddress = addressResult.address;
 
   const giftProduct = giftSku ? await getCatalogItemBySku(giftSku, { includeUnavailable: true }) : null;
 
@@ -191,7 +213,9 @@ export async function action({ request }: ActionFunctionArgs) {
             displayName: shippingChoice.isFree ? `${shippingChoice.label} (gratis)` : shippingChoice.label,
           }
         : null,
+      deliveryAddress,
       metadata: {
+        ...addressToMetadata(deliveryAddress),
         userId: user ? String(user._id) : "guest",
         // Se incluye el precio unitario cobrado (no solo el SKU) para que el
         // webhook registre el pedido con el precio real de esta compra, sin
@@ -223,6 +247,34 @@ export async function action({ request }: ActionFunctionArgs) {
 
   if (!session.url) {
     return data({ error: "No se pudo iniciar el pago. Intenta de nuevo." }, { status: 502 });
+  }
+
+  // Primera vez que escribe su dirección: se guarda en su perfil para que la próxima compra llegue
+  // llena. Si ya tenía una, no se pisa (puede estar enviando un regalo); la edita en "Mi cuenta".
+  if (user && !user.address?.line1 && !user.address?.postalCode) {
+    try {
+      await connectDB();
+      await UserModel.updateOne(
+        { _id: user._id },
+        {
+          $set: {
+            address: {
+              line1: deliveryAddress.line1,
+              line2: deliveryAddress.line2,
+              city: deliveryAddress.city,
+              state: deliveryAddress.state,
+              postalCode: deliveryAddress.postalCode,
+              country: "MX",
+            },
+            ...(user.phone ? {} : { phone: deliveryAddress.phone }),
+            ...(user.name ? {} : { name: deliveryAddress.name }),
+          },
+        },
+      );
+    } catch (error) {
+      // Guardar el perfil es una comodidad: nunca debe impedir el pago.
+      logError("checkout.save-profile-address", error);
+    }
   }
 
   // El embudo solo cuenta a quien aceptó las cookies de estadísticas. El pago no depende de esto.

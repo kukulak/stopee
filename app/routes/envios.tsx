@@ -37,6 +37,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   return data({
     cartCount: cart.reduce((sum, item) => sum + item.quantity, 0),
     shippingEnabled: config.isEnabled,
+    zoneName: config.zone.name,
     methods,
     freeShippingThreshold: config.isEnabled && config.freeShippingEnabled ? config.freeShippingThreshold : null,
   });
@@ -46,7 +47,7 @@ const proseClass =
   "prose max-w-none prose-headings:font-display prose-headings:font-black prose-headings:text-carbon prose-h2:mt-6 prose-h2:text-lg prose-p:text-carbon/80 prose-li:text-carbon/80 prose-strong:text-carbon";
 
 export default function Envios() {
-  const { cartCount, shippingEnabled, methods, freeShippingThreshold } = useLoaderData<typeof loader>();
+  const { cartCount, shippingEnabled, zoneName, methods, freeShippingThreshold } = useLoaderData<typeof loader>();
 
   return (
     <div className="flex min-h-screen flex-col bg-hueso">
@@ -60,6 +61,11 @@ export default function Envios() {
             {shippingEnabled && methods.length > 0
               ? "Al pagar eliges entre estas opciones. Aquí te explicamos cada una para que escojas la que más te acomode."
               : "Por ahora tu pedido no genera costo de envío."}
+          </p>
+
+          <p className="mt-4 rounded-2xl bg-carbon/5 px-4 py-3 text-sm text-carbon/80">
+            <strong className="text-carbon">Por ahora entregamos solo en {zoneName}.</strong> Si tu código postal está
+            fuera de esa zona, en el carrito puedes dejar tu correo y te avisamos cuando lleguemos.
           </p>
 
           {freeShippingThreshold !== null && (

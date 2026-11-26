@@ -6,6 +6,9 @@ import { SHIPPING_METHOD_IDS, type ShippingMethodId } from "~/lib/shippingMethod
 import { Field, inputClass } from "~/components/admin/MediaFields";
 import { requireAdmin } from "~/lib/session.server";
 import { cleanPlainText } from "~/lib/formGuard.server";
+import { parsePostalRanges } from "~/lib/deliveryZone";
+import { connectDB } from "~/lib/db.server";
+import { CoverageRequestModel } from "~/models/coverageRequest.server";
 
 export const meta: MetaFunction = () => [{ title: "Envíos — Admin STOPee" }];
 
@@ -16,7 +19,29 @@ const METHOD_TITLES: Record<ShippingMethodId, string> = {
 
 export async function loader({ request }: LoaderFunctionArgs) {
   await requireAdmin(request);
-  return data({ config: await getShippingConfig() });
+  await connectDB();
+  const [config, byPostalCode, recent, total] = await Promise.all([
+    getShippingConfig(),
+    CoverageRequestModel.aggregate<{ _id: string; count: number }>([
+      { $group: { _id: "$postalCode", count: { $sum: 1 } } },
+      { $sort: { count: -1, _id: 1 } },
+      { $limit: 10 },
+    ]),
+    CoverageRequestModel.find().sort({ createdAt: -1 }).limit(30).lean(),
+    CoverageRequestModel.countDocuments(),
+  ]);
+  return data({
+    config,
+    coverage: {
+      total,
+      byPostalCode: byPostalCode.map((row) => ({ postalCode: row._id, count: row.count })),
+      recent: recent.map((row) => ({
+        email: row.email,
+        postalCode: row.postalCode,
+        createdAt: new Date(row.createdAt as unknown as string).toISOString(),
+      })),
+    },
+  });
 }
 
 export async function action({ request }: ActionFunctionArgs) {
@@ -55,9 +80,20 @@ export async function action({ request }: ActionFunctionArgs) {
     );
   }
 
+  const zoneName = cleanPlainText(formData.get("zoneName")).slice(0, 80);
+  const zoneRanges = String(formData.get("zonePostalRanges") ?? "").trim().slice(0, 2000);
+  if (!zoneName) {
+    return data({ ok: false as const, error: "Escribe el nombre de la zona de entrega (por ejemplo, Ciudad de México)." }, { status: 400 });
+  }
+  const parsedZone = parsePostalRanges(zoneRanges);
+  if (parsedZone.error) {
+    return data({ ok: false as const, error: parsedZone.error }, { status: 400 });
+  }
+
   const next: ShippingConfig = {
     isEnabled,
     methods,
+    zone: { name: zoneName, postalRanges: zoneRanges },
     freeShippingEnabled,
     // Si está apagado se conserva el monto que ya había en vez de borrarlo.
     freeShippingThreshold: Number.isFinite(threshold) && threshold > 0 ? threshold : current.freeShippingThreshold,
@@ -137,7 +173,7 @@ function MethodCard({ id, config }: { id: ShippingMethodId; config: ShippingConf
 }
 
 export default function AdminShipping() {
-  const { config } = useLoaderData<typeof loader>();
+  const { config, coverage } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const navigation = useNavigation();
   const isSaving = navigation.state !== "idle";
@@ -164,6 +200,36 @@ export default function AdminShipping() {
         {SHIPPING_METHOD_IDS.map((id) => (
           <MethodCard key={id} id={id} config={config} />
         ))}
+
+        <fieldset className="w-full min-w-0 max-w-full rounded-3xl border border-carbon/10 bg-white p-4 sm:p-6">
+          <legend className="sr-only">Zona de entrega</legend>
+          <h2 className="font-display text-lg font-bold text-carbon">Zona de entrega</h2>
+          <p className="mt-1 text-xs text-carbon/60">
+            Solo se puede pagar con un código postal dentro de esta zona. El carrito avisa al escribirlo y el servidor lo
+            vuelve a revisar al cobrar.
+          </p>
+          <div className="mt-4 grid grid-cols-1 gap-4">
+            <Field label="Nombre de la zona" htmlFor="zoneName">
+              <input id="zoneName" name="zoneName" required maxLength={80} defaultValue={config.zone.name} className={inputClass} />
+            </Field>
+            <Field label="Códigos postales donde entregamos" htmlFor="zonePostalRanges">
+              <textarea
+                id="zonePostalRanges"
+                name="zonePostalRanges"
+                rows={2}
+                required
+                maxLength={2000}
+                defaultValue={config.zone.postalRanges}
+                className={`${inputClass} font-mono text-xs`}
+              />
+            </Field>
+          </div>
+          <p className="mt-2 text-xs text-carbon/50">
+            Rangos de 5 dígitos separados por coma: <code>01000-16999</code> es toda la Ciudad de México. Para sumar otra zona
+            agrega su rango, por ejemplo <code>01000-16999, 52000-52999</code>. El nombre de la zona también es el estado que
+            lleva la dirección del pedido.
+          </p>
+        </fieldset>
 
         <fieldset className="w-full min-w-0 max-w-full rounded-3xl border border-carbon/10 bg-white p-4 sm:p-6">
           <legend className="sr-only">Envío gratis</legend>
@@ -200,6 +266,44 @@ export default function AdminShipping() {
           {actionData?.ok && !isSaving && <p className="text-sm font-semibold text-bosque">Cambios guardados.</p>}
         </div>
       </Form>
+
+      <section className="mt-10 w-full min-w-0 rounded-3xl border border-carbon/10 bg-white p-4 sm:p-6" aria-labelledby="coverage-title">
+        <h2 id="coverage-title" className="font-display text-lg font-bold text-carbon">
+          Quién pidió que lleguemos a su zona
+        </h2>
+        {coverage.total === 0 ? (
+          <p className="mt-2 text-sm text-carbon/60">
+            Todavía nadie. Cuando alguien escriba un código postal fuera de {config.zone.name}, podrá dejar su correo y
+            aparecerá aquí, para que sepas a dónde conviene crecer.
+          </p>
+        ) : (
+          <>
+            <p className="mt-1 text-sm text-carbon/60">
+              {coverage.total} {coverage.total === 1 ? "persona ha pedido" : "personas han pedido"} que lleguemos a su zona.
+            </p>
+            <h3 className="mt-4 text-sm font-bold text-carbon">Códigos postales más pedidos</h3>
+            <ul className="mt-2 flex flex-wrap gap-2">
+              {coverage.byPostalCode.map((row) => (
+                <li key={row.postalCode} className="rounded-full bg-carbon/5 px-3 py-1.5 text-sm text-carbon">
+                  <span className="font-semibold">{row.postalCode}</span>
+                  <span className="text-carbon/60"> · {row.count}</span>
+                </li>
+              ))}
+            </ul>
+            <h3 className="mt-5 text-sm font-bold text-carbon">Últimas solicitudes</h3>
+            <ul className="mt-2 divide-y divide-carbon/10 text-sm">
+              {coverage.recent.map((row) => (
+                <li key={`${row.email}-${row.postalCode}`} className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5 py-2">
+                  <span className="min-w-0 break-all font-medium text-carbon">{row.email}</span>
+                  <span className="text-xs text-carbon/60">
+                    CP {row.postalCode} · {new Date(row.createdAt).toLocaleDateString("es-MX")}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+      </section>
     </div>
   );
 }

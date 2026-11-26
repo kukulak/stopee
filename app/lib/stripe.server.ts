@@ -66,8 +66,18 @@ export async function createOneTimeCheckoutSession(params: {
   giftLineItems?: { name: string }[];
   /** Se manda como `shipping_options` (no como line item) para que un cupón de % no lo descuente también — el envío se cobra aparte, tal cual. */
   shipping?: { amountMxnCents: number; displayName: string } | null;
+  /** Dirección que la persona ya escribió en nuestro carrito: Stripe ya no la pide, solo la deja anotada en el pago. */
+  deliveryAddress?: {
+    name: string;
+    phone: string;
+    line1: string;
+    line2: string;
+    city: string;
+    state: string;
+    postalCode: string;
+  };
 }) {
-  const { lineItems, customerEmail, metadata, discountPercent, giftLineItems, shipping } = params;
+  const { lineItems, customerEmail, metadata, discountPercent, giftLineItems, shipping, deliveryAddress } = params;
 
   let discounts: Stripe.Checkout.SessionCreateParams.Discount[] | undefined;
   if (discountPercent) {
@@ -109,12 +119,28 @@ export async function createOneTimeCheckoutSession(params: {
     customer_email: customerEmail,
     discounts,
     shipping_options: shippingOptions,
-    // Stripe pide la dirección (y un teléfono para la paquetería) en su pantalla
-    // de pago: así el carrito ya no necesita código postal y la dirección real
-    // queda en el pedido, tanto para domicilio como para asignar el punto de
-    // entrega más cercano.
-    shipping_address_collection: { allowed_countries: ["MX"] },
-    phone_number_collection: { enabled: true },
+    // La dirección se pide y se valida en nuestro carrito (solo se entrega en la
+    // zona configurada en /admin/shipping), así que Stripe ya no la pregunta: la
+    // recibe aquí para dejarla anotada en el pago. El webhook, en cambio, lee la
+    // dirección de `metadata` (ver ~/lib/deliveryAddress).
+    ...(deliveryAddress
+      ? {
+          payment_intent_data: {
+            shipping: {
+              name: deliveryAddress.name,
+              phone: deliveryAddress.phone,
+              address: {
+                line1: deliveryAddress.line1 || `CP ${deliveryAddress.postalCode}`,
+                ...(deliveryAddress.line2 ? { line2: deliveryAddress.line2 } : {}),
+                ...(deliveryAddress.city ? { city: deliveryAddress.city } : {}),
+                state: deliveryAddress.state,
+                postal_code: deliveryAddress.postalCode,
+                country: "MX",
+              },
+            },
+          },
+        }
+      : {}),
     success_url: `${APP_URL}/gracias?session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${APP_URL}/tienda?checkout=cancelled`,
     metadata,

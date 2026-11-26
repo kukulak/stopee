@@ -8,6 +8,8 @@ import { getAttribution } from "~/lib/attribution.server";
 import { getSubscriptionConfig } from "~/models/subscriptionSettings.server";
 import { isOfferedFrequency } from "~/lib/subscriptionConfig";
 import { checkRateLimit, getClientIp, rateLimitMessage } from "~/lib/rateLimit.server";
+import { getShippingConfig } from "~/models/shipping.server";
+import { addressToMetadata, outOfZoneMessage, readAddressFields, validateDeliveryAddress } from "~/lib/deliveryAddress";
 
 export async function action({ request }: ActionFunctionArgs) {
   await requireStoreAccessApi(request);
@@ -59,6 +61,20 @@ export async function action({ request }: ActionFunctionArgs) {
     return data({ error: "Los productos elegidos ya no están disponibles para auto-envío." }, { status: 400 });
   }
 
+  // La caja siempre llega a domicilio, dentro de la zona de entrega: mismo candado que en una
+  // compra normal, revisado aquí en el servidor.
+  const { zone } = await getShippingConfig();
+  const addressResult = validateDeliveryAddress(readAddressFields(formData), { mode: "home", zone });
+  if (!addressResult.ok) {
+    return data(
+      {
+        error: addressResult.outOfZone ? outOfZoneMessage(zone) : "Revisa los datos de entrega marcados en rojo.",
+        fieldErrors: addressResult.errors,
+      },
+      { status: 400 },
+    );
+  }
+
   const attribution = await getAttribution(request);
 
   // Stripe rechaza metadatos de más de 500 caracteres; se avisa claro en vez de un error genérico.
@@ -74,6 +90,7 @@ export async function action({ request }: ActionFunctionArgs) {
     items,
     customerEmail: user.email,
     metadata: {
+      ...addressToMetadata(addressResult.address),
       userId: String(user._id),
       // Igual que cartSkus en el checkout de una sola compra: el webhook
       // reconstruye la caja exacta a partir de esto al confirmar el pago.

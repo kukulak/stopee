@@ -163,6 +163,45 @@ describe.skipIf(!hasTestDb)("webhook de Stripe", () => {
       expect(sendEmail.mock.calls[0][0].subject).toBe("Recibimos tu pedido de STOPee");
     });
 
+    it("la dirección que escribió en nuestro carrito (metadata) es la que queda en el pedido", async () => {
+      const session = oneTimeSession(
+        { shipping_details: null },
+        {
+          shipName: "Ana Pérez",
+          shipPhone: "5512345678",
+          shipLine1: "Av. Insurgentes Sur 123",
+          shipLine2: "Col. Del Valle",
+          shipCity: "Benito Juárez",
+          shipState: "Ciudad de México",
+          shipPostalCode: "03100",
+        },
+      );
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+      await send(completed(session));
+
+      const order = await OrderModel.findOne({ stripeCheckoutSessionId: "cs_test_compra1" }).lean();
+      expect(order!.shippingAddress).toMatchObject({
+        name: "Ana Pérez",
+        phone: "5512345678",
+        line1: "Av. Insurgentes Sur 123",
+        city: "Benito Juárez",
+        state: "Ciudad de México",
+        postalCode: "03100",
+      });
+      // Dentro de la zona: sin alerta.
+      expect(warn).not.toHaveBeenCalled();
+    });
+
+    it("un pedido ya cobrado con código postal fuera de la zona se guarda igual, pero deja una alerta en el log", async () => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+      await send(completed(oneTimeSession({ shipping_details: null }, { shipPostalCode: "64000", shipName: "Luis" })));
+
+      expect(await OrderModel.countDocuments()).toBe(1);
+      const alerts = warn.mock.calls.map((call) => String(call[0])).filter((line) => line.includes("order.out-of-zone"));
+      expect(alerts).toHaveLength(1);
+      expect(alerts[0]).toContain("64000");
+    });
+
     it("si Stripe repite el aviso, no duplica pedido, existencias ni correo", async () => {
       const event = completed();
       await send(event);
@@ -308,6 +347,49 @@ describe.skipIf(!hasTestDb)("webhook de Stripe", () => {
       expect(sendEmail).toHaveBeenCalledTimes(1);
       expect(sendEmail.mock.calls[0][0].subject).toBe("Tu auto-envío de STOPee está activo");
       expect((await UserModel.findById(user._id).lean())!.stripeCustomerId).toBe("cus_test_1");
+    });
+
+    it("guarda a dónde llega la caja (en la suscripción y en el primer pedido) y la deja como dirección del perfil si no tenía", async () => {
+      const user = await UserModel.create({ email: "ana@correo.com", passwordHash: "x" });
+      const session = subscriptionSession(String(user._id));
+      session.metadata = {
+        ...session.metadata,
+        shipName: "Ana Pérez",
+        shipPhone: "5512345678",
+        shipLine1: "Av. Insurgentes Sur 123",
+        shipCity: "Benito Juárez",
+        shipState: "Ciudad de México",
+        shipPostalCode: "03100",
+      } as typeof session.metadata;
+      await send(makeEvent("checkout.session.completed", session));
+
+      expect((await SubscriptionModel.findOne().lean())!.shippingAddress).toMatchObject({ line1: "Av. Insurgentes Sur 123", postalCode: "03100" });
+      expect((await OrderModel.findOne().lean())!.shippingAddress).toMatchObject({ name: "Ana Pérez", postalCode: "03100" });
+      expect((await UserModel.findById(user._id).lean())!.address).toMatchObject({ line1: "Av. Insurgentes Sur 123", postalCode: "03100" });
+    });
+
+    it("cada renovación sale con la misma dirección con la que contrató", async () => {
+      const user = await UserModel.create({ email: "ana@correo.com", passwordHash: "x" });
+      await SubscriptionModel.create({
+        user: user._id,
+        stripeSubscriptionId: "sub_test_1",
+        stripeCustomerId: "cus_test_1",
+        items: [{ sku: "TEST-1", name: "Concentrado STOPee", quantity: 1, unitPriceMxn: 399 }],
+        frequency: "4-semanas",
+        shippingAddress: { name: "Ana Pérez", line1: "Av. Insurgentes Sur 123", city: "Benito Juárez", state: "Ciudad de México", postalCode: "03100", country: "MX" },
+      });
+      await send(
+        makeEvent("invoice.payment_succeeded", {
+          id: "in_test_1",
+          object: "invoice",
+          subscription: "sub_test_1",
+          billing_reason: "subscription_cycle",
+          amount_paid: 35910,
+          lines: { data: [] },
+        }),
+      );
+      const renovacion = await OrderModel.findOne({ type: "subscription_recurring" }).lean();
+      expect(renovacion!.shippingAddress).toMatchObject({ name: "Ana Pérez", postalCode: "03100" });
     });
 
     it("un aviso de suscripción sin usuario no crea nada ni falla", async () => {

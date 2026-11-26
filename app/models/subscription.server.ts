@@ -36,6 +36,17 @@ const subscriptionSchema = new Schema(
     currentPeriodEnd: { type: Date },
     /** Incrementa con cada renovación de Stripe (factura pagada) que genera un Order. */
     totalOrdersGenerated: { type: Number, default: 0 },
+    /** A dónde llega la caja: la dirección que escribió al contratar. Cada renovación genera su pedido con esta misma. */
+    shippingAddress: {
+      name: String,
+      phone: String,
+      line1: String,
+      line2: String,
+      city: String,
+      state: String,
+      postalCode: String,
+      country: { type: String, default: "MX" },
+    },
   },
   { timestamps: true },
 );

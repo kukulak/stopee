@@ -11,11 +11,14 @@ import { LeadModel } from "~/models/lead.server";
 import { getCatalogItemNameBySku } from "~/lib/catalog.server";
 import { getActiveLoyaltyConfig, PromotionModel } from "~/models/promotion.server";
 import { resolveLoyaltyTier } from "~/lib/loyalty";
-import { logError } from "~/lib/logger.server";
 import { decrementStock } from "~/lib/inventory.server";
 import { orderConfirmationEmail } from "~/lib/emailTemplates.server";
 import { sendEmail } from "~/lib/mail.server";
 import { frequencyLabel } from "~/lib/subscriptionConfig";
+import { addressFromMetadata } from "~/lib/deliveryAddress";
+import { isPostalCodeInZone } from "~/lib/deliveryZone";
+import { getShippingConfig } from "~/models/shipping.server";
+import { logError, logWarn } from "~/lib/logger.server";
 
 const WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET;
 
@@ -182,6 +185,24 @@ async function sendOrderConfirmation(
 }
 
 /** Crea el pedido, o devuelve el que ya existe si Stripe repitió el evento (o dos llegaron a la vez). */
+/**
+ * Red de seguridad: el carrito y /api/checkout ya impiden pagar fuera de la zona, así que esto
+ * no debería ocurrir nunca. Si ocurre (una zona que se achicó entre el pago y el webhook, o un
+ * error nuestro), el pedido se guarda igual —ya está cobrado— pero queda una alerta en el log
+ * para que alguien lo revise a mano y decida si se entrega o se reembolsa.
+ */
+async function warnIfOutsideZone(sessionId: string, postalCode: string | undefined) {
+  if (!postalCode) return;
+  const { zone } = await getShippingConfig();
+  if (!isPostalCodeInZone(postalCode, zone)) {
+    logWarn("order.out-of-zone", {
+      message: "Pedido pagado con código postal fuera de la zona de entrega.",
+      sessionId,
+      postalCode,
+    });
+  }
+}
+
 async function createOrderOnce(data: Record<string, unknown> & { stripeCheckoutSessionId: string }) {
   try {
     return await OrderModel.create({ ...data, effects: NO_EFFECTS_YET });
@@ -278,20 +299,24 @@ async function handleOneTimeCheckoutCompleted(session: Stripe.Checkout.Session) 
   const shippingMethod = session.metadata?.shippingMethod ?? "";
   const shippingMethodLabel = session.metadata?.shippingMethodLabel ?? "";
   const shippingFree = session.metadata?.shippingFree === "true";
-  // Dirección que el cliente escribió en la pantalla de pago de Stripe.
+  // La dirección la escribió el cliente en nuestro carrito y viaja en `metadata`. Los pedidos
+  // hechos antes de este cambio la escribieron en la pantalla de Stripe (`shipping_details`).
   const stripeShipping = session.shipping_details;
-  const shippingAddress = stripeShipping?.address
-    ? {
-        name: stripeShipping.name ?? undefined,
-        phone: session.customer_details?.phone ?? undefined,
-        line1: stripeShipping.address.line1 ?? undefined,
-        line2: stripeShipping.address.line2 ?? undefined,
-        city: stripeShipping.address.city ?? undefined,
-        state: stripeShipping.address.state ?? undefined,
-        postalCode: stripeShipping.address.postal_code ?? undefined,
-        country: stripeShipping.address.country ?? "MX",
-      }
-    : undefined;
+  const shippingAddress =
+    addressFromMetadata(session.metadata) ??
+    (stripeShipping?.address
+      ? {
+          name: stripeShipping.name ?? undefined,
+          phone: session.customer_details?.phone ?? undefined,
+          line1: stripeShipping.address.line1 ?? undefined,
+          line2: stripeShipping.address.line2 ?? undefined,
+          city: stripeShipping.address.city ?? undefined,
+          state: stripeShipping.address.state ?? undefined,
+          postalCode: stripeShipping.address.postal_code ?? undefined,
+          country: stripeShipping.address.country ?? "MX",
+        }
+      : undefined);
+  await warnIfOutsideZone(session.id, shippingAddress?.postalCode);
 
   const totalAmount = items.reduce((sum, item) => sum + item.unitPriceMxn * item.quantity, 0);
   const grossCharged = (session.amount_total ?? (totalAmount + shippingCost) * 100) / 100;
@@ -387,6 +412,9 @@ async function handleSubscriptionCheckoutCompleted(session: Stripe.Checkout.Sess
     })),
   );
 
+  const shippingAddress = addressFromMetadata(session.metadata);
+  await warnIfOutsideZone(session.id, shippingAddress?.postalCode);
+
   // upsert: si Stripe reintenta el evento, la suscripción no se duplica y el resto del proceso continúa.
   await SubscriptionModel.updateOne(
     { stripeSubscriptionId: stripeSubscription.id },
@@ -398,6 +426,7 @@ async function handleSubscriptionCheckoutCompleted(session: Stripe.Checkout.Sess
         items,
         frequency,
         discountPercent: Number(session.metadata?.discountPercent ?? 0) || 0,
+        shippingAddress,
         status: "active",
         currentPeriodEnd: new Date(stripeSubscription.current_period_end * 1000),
         nextDeliveryDate: new Date(stripeSubscription.current_period_end * 1000),
@@ -407,6 +436,28 @@ async function handleSubscriptionCheckoutCompleted(session: Stripe.Checkout.Sess
   );
 
   await UserModel.findByIdAndUpdate(userId, { stripeCustomerId });
+  // Si su perfil no tenía dirección, la de la caja queda como la suya (mismo criterio que en una compra normal).
+  if (shippingAddress?.postalCode) {
+    await UserModel.updateOne(
+      {
+        _id: userId,
+        "address.line1": { $in: [null, ""] },
+        "address.postalCode": { $in: [null, ""] },
+      },
+      {
+        $set: {
+          address: {
+            line1: shippingAddress.line1 ?? "",
+            line2: shippingAddress.line2 ?? "",
+            city: shippingAddress.city ?? "",
+            state: shippingAddress.state ?? "",
+            postalCode: shippingAddress.postalCode,
+            country: "MX",
+          },
+        },
+      },
+    );
+  }
 
   // El primer cobro de la suscripción también es un pedido real (la caja
   // completa que armó el cliente) — no debe faltar en las métricas de
@@ -426,6 +477,7 @@ async function handleSubscriptionCheckoutCompleted(session: Stripe.Checkout.Sess
     discountPercent: 0,
     netAmount,
     type: "subscription_first",
+    shippingAddress,
     status: "paid",
     countsTowardLoyalty: false,
     attribution: readAttribution(session.metadata ?? null),
@@ -485,6 +537,8 @@ async function handleInvoicePaymentSucceeded(invoice: Stripe.Invoice) {
     discountPercent: subscription.discountPercent ?? 0,
     netAmount,
     type: "subscription_recurring",
+    // La misma dirección con la que contrató la caja.
+    shippingAddress: subscription.shippingAddress?.postalCode ? subscription.shippingAddress : undefined,
     status: "paid",
     countsTowardLoyalty: false,
   });

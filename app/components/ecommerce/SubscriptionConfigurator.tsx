@@ -12,16 +12,27 @@ import {
   type SubscriptionConfig,
 } from "~/lib/subscriptionConfig";
 import { LegalNotice } from "~/components/ui/LegalNotice";
+import { DeliveryAddressFields, type AddressDefaults } from "~/components/ecommerce/DeliveryAddressFields";
+import type { AddressErrors } from "~/lib/deliveryAddress";
+import type { DeliveryZone } from "~/lib/deliveryZone";
+
+const SUBSCRIPTION_FORM_ID = "subscription-form";
 
 export function SubscriptionConfigurator({
   products,
   config,
   preselectedSku,
+  deliveryZone,
+  addressDefaults,
 }: {
   products: CatalogItem[];
   config: SubscriptionConfig;
   /** Llega desde el banner de un producto puntual (?sku=...) — precarga esa caja con 1 unidad para no obligar a rearmarla desde cero. */
   preselectedSku?: string | null;
+  /** Zona donde se entrega: fuera de ella no se puede contratar. */
+  deliveryZone: DeliveryZone;
+  /** Lo que ya sabemos de la persona (su perfil), para que no escriba su dirección otra vez. */
+  addressDefaults?: AddressDefaults;
 }) {
   const [quantities, setQuantities] = useState<Record<string, number>>(() =>
     preselectedSku && products.some((p) => p.sku === preselectedSku) ? { [preselectedSku]: 1 } : {},
@@ -30,8 +41,9 @@ export function SubscriptionConfigurator({
   const frequencies = activeFrequencies(config);
   const [frequency, setFrequency] = useState(() => defaultFrequencyKey(config));
   const selectedWeeks = frequencies.find((f) => frequencyKey(f.weeks) === frequency)?.weeks;
-  const fetcher = useFetcher<{ error?: string }>();
+  const fetcher = useFetcher<{ error?: string; fieldErrors?: AddressErrors }>();
   const isSubmitting = fetcher.state !== "idle";
+  const [outOfZone, setOutOfZone] = useState(false);
 
   const items = useMemo(
     () => products.filter((p) => (quantities[p.sku] ?? 0) > 0).map((p) => ({ product: p, quantity: quantities[p.sku] })),
@@ -168,7 +180,7 @@ export function SubscriptionConfigurator({
 
           {config.disclaimer && <p className="mt-4 rounded-xl bg-carbon/5 p-3 text-xs text-carbon/60">{config.disclaimer}</p>}
 
-          <fetcher.Form method="post" action="/api/subscription" className="mt-4">
+          <fetcher.Form id={SUBSCRIPTION_FORM_ID} method="post" action="/api/subscription" className="mt-4">
             <input type="hidden" name="frequency" value={frequency} />
             {items.map(({ product, quantity }) => (
               <input key={product.sku} type="hidden" name="sku" value={product.sku} />
@@ -176,10 +188,19 @@ export function SubscriptionConfigurator({
             {items.map(({ product, quantity }) => (
               <input key={`${product.sku}-qty`} type="hidden" name="quantity" value={quantity} />
             ))}
+            {/* La caja llega siempre a domicilio: dirección completa. */}
+            <DeliveryAddressFields
+              formId={SUBSCRIPTION_FORM_ID}
+              mode="home"
+              zone={deliveryZone}
+              defaults={addressDefaults}
+              errors={fetcher.data?.fieldErrors}
+              onOutOfZoneChange={setOutOfZone}
+            />
             <button
               type="submit"
-              disabled={isSubmitting}
-              className="min-h-12 w-full rounded-full bg-lima px-8 text-sm font-bold text-carbon transition-transform hover:scale-105 active:scale-95 disabled:opacity-60"
+              disabled={isSubmitting || outOfZone}
+              className="mt-4 min-h-12 w-full rounded-full bg-lima px-8 text-sm font-bold text-carbon transition-transform hover:scale-105 active:scale-95 disabled:opacity-60"
             >
               {isSubmitting ? "Redirigiendo…" : config.ctaLabel}
             </button>

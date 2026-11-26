@@ -83,13 +83,23 @@ describe.skipIf(!hasTestDb)("ir a pagar", () => {
     return (await sessionStorage.commitSession(s)).split(";")[0];
   }
 
+  /** Dirección válida (Benito Juárez, CDMX): se manda en todos los pagos salvo que una prueba la cambie. */
+  const VALID_ADDRESS: Record<string, string> = {
+    shipName: "Ana Pérez",
+    shipPhone: "55 1234 5678",
+    shipLine1: "Av. Insurgentes Sur 123",
+    shipLine2: "Col. Del Valle",
+    shipCity: "Benito Juárez",
+    shipPostalCode: "03100",
+  };
+
   async function pay(cart: Cart, opts: { user?: unknown; ip?: string; body?: Record<string, string> } = {}) {
     const cookies = [await cartCookie(cart)];
     if (opts.user) cookies.push(await loginCookie(opts.user));
     const request = new Request("https://stopee.test/api/checkout", {
       method: "POST",
       headers: { cookie: cookies.join("; "), "x-forwarded-for": opts.ip ?? freshIp() },
-      body: new URLSearchParams(opts.body ?? {}),
+      body: new URLSearchParams({ ...VALID_ADDRESS, ...(opts.body ?? {}) }),
     });
     return checkout({ request, params: {}, context: {} });
   }
@@ -125,6 +135,131 @@ describe.skipIf(!hasTestDb)("ir a pagar", () => {
 
   const makeUser = (overrides: Record<string, unknown> = {}) =>
     UserModel.create({ email: "ana@correo.com", passwordHash: "x", emailVerifiedAt: new Date(), ...overrides });
+
+  // --- Zona de entrega y dirección ----------------------------------------------
+
+  describe("zona de entrega y dirección", () => {
+    const oneItem = { items: [{ sku: "CONC-1L", quantity: 1 }] };
+    const errorsOf = async (response: Response) => (await response.json()) as { error?: string; fieldErrors?: Record<string, string> };
+
+    it("un código postal fuera de la Ciudad de México no puede pagar: 400 y Stripe ni se entera", async () => {
+      const response = await pay(oneItem, { body: { shipPostalCode: "64000" } });
+      expect(response.status).toBe(400);
+      const body = await errorsOf(response);
+      expect(body.error).toMatch(/solo entregamos en Ciudad de México/);
+      expect(body.fieldErrors?.postalCode).toBeTruthy();
+      expect(createSession).not.toHaveBeenCalled();
+      expect(createCoupon).not.toHaveBeenCalled();
+    });
+
+    it("el estado que diga el navegador no importa: manda el código postal (no se puede disfrazar Monterrey de CDMX)", async () => {
+      const response = await pay(oneItem, { body: { shipPostalCode: "64000", shipState: "Ciudad de México", shipCity: "Benito Juárez" } });
+      expect(response.status).toBe(400);
+      expect(createSession).not.toHaveBeenCalled();
+    });
+
+    it("sin dirección (alguien que se salta el formulario) tampoco paga", async () => {
+      const request = new Request("https://stopee.test/api/checkout", {
+        method: "POST",
+        headers: { cookie: await cartCookie({ ...oneItem, shippingMethod: "home" }), "x-forwarded-for": freshIp() },
+        body: new URLSearchParams({}),
+      });
+      const response = await checkout({ request, params: {}, context: {} });
+      expect(response.status).toBe(400);
+      const body = await errorsOf(response);
+      expect(Object.keys(body.fieldErrors ?? {})).toEqual(expect.arrayContaining(["name", "phone", "postalCode", "line1", "city"]));
+      expect(createSession).not.toHaveBeenCalled();
+    });
+
+    it("en la zona, la dirección va a Stripe: anotada en el pago, en metadata, y Stripe ya no la vuelve a pedir", async () => {
+      const response = await pay(oneItem);
+      expect(response.status).toBe(302);
+      const call = charged() as unknown as {
+        shipping_address_collection?: unknown;
+        phone_number_collection?: unknown;
+        payment_intent_data?: { shipping: { name: string; phone: string; address: Record<string, string> } };
+        metadata: Record<string, string>;
+      };
+      expect(call.shipping_address_collection).toBeUndefined();
+      expect(call.phone_number_collection).toBeUndefined();
+      expect(call.payment_intent_data?.shipping).toMatchObject({
+        name: "Ana Pérez",
+        phone: "5512345678",
+        address: { line1: "Av. Insurgentes Sur 123", city: "Benito Juárez", state: "Ciudad de México", postal_code: "03100", country: "MX" },
+      });
+      expect(call.metadata).toMatchObject({
+        shipName: "Ana Pérez",
+        shipPhone: "5512345678",
+        shipLine1: "Av. Insurgentes Sur 123",
+        shipCity: "Benito Juárez",
+        shipState: "Ciudad de México",
+        shipPostalCode: "03100",
+      });
+    });
+
+    it("acepta el código postal escrito con 4 dígitos y lo guarda con 5", async () => {
+      const response = await pay(oneItem, { body: { shipPostalCode: "3100" } });
+      expect(response.status).toBe(302);
+      expect(charged().metadata.shipPostalCode).toBe("03100");
+    });
+
+    it("punto de entrega: basta nombre, teléfono y código postal (sin calle)", async () => {
+      const response = await pay(
+        { ...oneItem, shippingMethod: "pickup" },
+        { body: { shipLine1: "", shipLine2: "", shipCity: "" } },
+      );
+      expect(response.status).toBe(302);
+      expect(charged().metadata.shippingMethod).toBe("pickup");
+    });
+
+    it("a domicilio sí exige calle y alcaldía", async () => {
+      const response = await pay({ ...oneItem, shippingMethod: "home" }, { body: { shipLine1: "", shipCity: "" } });
+      expect(response.status).toBe(400);
+      expect((await errorsOf(response)).fieldErrors).toMatchObject({ line1: expect.any(String), city: expect.any(String) });
+      expect(createSession).not.toHaveBeenCalled();
+    });
+
+    it("la zona se cambia desde el panel, sin tocar el código: con 76000-76999 Querétaro entra y la CDMX sale", async () => {
+      await saveShippingConfig({
+        ...DEFAULT_SHIPPING_CONFIG,
+        zone: { name: "Querétaro", postalRanges: "76000-76999" },
+      });
+      const fuera = await pay(oneItem, { body: { shipPostalCode: "03100" } });
+      expect(fuera.status).toBe(400);
+      expect((await errorsOf(fuera)).error).toMatch(/solo entregamos en Querétaro/);
+      expect(createSession).not.toHaveBeenCalled();
+
+      const dentro = await pay(oneItem, { body: { shipPostalCode: "76000" } });
+      expect(dentro.status).toBe(302);
+      expect(charged().metadata.shipState).toBe("Querétaro");
+    });
+
+    it("la primera dirección se guarda en el perfil; si ya tenía una, no se pisa", async () => {
+      const nueva = await makeUser({ email: "nueva@correo.com" });
+      await pay(oneItem, { user: nueva._id });
+      const guardada = await UserModel.findById(nueva._id).lean();
+      expect(guardada!.address).toMatchObject({ line1: "Av. Insurgentes Sur 123", postalCode: "03100", state: "Ciudad de México" });
+      expect(guardada!.phone).toBe("5512345678");
+
+      createSession.mockClear();
+      const conDireccion = await makeUser({
+        email: "vieja@correo.com",
+        phone: "5500000000",
+        address: { line1: "Calle Vieja 9", postalCode: "06600", city: "Cuauhtémoc", state: "Ciudad de México" },
+      });
+      await pay(oneItem, { user: conDireccion._id, body: { shipLine1: "Calle de un regalo 1", shipPostalCode: "03100" } });
+      const intacta = await UserModel.findById(conDireccion._id).lean();
+      expect(intacta!.address).toMatchObject({ line1: "Calle Vieja 9", postalCode: "06600" });
+      expect(intacta!.phone).toBe("5500000000");
+    });
+
+    it("si guardar el perfil falla, el pago sigue adelante", async () => {
+      const user = await makeUser({ email: "fallo@correo.com" });
+      vi.spyOn(UserModel, "updateOne").mockRejectedValueOnce(new Error("mongo caído"));
+      const response = await pay(oneItem, { user: user._id });
+      expect(response.status).toBe(302);
+    });
+  });
 
   // --- Quién puede pagar -------------------------------------------------------
 

@@ -11,6 +11,7 @@ const { Schema, model, models } = mongoose;
  * de la tienda.
  */
 import { SHIPPING_METHOD_IDS, isShippingMethodId, type ShippingMethodId } from "~/lib/shippingMethods";
+import { DEFAULT_DELIVERY_ZONE, parsePostalRanges, type DeliveryZone } from "~/lib/deliveryZone";
 
 export { SHIPPING_METHOD_IDS, isShippingMethodId };
 export type { ShippingMethodId };
@@ -33,6 +34,8 @@ export type ShippingConfig = {
   freeShippingEnabled: boolean;
   /** Subtotal (ya con descuentos) a partir del cual el envío es gratis. */
   freeShippingThreshold: number;
+  /** Dónde se entrega: fuera de estos códigos postales no se puede pagar (ver ~/lib/deliveryZone). */
+  zone: DeliveryZone;
 };
 
 export const DEFAULT_SHIPPING_CONFIG: ShippingConfig = {
@@ -79,6 +82,7 @@ export const DEFAULT_SHIPPING_CONFIG: ShippingConfig = {
   },
   freeShippingEnabled: false,
   freeShippingThreshold: 599,
+  zone: DEFAULT_DELIVERY_ZONE,
 };
 
 const methodSchema = new Schema(
@@ -101,6 +105,8 @@ const shippingSettingsSchema = new Schema(
     home: { type: methodSchema },
     freeShippingEnabled: { type: Boolean, default: false },
     freeShippingThreshold: { type: Number, min: 0, default: 599 },
+    zoneName: { type: String, trim: true, maxlength: 80 },
+    zonePostalRanges: { type: String, trim: true, maxlength: 2000 },
   },
   { timestamps: true },
 );
@@ -147,7 +153,21 @@ export async function getShippingConfig(): Promise<ShippingConfig> {
     },
     freeShippingEnabled: stored?.freeShippingEnabled ?? DEFAULT_SHIPPING_CONFIG.freeShippingEnabled,
     freeShippingThreshold: stored?.freeShippingThreshold ?? DEFAULT_SHIPPING_CONFIG.freeShippingThreshold,
+    zone: mergeZone(stored?.zoneName, stored?.zonePostalRanges),
   };
+}
+
+/**
+ * Si lo guardado no se puede leer (rango roto, vacío) se vuelve a la zona de
+ * lanzamiento en vez de dejar la tienda sin poder cobrar a nadie.
+ */
+function mergeZone(name: string | null | undefined, postalRanges: string | null | undefined): DeliveryZone {
+  const cleanName = name?.trim() || DEFAULT_DELIVERY_ZONE.name;
+  const cleanRanges = postalRanges?.trim();
+  if (cleanRanges && !parsePostalRanges(cleanRanges).error) {
+    return { name: cleanName, postalRanges: cleanRanges };
+  }
+  return { name: cleanName, postalRanges: DEFAULT_DELIVERY_ZONE.postalRanges };
 }
 
 export async function saveShippingConfig(config: ShippingConfig) {
@@ -161,6 +181,8 @@ export async function saveShippingConfig(config: ShippingConfig) {
         home: config.methods.home,
         freeShippingEnabled: config.freeShippingEnabled,
         freeShippingThreshold: config.freeShippingThreshold,
+        zoneName: config.zone.name,
+        zonePostalRanges: config.zone.postalRanges,
       },
     },
     { upsert: true },
