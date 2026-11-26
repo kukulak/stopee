@@ -39,6 +39,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
       isFeatured: p.isFeatured ?? false,
       isSubscribable: p.isSubscribable ?? true,
       isIndividuallySellable: p.isIndividuallySellable ?? true,
+      visibility: (p.visibility === "ALLY_ONLY" ? "ALLY_ONLY" : "PUBLIC") as "PUBLIC" | "ALLY_ONLY",
       unitValue: p.unitValue ?? 1,
       unit: (p.unit ?? "pieza") as ProductUnit,
       lowStockThreshold: p.lowStockThreshold ?? 10,
@@ -96,18 +97,20 @@ export async function action({ request }: ActionFunctionArgs) {
     }
 
     const isIndividuallySellable = formData.get("isIndividuallySellable") === "on";
-    const isFeatured = formData.get("isFeatured") === "on";
-    const isSubscribable = formData.get("isSubscribable") === "on";
+    const visibility = formData.get("visibility") === "ALLY_ONLY" ? "ALLY_ONLY" : "PUBLIC";
+    // Un producto solo para aliados no se destaca en la tienda ni va en el auto-envío: sería mostrárselo a todos.
+    const isFeatured = visibility === "PUBLIC" && formData.get("isFeatured") === "on";
+    const isSubscribable = visibility === "PUBLIC" && formData.get("isSubscribable") === "on";
 
     if (isFeatured) await clearFeatured(intent === "update-product" ? id : undefined);
 
     if (intent === "update-product") {
-      await ProductModel.findByIdAndUpdate(id, { ...parsed.data, isIndividuallySellable, isFeatured, isSubscribable });
+      await ProductModel.findByIdAndUpdate(id, { ...parsed.data, isIndividuallySellable, isFeatured, isSubscribable, visibility });
       return data({ ok: true as const, error: null });
     }
 
     const { images, videos } = collectMediaFromForm(formData);
-    await ProductModel.create({ ...parsed.data, images, videos, isIndividuallySellable, isFeatured, isSubscribable });
+    await ProductModel.create({ ...parsed.data, images, videos, isIndividuallySellable, isFeatured, isSubscribable, visibility });
     return data({ ok: true as const, error: null });
   }
 
@@ -268,6 +271,16 @@ function ProductFormFields({ defaults }: { defaults?: Product }) {
           </Field>
         </>
       )}
+      <Field label="¿Quién puede verlo y comprarlo?" htmlFor="visibility">
+        <select id="visibility" name="visibility" defaultValue={defaults?.visibility ?? "PUBLIC"} className={inputClass}>
+          <option value="PUBLIC">Público: todos los visitantes</option>
+          <option value="ALLY_ONLY">Solo aliados / mayoreo: Puntos de Recarga activos</option>
+        </select>
+      </Field>
+      <p className="col-span-full -mt-3 text-xs text-carbon/50">
+        Un producto solo para aliados no aparece para nadie más (ni en la tienda, ni por su enlace, ni en el sitemap), no
+        puede ser producto estrella ni ir en el auto-envío o en un paquete.
+      </p>
       <label className="col-span-full flex min-h-11 items-center gap-2 text-sm font-medium text-carbon">
         <input type="checkbox" name="isIndividuallySellable" defaultChecked={defaults?.isIndividuallySellable ?? true} className="h-5 w-5 shrink-0 accent-lima" />
         Se vende de forma individual en la tienda
@@ -341,6 +354,9 @@ export default function AdminCatalogProducts() {
                     )}
                     {p.isFeatured && (
                       <span className="rounded-full bg-lima px-2 py-0.5 text-xs font-bold text-carbon">Estrella</span>
+                    )}
+                    {p.visibility === "ALLY_ONLY" && (
+                      <span className="rounded-full bg-carbon px-2 py-0.5 text-xs font-bold text-hueso">Solo aliados</span>
                     )}
                   </div>
                   <p className="mt-1 text-sm text-carbon/60">

@@ -15,7 +15,7 @@ import { CartOverlay } from "~/components/ecommerce/CartOverlay";
 import { AddedToCartToast } from "~/components/ecommerce/AddedToCartToast";
 import { HeroBannerCarousel } from "~/components/ecommerce/HeroBannerCarousel";
 import { remainingToAdd, soldOutMessage, stockLimitMessage } from "~/lib/stock";
-import { getCatalogItems, getCatalogItemBySku } from "~/lib/catalog.server";
+import { getCatalogItems, getCatalogItemBySku, isRefillAlly } from "~/lib/catalog.server";
 import {
   addToCart,
   getCart,
@@ -58,7 +58,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
   const [heroSlides, catalogItems, shippingConfig, subscriptionConfig] = await Promise.all([
     getTiendaHeroSlides(),
-    getCatalogItems(),
+    getCatalogItems({ viewerIsAlly: isRefillAlly(user) }),
     getShippingConfig(),
     getSubscriptionConfig(),
   ]);
@@ -133,6 +133,9 @@ export async function action({ request }: ActionFunctionArgs) {
     return data({ error: "Producto no válido." }, { status: 400 });
   }
 
+  // Un producto "solo para aliados" solo existe para un Punto de Recarga activo: se lee de la cuenta, no de la cookie.
+  const viewerIsAlly = isRefillAlly(await getUser(request));
+
   // Quitar del carrito (o bajar la cantidad a 0) siempre debe funcionar, aunque
   // el producto ya se haya pausado o eliminado del catálogo después de
   // agregarse — solo agregar o subir cantidad requiere que siga existiendo.
@@ -145,7 +148,7 @@ export async function action({ request }: ActionFunctionArgs) {
     const quantity = Number(formData.get("quantity") ?? 0);
     const safeQuantity = Number.isFinite(quantity) ? Math.floor(quantity) : 0;
     if (safeQuantity > 0) {
-      const item = await getCatalogItemBySku(sku);
+      const item = await getCatalogItemBySku(sku, { viewerIsAlly });
       if (!item) return data({ error: "Ese producto ya no está disponible." }, { status: 400 });
       if (item.stock <= 0) return data({ error: soldOutMessage(item.name) }, { status: 400 });
       // Se guarda lo máximo posible en vez de rechazar: el cliente queda con
@@ -163,7 +166,7 @@ export async function action({ request }: ActionFunctionArgs) {
   }
 
   if (intent === "add-to-cart") {
-    const item = await getCatalogItemBySku(sku);
+    const item = await getCatalogItemBySku(sku, { viewerIsAlly });
     if (!item) {
       return data({ error: "Producto no válido." }, { status: 400 });
     }

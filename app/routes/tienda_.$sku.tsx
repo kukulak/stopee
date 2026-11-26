@@ -7,7 +7,8 @@ import { Navbar } from "~/components/layout/Navbar";
 import { getSubscriptionConfig } from "~/models/subscriptionSettings.server";
 import { describeFrequencies } from "~/lib/subscriptionConfig";
 import { Footer } from "~/components/layout/Footer";
-import { getCatalogItemBySku } from "~/lib/catalog.server";
+import { getCatalogItemBySku, isRefillAlly } from "~/lib/catalog.server";
+import { getUser } from "~/lib/session.server";
 import { formatPresentation } from "~/lib/productUnit";
 import { renderMarkdown } from "~/lib/markdown.server";
 import { addToCart, getCart } from "~/lib/cart.server";
@@ -26,7 +27,8 @@ import { siteOrigin } from "~/lib/siteOrigin.server";
 export async function loader({ params, request }: LoaderFunctionArgs) {
   await requireStoreAccess(request);
   const sku = params.sku ?? "";
-  const product = await getCatalogItemBySku(sku);
+  // Un producto solo para aliados responde 404 a todos los demás, como si no existiera.
+  const product = await getCatalogItemBySku(sku, { viewerIsAlly: isRefillAlly(await getUser(request)) });
   if (!product) {
     throw new Response("Producto no encontrado", { status: 404 });
   }
@@ -93,7 +95,8 @@ export async function action({ request }: ActionFunctionArgs) {
   await requireStoreAccess(request);
   const formData = await request.formData();
   const sku = formData.get("sku");
-  const item = typeof sku === "string" ? await getCatalogItemBySku(sku) : null;
+  const item =
+    typeof sku === "string" ? await getCatalogItemBySku(sku, { viewerIsAlly: isRefillAlly(await getUser(request)) }) : null;
   if (typeof sku !== "string" || !item) {
     return data({ error: "Producto no válido." }, { status: 400 });
   }
@@ -166,6 +169,11 @@ export default function ProductDetail() {
                 {product.unitValue && product.unit && (
                   <span className="rounded-full bg-bosque/10 px-2 py-0.5 text-xs font-semibold text-bosque">
                     {formatPresentation(product.unitValue, product.unit)}
+                  </span>
+                )}
+                {product.visibility === "ALLY_ONLY" && (
+                  <span className="rounded-full bg-carbon px-2.5 py-0.5 text-xs font-bold text-lima">
+                    Precio Aliado · Punto de Recarga
                   </span>
                 )}
               </div>

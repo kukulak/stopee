@@ -2,7 +2,7 @@ import { requireStoreAccessApi } from "~/lib/storeAccess.server";
 import type { ActionFunctionArgs } from "react-router";
 import { data, redirect } from "react-router";
 import type Stripe from "stripe";
-import { getCatalogItems, getCatalogItemBySku } from "~/lib/catalog.server";
+import { getCatalogItems, getCatalogItemBySku, isRefillAlly } from "~/lib/catalog.server";
 import { getCart, getCartCoupon, getCartShippingMethod } from "~/lib/cart.server";
 import { getUser } from "~/lib/session.server";
 import { buildShippingQuote, getShippingConfig } from "~/models/shipping.server";
@@ -30,12 +30,14 @@ export async function action({ request }: ActionFunctionArgs) {
     return data({ error: rateLimitMessage(rateLimit.retryAfterSeconds) }, { status: 429 });
   }
 
-  const [cartItems, user, attribution, couponCode, catalogItems] = await Promise.all([
+  const user = await getUser(request);
+  const [cartItems, attribution, couponCode, catalogItems] = await Promise.all([
     getCart(request),
-    getUser(request),
     getAttribution(request),
     getCartCoupon(request),
-    getCatalogItems(),
+    // Los productos "solo para aliados" entran al catálogo únicamente si quien paga es un Punto de Recarga
+    // activo: aunque alguien meta el SKU a mano en su carrito, aquí se descarta.
+    getCatalogItems({ viewerIsAlly: isRefillAlly(user) }),
   ]);
 
   const bySku = new Map(catalogItems.map((item) => [item.sku, item]));

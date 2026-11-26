@@ -41,6 +41,13 @@ const productSchema = new Schema(
     /** Presentación: cantidad + unidad (p. ej. 1 L, 500 g, 30 piezas) — reemplaza tener que describirlo en texto libre. */
     unitValue: { type: Number, min: 0.01, default: 1 },
     unit: { type: String, enum: UNIT_VALUES, default: "pieza" },
+    /**
+     * Quién puede ver y comprar el producto. "ALLY_ONLY" (p. ej. el bidón de 20 L) solo lo ve un
+     * Punto de Recarga activo con sesión iniciada; para todos los demás no existe. Los productos
+     * anteriores a este campo no lo tienen y cuentan como públicos (por eso las consultas excluyen
+     * "ALLY_ONLY" en vez de exigir "PUBLIC").
+     */
+    visibility: { type: String, enum: ["PUBLIC", "ALLY_ONLY"], default: "PUBLIC" },
     /** Umbral de stock bajo propio de este producto — antes era un valor global fijo en Configuración. */
     lowStockThreshold: { type: Number, min: 0, default: 10 },
   },

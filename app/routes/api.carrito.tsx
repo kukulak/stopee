@@ -2,7 +2,7 @@ import type { LoaderFunctionArgs } from "react-router";
 import { data } from "react-router";
 import { requireStoreAccessApi } from "~/lib/storeAccess.server";
 import { getUser } from "~/lib/session.server";
-import { getCatalogItems } from "~/lib/catalog.server";
+import { getCatalogItems, isRefillAlly } from "~/lib/catalog.server";
 import { getShippingConfig } from "~/models/shipping.server";
 import { buildCartView } from "~/lib/cartView.server";
 
@@ -14,9 +14,9 @@ import { buildCartView } from "~/lib/cartView.server";
  */
 export async function loader({ request }: LoaderFunctionArgs) {
   await requireStoreAccessApi(request);
-  const [user, catalogItems, shippingConfig] = await Promise.all([
-    getUser(request),
-    getCatalogItems(),
+  const user = await getUser(request);
+  const [catalogItems, shippingConfig] = await Promise.all([
+    getCatalogItems({ viewerIsAlly: isRefillAlly(user) }),
     getShippingConfig(),
   ]);
   const view = await buildCartView(request, { user, catalogItems, shippingConfig });

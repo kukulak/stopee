@@ -24,6 +24,8 @@ export async function toggleFeatured(kind: FeaturedKind, id: string) {
   await connectDB();
   const item = kind === "product" ? await ProductModel.findById(id) : await BundleModel.findById(id);
   if (!item) return;
+  // Un producto solo para aliados no puede ser la estrella pública de la tienda.
+  if (kind === "product" && (item as { visibility?: string }).visibility === "ALLY_ONLY") return;
   if (item.isFeatured) {
     item.isFeatured = false;
   } else {

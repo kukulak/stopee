@@ -19,6 +19,8 @@ export type CatalogItem = {
   isFeatured: boolean;
   /** Si se puede armar como parte de una caja de auto-envío periódico — solo aplica a productos individuales, nunca a paquetes. */
   isSubscribable: boolean;
+  /** "ALLY_ONLY": solo lo ve y compra un Punto de Recarga activo (precio de aliado). */
+  visibility: "PUBLIC" | "ALLY_ONLY";
   /** Unidades que se pueden comprar ahora (existencia del producto; en un paquete, cuántos paquetes completos alcanzan con el stock de sus componentes). */
   stock: number;
 };
@@ -45,7 +47,9 @@ function productToCatalogItem(p: ProductDoc): CatalogItem {
     unit: p.unit ?? undefined,
     kind: "product",
     isFeatured: Boolean(p.isFeatured),
-    isSubscribable: p.isSubscribable ?? true,
+    visibility: p.visibility === "ALLY_ONLY" ? "ALLY_ONLY" : "PUBLIC",
+    // Un producto solo para aliados nunca va en una caja de auto-envío.
+    isSubscribable: p.visibility === "ALLY_ONLY" ? false : (p.isSubscribable ?? true),
     stock: Math.max(0, Math.floor(p.stock ?? 0)),
   };
 }
@@ -75,6 +79,7 @@ function bundleToCatalogItem(b: {
     videos: b.videos ?? [],
     usageImages: [],
     kind: "bundle",
+    visibility: "PUBLIC",
     isFeatured: Boolean(b.isFeatured),
     isSubscribable: false,
     // Un paquete se arma con sus componentes: se puede vender tantas veces
@@ -94,16 +99,37 @@ function bundleStock(products: PopulatedBundleProduct[]): number {
 }
 
 /**
+ * Qué productos puede ver quien mira el catálogo. Por defecto (visita, cliente, o cualquier llamada que no
+ * diga lo contrario) NO incluye los de "solo aliados": esa es la regla segura. Solo un Punto de Recarga
+ * activo los ve. Excluye "ALLY_ONLY" en vez de exigir "PUBLIC" para que los productos anteriores a
+ * este campo (sin él) sigan siendo públicos.
+ */
+function visibilityFilter(viewerIsAlly: boolean | undefined) {
+  return viewerIsAlly ? {} : { visibility: { $ne: "ALLY_ONLY" } };
+}
+
+/** ¿Esta cuenta es un Punto de Recarga activo? Se lee de la base de datos en cada petición, nunca de la cookie. */
+export function isRefillAlly(user: { isRefillAlly?: boolean | null } | null | undefined): boolean {
+  return Boolean(user?.isRefillAlly);
+}
+
+/**
  * Catálogo real vendible en /tienda — productos y paquetes que el admin
  * marcó como disponibles. Reemplaza el antiguo app/data/products.ts
  * estático: ahora todo lo que se vende viene de MongoDB (~/models/product.server,
  * ~/models/bundle.server), así que crear/editar/pausar en /admin/catalog se
  * refleja de inmediato en la tienda, el carrito y el checkout.
  */
-export async function getCatalogItems(options: { includeUnavailable?: boolean } = {}): Promise<CatalogItem[]> {
+export async function getCatalogItems(
+  options: { includeUnavailable?: boolean; viewerIsAlly?: boolean } = {},
+): Promise<CatalogItem[]> {
   await connectDB();
   const [products, bundles] = await Promise.all([
-    ProductModel.find(options.includeUnavailable ? {} : { isAvailable: true, isIndividuallySellable: true }).lean(),
+    ProductModel.find(
+      options.includeUnavailable
+        ? {}
+        : { isAvailable: true, isIndividuallySellable: true, ...visibilityFilter(options.viewerIsAlly) },
+    ).lean(),
     BundleModel.find(options.includeUnavailable ? {} : { isActive: true })
       .populate("products.product")
       .lean(),
@@ -123,7 +149,8 @@ export async function getCatalogItems(options: { includeUnavailable?: boolean } 
  */
 export async function getConcentratePrice(): Promise<{ priceMxn: number; unitValue: number } | null> {
   await connectDB();
-  const products = await ProductModel.find({ isAvailable: true, isIndividuallySellable: true, unit: "L" })
+  // Precio público: el bidón de aliados nunca cuenta como "el precio del concentrado".
+  const products = await ProductModel.find({ isAvailable: true, isIndividuallySellable: true, unit: "L", visibility: { $ne: "ALLY_ONLY" } })
     .select("price unitValue isFeatured")
     .lean();
   if (products.length === 0) return null;
@@ -135,11 +162,13 @@ export async function getConcentratePrice(): Promise<{ priceMxn: number; unitVal
 
 export async function getCatalogItemBySku(
   sku: string,
-  options: { includeUnavailable?: boolean } = {},
+  options: { includeUnavailable?: boolean; viewerIsAlly?: boolean } = {},
 ): Promise<CatalogItem | null> {
   await connectDB();
   const product = await ProductModel.findOne(
-    options.includeUnavailable ? { sku } : { sku, isAvailable: true, isIndividuallySellable: true },
+    options.includeUnavailable
+      ? { sku }
+      : { sku, isAvailable: true, isIndividuallySellable: true, ...visibilityFilter(options.viewerIsAlly) },
   ).lean();
   if (product) return productToCatalogItem(product as unknown as ProductDoc);
 

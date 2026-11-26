@@ -60,6 +60,11 @@ export function ProductCard({
                 {formatPresentation(product.unitValue, product.unit)}
               </span>
             )}
+            {product.visibility === "ALLY_ONLY" && (
+              <span className="rounded-full bg-carbon px-2.5 py-0.5 text-xs font-bold text-lima">
+                Precio Aliado · Punto de Recarga
+              </span>
+            )}
           </div>
           <p className="mt-1 text-sm text-carbon/60">{product.shortDescription}</p>
           <ArrowLink to={`/tienda/${product.sku}`} className="mt-1 min-h-9 text-sm">

@@ -96,6 +96,14 @@ export async function action({ request }: ActionFunctionArgs) {
     }
 
     const products = await ProductModel.find({ _id: { $in: selected.map((r) => r.productId) } });
+    // Un paquete es público: llevar dentro un producto solo para aliados lo vendería a todos.
+    const allyOnly = products.find((p) => p.visibility === "ALLY_ONLY");
+    if (allyOnly) {
+      return data(
+        { ok: false as const, error: `«${allyOnly.name}» es solo para aliados y no puede ir dentro de un paquete público.` },
+        { status: 400 },
+      );
+    }
     const priceById = new Map(products.map((p) => [String(p._id), p.price]));
 
     const bundlePrice = computeBundlePrice(
