@@ -9,8 +9,10 @@ import {
   ScrollRestoration,
   isRouteErrorResponse,
   useLoaderData,
+  useLocation,
   useNavigation,
   useRouteError,
+  useRouteLoaderData,
 } from "react-router";
 import tailwind from "~/tailwind.css?url";
 import { getSiteSettingsCached } from "~/models/siteSettings.server";
@@ -24,7 +26,7 @@ import { readOrCaptureAttribution, isAttributableEntryPoint } from "~/lib/attrib
 import { expireAnalyticsCookies, readConsent } from "~/lib/consent.server";
 import { getOrCreateVisitorId, logEvent } from "~/lib/tracking.server";
 import { getCart } from "~/lib/cart.server";
-import { getUser } from "~/lib/session.server";
+import { getUser, getUserId } from "~/lib/session.server";
 import { useNonce } from "~/lib/nonce";
 import { WhatsAppButton } from "~/components/ui/WhatsAppButton";
 import { BackToTopButton } from "~/components/ui/BackToTopButton";
@@ -114,6 +116,10 @@ export async function loader({ request }: LoaderFunctionArgs) {
     for (const expired of expireAnalyticsCookies(request)) headers.append("Set-Cookie", expired);
   }
 
+  // Solo un sí o no, leído de la cookie (sin tocar la base de datos): la página 404 lo usa para ofrecer «Iniciar
+  // sesión» únicamente a quien aún no la tiene. No dice nada de quién es ni de si la cuenta es válida.
+  const isLoggedIn = Boolean(await getUserId(request));
+
   // Solo para decidir si el botón de WhatsApp debe subirse en /tienda (ver
   // WhatsAppButton) — es de cookie, no de Mongo, así que no entra al try/catch.
   const cart = await getCart(request);
@@ -134,6 +140,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     return data(
       {
         storeVisible,
+        isLoggedIn,
         consent: publicConsent,
         // Defensa extra: aunque la base tenga un valor viejo o alterado, solo se usa un ID con el formato exacto.
         pixelIds: configuredPixelIds(settings),
@@ -164,6 +171,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     return data(
       {
         storeVisible: false,
+        isLoggedIn,
         consent: publicConsent,
         pixelIds: {} as PixelIds,
         announcementBarText: "",
@@ -247,6 +255,12 @@ export const meta: MetaFunction = ({ error }) => [
 export function ErrorBoundary() {
   const error = useRouteError();
   const is404 = isRouteErrorResponse(error) && error.status === 404;
+  const location = useLocation();
+  const root = useRouteLoaderData<typeof loader>("root");
+  // El 404 es el MISMO para una página que no existe y para una a la que esta persona no tiene acceso (por
+  // ejemplo, un producto solo para aliados): nunca dice cuál es el caso. Lo único que cambia es que, si aún no
+  // hay sesión, también se ofrece entrar; al entrar vuelve a esta misma dirección.
+  const canOfferLogin = is404 && root?.isLoggedIn === false;
 
   return (
     <Document>
@@ -267,12 +281,22 @@ export function ErrorBoundary() {
             ? "El link puede estar mal escrito o la página ya no existe."
             : "Ya lo estamos revisando. Mientras tanto, intenta de nuevo o vuelve al inicio."}
         </p>
-        <a
-          href="/"
-          className="mt-8 inline-flex min-h-11 items-center rounded-full bg-lima px-8 text-sm font-bold text-carbon transition-transform hover:scale-105"
-        >
-          Volver al inicio
-        </a>
+        <div className="mt-8 flex flex-col items-center gap-3 sm:flex-row">
+          <a
+            href="/"
+            className="inline-flex min-h-11 items-center rounded-full bg-lima px-8 text-sm font-bold text-carbon transition-transform hover:scale-105"
+          >
+            Volver al inicio
+          </a>
+          {canOfferLogin && (
+            <a
+              href={`/cuenta/entrar?redirectTo=${encodeURIComponent(location.pathname + location.search)}`}
+              className="inline-flex min-h-11 items-center rounded-full border border-hueso/30 px-8 text-sm font-semibold text-hueso transition-colors hover:border-hueso/60"
+            >
+              Iniciar sesión
+            </a>
+          )}
+        </div>
       </div>
     </Document>
   );

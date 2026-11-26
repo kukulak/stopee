@@ -210,6 +210,29 @@ describe.skipIf(!hasTestDb)("productos solo para aliados", () => {
       expect((await skuLoader(asAlly)).status).toBe(200);
     });
 
+    it("el 404 del bidón es IDÉNTICO al de un producto que no existe (no delata que hay algo ahí)", async () => {
+      const ask = async (sku: string, opts: Parameters<typeof cookies>[0] = {}) => {
+        const args = { ...(await get(`https://stopee.test/tienda/${sku}`, opts)), params: { sku } };
+        const response = (await outcomeOf(() => skuLoader(args))) as Response;
+        return { status: response.status, body: await response.text(), headers: [...response.headers.entries()].sort() };
+      };
+      const customer = await makeUser();
+      for (const who of [{}, { user: customer }]) {
+        const hidden = await ask("BIDON-20L", who);
+        const missing = await ask("NO-EXISTE-NADA", who);
+        expect(hidden.status).toBe(404);
+        expect(hidden).toEqual(missing);
+      }
+    });
+
+    it("el cargador raíz solo dice si hay una sesión (sí o no) para que la página 404 ofrezca iniciar sesión", async () => {
+      const root = asResponse(((await import("~/root")) as never as { loader: Handler }).loader);
+      const flag = async (opts: Parameters<typeof cookies>[0] = {}) =>
+        ((await (await root(await get("https://stopee.test/pagina-que-no-existe", opts))).json()) as { isLoggedIn: boolean }).isLoggedIn;
+      expect(await flag()).toBe(false);
+      expect(await flag({ user: await makeUser() })).toBe(true);
+    });
+
     it("no se puede agregar al carrito sin ser aliado", async () => {
       const fields = { intent: "add-to-cart", sku: "BIDON-20L", quantity: "1" };
       const denied = await tiendaAction(await post("https://stopee.test/tienda", fields));
