@@ -15,6 +15,7 @@ import { decrementStock } from "~/lib/inventory.server";
 import { orderConfirmationEmail } from "~/lib/emailTemplates.server";
 import { sendEmail } from "~/lib/mail.server";
 import { frequencyLabel } from "~/lib/subscriptionConfig";
+import { rememberDeliveryAddress } from "~/lib/addressBook.server";
 import { addressFromMetadata } from "~/lib/deliveryAddress";
 import { isPostalCodeInZone } from "~/lib/deliveryZone";
 import { getShippingConfig } from "~/models/shipping.server";
@@ -436,27 +437,13 @@ async function handleSubscriptionCheckoutCompleted(session: Stripe.Checkout.Sess
   );
 
   await UserModel.findByIdAndUpdate(userId, { stripeCustomerId });
-  // Si su perfil no tenía dirección, la de la caja queda como la suya (mismo criterio que en una compra normal).
+  // La dirección de la caja queda en su cuenta (si ya la guardó al contratar, no se duplica).
   if (shippingAddress?.postalCode) {
-    await UserModel.updateOne(
-      {
-        _id: userId,
-        "address.line1": { $in: [null, ""] },
-        "address.postalCode": { $in: [null, ""] },
-      },
-      {
-        $set: {
-          address: {
-            line1: shippingAddress.line1 ?? "",
-            line2: shippingAddress.line2 ?? "",
-            city: shippingAddress.city ?? "",
-            state: shippingAddress.state ?? "",
-            postalCode: shippingAddress.postalCode,
-            country: "MX",
-          },
-        },
-      },
-    );
+    try {
+      await rememberDeliveryAddress(userId, shippingAddress);
+    } catch (error) {
+      logError("webhook.save-profile-address", error);
+    }
   }
 
   // El primer cobro de la suscripción también es un pedido real (la caja

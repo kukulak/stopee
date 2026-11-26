@@ -16,6 +16,8 @@ import { addressDefaultsFromProfile } from "~/lib/deliveryAddress";
 import { buildOgMeta, DEFAULT_OG_IMAGE } from "~/lib/seo";
 import { siteOrigin } from "~/lib/siteOrigin.server";
 import { BrandText } from "~/components/ui/BrandText";
+import { parseBoxParam } from "~/lib/subscriptionBox";
+import { addressOptionsFromProfile } from "~/lib/addressBook";
 
 export const meta: MetaFunction<typeof loader> = ({ data }) => {
   if (!data) return [{ title: "Auto-envío periódico — STOPee" }];
@@ -47,6 +49,12 @@ export async function loader({ request }: LoaderFunctionArgs) {
     getUser(request),
   ]);
   const subscribableItems = catalogItems.filter((item) => item.isSubscribable);
+  // La caja que se armó en /tienda: solo productos aptos para auto-envío, con cantidades de 1 a 99.
+  const initialBox = parseBoxParam(
+    url.searchParams.get("caja"),
+    subscribableItems.map((item) => item.sku),
+  );
+  const initialFrequency = url.searchParams.get("frecuencia");
 
   return data({
     origin: siteOrigin(request),
@@ -59,13 +67,27 @@ export async function loader({ request }: LoaderFunctionArgs) {
     highlightSku,
     deliveryZone: shippingConfig.zone,
     addressDefaults: addressDefaultsFromProfile(user),
+    addressBook: user ? addressOptionsFromProfile(user) : null,
+    initialBox,
+    initialFrequency,
+    isLoggedIn: Boolean(user),
     cartCount: cart.reduce((sum, item) => sum + item.quantity, 0),
   });
 }
 
 export default function Suscripcion() {
-  const { subscribableItems, subscriptionConfig, highlightSku, cartCount, deliveryZone, addressDefaults } =
-    useLoaderData<typeof loader>();
+  const {
+    subscribableItems,
+    subscriptionConfig,
+    highlightSku,
+    cartCount,
+    deliveryZone,
+    addressDefaults,
+    addressBook,
+    initialBox,
+    initialFrequency,
+    isLoggedIn,
+  } = useLoaderData<typeof loader>();
 
   return (
     <div className="flex min-h-screen flex-col bg-hueso">
@@ -93,6 +115,10 @@ export default function Suscripcion() {
               preselectedSku={highlightSku}
               deliveryZone={deliveryZone}
               addressDefaults={addressDefaults}
+              addressBook={addressBook}
+              initialBox={initialBox}
+              initialFrequency={initialFrequency}
+              isLoggedIn={isLoggedIn}
             />
           </div>
         </section>

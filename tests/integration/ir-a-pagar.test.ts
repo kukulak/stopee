@@ -251,6 +251,13 @@ describe.skipIf(!hasTestDb)("ir a pagar", () => {
       const intacta = await UserModel.findById(conDireccion._id).lean();
       expect(intacta!.address).toMatchObject({ line1: "Calle Vieja 9", postalCode: "06600" });
       expect(intacta!.phone).toBe("5500000000");
+      // La dirección del regalo no se pierde: queda guardada como secundaria, para elegirla la próxima vez.
+      expect(intacta!.savedAddresses).toHaveLength(1);
+      expect(intacta!.savedAddresses[0]).toMatchObject({ line1: "Calle de un regalo 1", postalCode: "03100" });
+
+      // Pagar otra vez a la misma dirección no la duplica.
+      await pay(oneItem, { user: conDireccion._id, body: { shipLine1: "Calle de un regalo 1", shipPostalCode: "03100" } });
+      expect((await UserModel.findById(conDireccion._id).lean())!.savedAddresses).toHaveLength(1);
     });
 
     it("si guardar el perfil falla, el pago sigue adelante", async () => {

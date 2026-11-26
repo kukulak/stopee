@@ -216,6 +216,7 @@ export default function Tienda() {
     shipping,
     deliveryZone,
     addressDefaults,
+    addressBook,
   } = useLoaderData<typeof loader>();
   const itemCount = lines.reduce((sum, l) => sum + l.quantity, 0);
 
@@ -283,6 +284,7 @@ export default function Tienda() {
               inCart={Object.fromEntries(lines.map((l) => [l.sku, l.quantity]))}
             />
             <SubscriptionConfigurator
+              mode="preview"
               products={subscribableItems}
               config={subscriptionConfig}
               deliveryZone={deliveryZone}
@@ -306,6 +308,7 @@ export default function Tienda() {
           shipping={shipping}
           deliveryZone={deliveryZone}
           addressDefaults={addressDefaults}
+          addressBook={addressBook}
           onClose={() => setCartOpen(false)}
         />
       </CartOverlay>

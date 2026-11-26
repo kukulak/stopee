@@ -1,6 +1,7 @@
 import { useEffect, useId, useMemo, useState } from "react";
 import { useFetcher } from "react-router";
 import { ADDRESS_FIELDS, type AddressErrors, type AddressFieldKey, type AddressMode } from "~/lib/deliveryAddress";
+import type { AddressOption } from "~/lib/addressBook";
 import { isPostalCodeInRanges, parsePostalRanges, type DeliveryZone } from "~/lib/deliveryZone";
 
 export type AddressDefaults = Partial<Record<AddressFieldKey, string>>;
@@ -34,6 +35,8 @@ export function DeliveryAddressFields({
   defaults,
   errors,
   onOutOfZoneChange,
+  addressBook,
+  onAddressChange,
 }: {
   /** El `id` del formulario de pago: los campos se dibujan donde conviene pero viajan con ese formulario. */
   formId: string;
@@ -44,10 +47,35 @@ export function DeliveryAddressFields({
   errors?: AddressErrors;
   /** Avisa al botón de pagar para que se desactive mientras el código postal esté fuera de la zona. */
   onOutOfZoneChange?: (outOfZone: boolean) => void;
+  /**
+   * Las direcciones guardadas en la cuenta (la principal primero). `null` = visita sin sesión: no se
+   * guarda nada. Con direcciones guardadas se ofrece elegir una o escribir otra.
+   */
+  addressBook?: AddressOption[] | null;
+  /** Avisa al formulario que los campos cambiaron por elegir otra dirección (para revisar si ya está completo). */
+  onAddressChange?: () => void;
 }) {
   const uid = useId();
   const ranges = useMemo(() => parsePostalRanges(zone.postalRanges).ranges, [zone.postalRanges]);
-  const [postalCode, setPostalCode] = useState(defaults?.postalCode ?? "");
+  const book = addressBook ?? [];
+  // "nueva" = la persona eligió escribir otra dirección; si no hay guardadas, el formulario parte de sus datos de perfil.
+  const [selectedId, setSelectedId] = useState<string>(book[0]?.id ?? "perfil");
+  const selected = book.find((option) => option.id === selectedId);
+  const currentDefaults: AddressDefaults | undefined =
+    selectedId === "nueva" ? { name: "", phone: "", line1: "", line2: "", city: "", postalCode: "" } : (selected?.fields ?? defaults);
+  const [postalCode, setPostalCode] = useState(currentDefaults?.postalCode ?? "");
+
+  function chooseAddress(id: string) {
+    const option = book.find((item) => item.id === id);
+    setSelectedId(id);
+    setPostalCode(option?.fields.postalCode ?? "");
+  }
+
+  useEffect(() => {
+    onAddressChange?.();
+    // Solo cuando se elige otra dirección: `onAddressChange` puede cambiar de identidad en cada render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedId]);
   // Solo se juzga con los 5 dígitos completos: "0310" camino a "03100" no debe mostrar un falso aviso.
   const outOfZone = /^\d{5}$/.test(postalCode) && !isPostalCodeInRanges(postalCode, ranges);
 
@@ -65,7 +93,11 @@ export function DeliveryAddressFields({
         Por ahora entregamos solo en <strong className="text-carbon">{zone.name}</strong>.
       </p>
 
-      <div className="flex flex-col gap-3">
+      {book.length > 0 && (
+        <AddressPicker uid={uid} book={book} selectedId={selectedId} onChoose={chooseAddress} />
+      )}
+
+      <div key={selectedId} className="flex flex-col gap-3">
         <div className="max-w-[10rem]">
           <label htmlFor={id("postalCode")} className="mb-1 block text-xs font-semibold text-carbon/70">
             Código postal
@@ -100,7 +132,7 @@ export function DeliveryAddressFields({
               id={id("name")}
               name={ADDRESS_FIELDS.name}
               form={formId}
-              defaultValue={defaults?.name ?? ""}
+              defaultValue={currentDefaults?.name ?? ""}
               autoComplete="name"
               maxLength={100}
               required
@@ -119,7 +151,7 @@ export function DeliveryAddressFields({
               id={id("phone")}
               name={ADDRESS_FIELDS.phone}
               form={formId}
-              defaultValue={defaults?.phone ?? ""}
+              defaultValue={currentDefaults?.phone ?? ""}
               type="tel"
               inputMode="tel"
               autoComplete="tel"
@@ -142,7 +174,7 @@ export function DeliveryAddressFields({
                   id={id("line1")}
                   name={ADDRESS_FIELDS.line1}
                   form={formId}
-                  defaultValue={defaults?.line1 ?? ""}
+                  defaultValue={currentDefaults?.line1 ?? ""}
                   autoComplete="address-line1"
                   maxLength={120}
                   required
@@ -160,7 +192,7 @@ export function DeliveryAddressFields({
                   id={id("line2")}
                   name={ADDRESS_FIELDS.line2}
                   form={formId}
-                  defaultValue={defaults?.line2 ?? ""}
+                  defaultValue={currentDefaults?.line2 ?? ""}
                   autoComplete="address-line2"
                   maxLength={120}
                   className={inputClass}
@@ -174,7 +206,7 @@ export function DeliveryAddressFields({
                   id={id("city")}
                   name={ADDRESS_FIELDS.city}
                   form={formId}
-                  defaultValue={defaults?.city ?? ""}
+                  defaultValue={currentDefaults?.city ?? ""}
                   autoComplete="address-level2"
                   maxLength={80}
                   required
@@ -192,8 +224,69 @@ export function DeliveryAddressFields({
           )}
         </div>
       </div>
+      {addressBook != null && (
+        <p className="mt-3 text-xs text-carbon/50">
+          Guardamos tus direcciones en Mi cuenta para que no tengas que escribirlas otra vez.
+        </p>
+      )}
     </fieldset>
   );
+}
+
+/**
+ * Las direcciones guardadas como opciones, más "otra dirección". Los botones de opción no llevan
+ * `name` de formulario (apuntan a un formulario que no existe) para que no viajen con el pago:
+ * solo viajan los campos de abajo.
+ */
+function AddressPicker({
+  uid,
+  book,
+  selectedId,
+  onChoose,
+}: {
+  uid: string;
+  book: AddressOption[];
+  selectedId: string;
+  onChoose: (id: string) => void;
+}) {
+  const options = [...book.map((option) => ({ id: option.id, title: option.label, detail: summarize(option) })), { id: "nueva", title: "Enviar a otra dirección", detail: "Escríbela abajo; la guardamos para la próxima." }];
+  return (
+    <fieldset className="mb-4 min-w-0">
+      <legend className="sr-only">Elige a qué dirección lo enviamos</legend>
+      <div className="flex flex-col gap-2">
+        {options.map((option) => {
+          const checked = selectedId === option.id;
+          return (
+            <label
+              key={option.id}
+              className={`flex min-h-11 cursor-pointer items-start gap-3 rounded-2xl border-2 p-3 transition-colors ${
+                checked ? "border-lima bg-lima/10" : "border-carbon/10 bg-hueso hover:border-carbon/20"
+              }`}
+            >
+              <input
+                type="radio"
+                name={`${uid}-destino`}
+                form="sin-formulario"
+                value={option.id}
+                checked={checked}
+                onChange={() => onChoose(option.id)}
+                className="mt-1 h-4 w-4 shrink-0 accent-bosque"
+              />
+              <span className="min-w-0">
+                <span className="block text-sm font-bold text-carbon">{option.title}</span>
+                <span className="block break-words text-xs text-carbon/60">{option.detail}</span>
+              </span>
+            </label>
+          );
+        })}
+      </div>
+    </fieldset>
+  );
+}
+
+function summarize(option: AddressOption): string {
+  const { name, line1, city, postalCode } = option.fields;
+  return [name, line1, [city, postalCode && `CP ${postalCode}`].filter(Boolean).join(" ")].filter(Boolean).join(" · ");
 }
 
 /**

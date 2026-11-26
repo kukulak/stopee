@@ -34,6 +34,7 @@ export function RemoteCart({ open, onClose }: { open: boolean; onClose: () => vo
           shipping={cart.shipping}
           deliveryZone={cart.deliveryZone}
           addressDefaults={cart.addressDefaults}
+          addressBook={cart.addressBook}
           onClose={onClose}
         />
       ) : (

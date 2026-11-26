@@ -9,6 +9,8 @@ import { getSubscriptionConfig } from "~/models/subscriptionSettings.server";
 import { isOfferedFrequency } from "~/lib/subscriptionConfig";
 import { checkRateLimit, getClientIp, rateLimitMessage } from "~/lib/rateLimit.server";
 import { getShippingConfig } from "~/models/shipping.server";
+import { rememberDeliveryAddress } from "~/lib/addressBook.server";
+import { logError } from "~/lib/logger.server";
 import { addressToMetadata, outOfZoneMessage, readAddressFields, validateDeliveryAddress } from "~/lib/deliveryAddress";
 
 export async function action({ request }: ActionFunctionArgs) {
@@ -107,6 +109,13 @@ export async function action({ request }: ActionFunctionArgs) {
       { error: "No se pudo iniciar la suscripción. Intenta de nuevo." },
       { status: 502 },
     );
+  }
+
+  // Igual que en una compra normal: la dirección escrita queda guardada en su cuenta (sin pisar la principal).
+  try {
+    await rememberDeliveryAddress(String(user._id), addressResult.address);
+  } catch (error) {
+    logError("subscription.save-profile-address", error);
   }
 
   return redirect(session.url);

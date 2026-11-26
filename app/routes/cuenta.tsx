@@ -31,6 +31,9 @@ import { getActiveLoyaltyConfig } from "~/models/promotion.server";
 import { ArrowIcon, CloseIcon } from "~/components/ui/Icons";
 import { firstNameOf } from "~/lib/names";
 import { describeLoyaltyReward, resolveLoyaltyTier } from "~/lib/loyalty";
+import { AddressBookCard } from "~/components/account/AddressBookCard";
+import { addressOptionsFromProfile } from "~/lib/addressBook";
+import { makePrincipalAddress, removeSavedAddress, renameAddress } from "~/lib/addressBook.server";
 
 const ORDER_STATUS_LABELS: Record<string, string> = {
   paid: "Pagado",
@@ -72,6 +75,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
       isAdmin: isStaff(user.role),
       phone: user.phone ?? "",
       address: user.address ?? {},
+      addresses: addressOptionsFromProfile(user),
       dogs: dogs.map((d) => ({ name: d.name, birthday: d.birthday ? new Date(d.birthday).toISOString().slice(0, 10) : "" })),
     },
     loyalty: {
@@ -117,6 +121,20 @@ export async function action({ request }: ActionFunctionArgs) {
   const intent = formData.get("intent");
   const subscriptionId = String(formData.get("subscriptionId") ?? "");
 
+  if (intent === "address-rename" || intent === "address-make-principal" || intent === "address-remove") {
+    const addressId = String(formData.get("addressId") ?? "");
+    const result =
+      intent === "address-rename"
+        ? await renameAddress(userId, addressId, String(formData.get("label") ?? ""))
+        : intent === "address-make-principal"
+          ? await makePrincipalAddress(userId, addressId)
+          : await removeSavedAddress(userId, addressId);
+    return data(
+      { ok: result.ok, savedIntent: intent, error: result.ok ? null : result.error },
+      { status: result.ok ? 200 : 400 },
+    );
+  }
+
   if (intent === "update-profile") {
     const profileSchema = z.object({
       phone: z.string().trim().max(20),
@@ -141,7 +159,11 @@ export async function action({ request }: ActionFunctionArgs) {
       );
     }
 
+    // Editar la dirección principal no debe borrar su nombre ni a quién se entrega.
+    const current = await UserModel.findById(userId).select("address.label address.recipientName").lean();
     const address = {
+      label: current?.address?.label ?? "",
+      recipientName: current?.address?.recipientName ?? "",
       line1: parsed.data.addressLine1,
       line2: parsed.data.addressLine2,
       city: parsed.data.addressCity,
@@ -403,7 +425,7 @@ export default function Cuenta() {
                 </div>
 
                 <div>
-                  <p className="text-sm font-semibold text-carbon">Dirección de envío</p>
+                  <p className="text-sm font-semibold text-carbon">Dirección principal</p>
                   <div className="mt-1 grid grid-cols-1 gap-3 sm:grid-cols-2">
                     <input
                       name="addressLine1"
@@ -487,6 +509,8 @@ export default function Cuenta() {
               </Form>
             )}
           </div>
+
+          <AddressBookCard addresses={user.addresses} />
 
           {/* Fidelidad */}
           <div className="mt-8 rounded-3xl border border-lima/30 bg-bosque/5 p-6">

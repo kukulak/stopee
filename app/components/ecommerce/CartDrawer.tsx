@@ -7,6 +7,7 @@ import { usePageShowReset } from "~/lib/usePageShowReset";
 import { LegalNotice } from "~/components/ui/LegalNotice";
 import { DeliveryAddressFields, type AddressDefaults } from "~/components/ecommerce/DeliveryAddressFields";
 import type { AddressErrors } from "~/lib/deliveryAddress";
+import type { AddressOption } from "~/lib/addressBook";
 import type { DeliveryZone } from "~/lib/deliveryZone";
 
 const CHECKOUT_FORM_ID = "checkout-form";
@@ -98,6 +99,7 @@ export function CartDrawer({
   shipping,
   deliveryZone,
   addressDefaults,
+  addressBook,
   onClose,
 }: {
   lines: CartLine[];
@@ -113,6 +115,8 @@ export function CartDrawer({
   deliveryZone: DeliveryZone;
   /** Lo que ya sabemos de la persona (su perfil), para que no escriba su dirección otra vez. */
   addressDefaults?: AddressDefaults;
+  /** Las direcciones guardadas en su cuenta (`null` si no ha iniciado sesión). */
+  addressBook?: AddressOption[] | null;
   /** Cierra el panel del carrito (el botón del carrito vacío lo usa antes de llevar a la tienda). */
   onClose?: () => void;
 }) {
@@ -249,6 +253,7 @@ export function CartDrawer({
             mode={selectedShipping?.id === "pickup" ? "pickup" : "home"}
             zone={deliveryZone}
             defaults={addressDefaults}
+            addressBook={addressBook}
             errors={checkoutFetcher.data?.fieldErrors}
             onOutOfZoneChange={setOutOfZone}
           />

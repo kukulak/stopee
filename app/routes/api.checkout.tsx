@@ -6,9 +6,8 @@ import { getCatalogItems, getCatalogItemBySku } from "~/lib/catalog.server";
 import { getCart, getCartCoupon, getCartShippingMethod } from "~/lib/cart.server";
 import { getUser } from "~/lib/session.server";
 import { buildShippingQuote, getShippingConfig } from "~/models/shipping.server";
-import { UserModel } from "~/models/user.server";
+import { rememberDeliveryAddress } from "~/lib/addressBook.server";
 import { addressToMetadata, outOfZoneMessage, readAddressFields, validateDeliveryAddress } from "~/lib/deliveryAddress";
-import { connectDB } from "~/lib/db.server";
 import { createOneTimeCheckoutSession } from "~/lib/stripe.server";
 import { getAttribution } from "~/lib/attribution.server";
 import { logEvent, getOrCreateVisitorId } from "~/lib/tracking.server";
@@ -249,30 +248,13 @@ export async function action({ request }: ActionFunctionArgs) {
     return data({ error: "No se pudo iniciar el pago. Intenta de nuevo." }, { status: 502 });
   }
 
-  // Primera vez que escribe su dirección: se guarda en su perfil para que la próxima compra llegue
-  // llena. Si ya tenía una, no se pisa (puede estar enviando un regalo); la edita en "Mi cuenta".
-  if (user && !user.address?.line1 && !user.address?.postalCode) {
+  // La dirección que acaba de escribir se guarda en su cuenta para no pedírsela otra vez: la primera
+  // queda como principal y las demás como secundarias (puede estar enviando un regalo). Es una
+  // comodidad: nunca debe impedir el pago.
+  if (user) {
     try {
-      await connectDB();
-      await UserModel.updateOne(
-        { _id: user._id },
-        {
-          $set: {
-            address: {
-              line1: deliveryAddress.line1,
-              line2: deliveryAddress.line2,
-              city: deliveryAddress.city,
-              state: deliveryAddress.state,
-              postalCode: deliveryAddress.postalCode,
-              country: "MX",
-            },
-            ...(user.phone ? {} : { phone: deliveryAddress.phone }),
-            ...(user.name ? {} : { name: deliveryAddress.name }),
-          },
-        },
-      );
+      await rememberDeliveryAddress(String(user._id), deliveryAddress);
     } catch (error) {
-      // Guardar el perfil es una comodidad: nunca debe impedir el pago.
       logError("checkout.save-profile-address", error);
     }
   }

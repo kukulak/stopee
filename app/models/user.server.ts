@@ -19,9 +19,34 @@ const addressSchema = new Schema(
     state: { type: String, trim: true, default: "" },
     postalCode: { type: String, trim: true, default: "" },
     country: { type: String, trim: true, default: "MX" },
+    /** Cómo la llama la persona ("Casa", "Casa de mamá"). Vacío = sin nombre todavía. */
+    label: { type: String, trim: true, default: "", maxlength: 40 },
+    /** A nombre de quién se entrega (puede no ser la persona de la cuenta: un regalo). */
+    recipientName: { type: String, trim: true, default: "", maxlength: 100 },
   },
   { _id: false },
 );
+
+/**
+ * Direcciones guardadas además de la principal (`address`). Se llenan solas con cada dirección
+ * nueva que la persona escribe al pagar o al activar el Club, para que no la escriba dos veces
+ * (ver ~/lib/addressBook.server). Cada una lleva a quién se entrega y su teléfono porque puede
+ * ser la casa de alguien más.
+ */
+const savedAddressSchema = new Schema({
+  label: { type: String, trim: true, default: "", maxlength: 40 },
+  name: { type: String, trim: true, default: "", maxlength: 100 },
+  phone: { type: String, trim: true, default: "", maxlength: 20 },
+  line1: { type: String, trim: true, default: "" },
+  line2: { type: String, trim: true, default: "" },
+  city: { type: String, trim: true, default: "" },
+  state: { type: String, trim: true, default: "" },
+  postalCode: { type: String, trim: true, default: "" },
+  country: { type: String, trim: true, default: "MX" },
+  /** Calle + código postal normalizados: así la misma dirección escrita distinto no se guarda dos veces. */
+  key: { type: String, default: "" },
+  lastUsedAt: { type: Date, default: Date.now },
+});
 
 /**
  * Recompensa ganada al completar un ciclo de lealtad, pendiente de usarse en
@@ -55,6 +80,7 @@ const userSchema = new Schema(
     dogName: { type: String, trim: true },
     phone: { type: String, trim: true, default: "" },
     address: { type: addressSchema, default: () => ({}) },
+    savedAddresses: { type: [savedAddressSchema], default: [] },
     dogs: { type: [dogSchema], default: [] },
     /** Compras individuales confirmadas de por vida (no cuenta envíos de suscripción). */
     individualPurchaseCount: { type: Number, default: 0 },
@@ -118,6 +144,12 @@ export async function verifyPassword(password: string, hash: string | null | und
     return false;
   }
   return bcrypt.compare(password, hash);
+}
+
+// En desarrollo se re-registra el modelo en cada recarga: si no, mongoose conserva el esquema
+// viejo y descarta en silencio los campos nuevos al guardar (igual que en Product).
+if (process.env.NODE_ENV !== "production" && models.User) {
+  mongoose.deleteModel("User");
 }
 
 export const UserModel =

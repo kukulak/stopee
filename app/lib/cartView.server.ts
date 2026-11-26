@@ -3,6 +3,7 @@ import type { CatalogItem } from "~/lib/catalog.server";
 import { getCart, getCartCoupon, getCartShippingMethod } from "~/lib/cart.server";
 import { getCatalogItemBySku } from "~/lib/catalog.server";
 import { addressDefaultsFromProfile } from "~/lib/deliveryAddress";
+import { addressOptionsFromProfile } from "~/lib/addressBook";
 import { checkCouponEligibility } from "~/lib/couponRules.server";
 import { stackPercents } from "~/lib/couponRules";
 import { evaluateRequirementPromotion } from "~/lib/promotionEngine.server";
@@ -130,6 +131,8 @@ export async function buildCartView(
     shipping,
     deliveryZone: shippingConfig.zone,
     addressDefaults: addressDefaultsFromProfile(user),
+    // null = visita sin sesión: no se ofrecen ni se guardan direcciones.
+    addressBook: user ? addressOptionsFromProfile(user) : null,
   };
 }
 
