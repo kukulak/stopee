@@ -16,6 +16,7 @@ import { monthlyEquivalent } from "~/lib/mrr.server";
 import { TYPE_LABELS } from "~/components/admin/PromotionFormFields";
 import { formatPresentation } from "~/lib/productUnit";
 import { useSearchParams } from "react-router";
+import { SalesExportButton } from "~/components/admin/SalesExportButton";
 import {
   ResponsiveContainer,
   AreaChart,
@@ -455,12 +456,7 @@ export default function AdminDashboard() {
         </div>
 
         <div className="flex flex-wrap gap-2">
-          <a
-            href="/admin/exports/sales"
-            className="flex min-h-11 items-center rounded-full border border-carbon/15 px-4 text-sm font-semibold text-carbon hover:border-carbon/30"
-          >
-            Exportar ventas
-          </a>
+          <SalesExportButton className="flex min-h-11 items-center rounded-full border border-carbon/15 px-4 text-sm font-semibold text-carbon hover:border-carbon/30" />
           <a
             href="/admin/exports/subscribers"
             className="flex min-h-11 items-center rounded-full border border-carbon/15 px-4 text-sm font-semibold text-carbon hover:border-carbon/30"

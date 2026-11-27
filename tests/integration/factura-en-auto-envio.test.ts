@@ -261,9 +261,11 @@ describe.skipIf(!hasTestDb)("factura en el auto-envío y reporte de ventas", () 
         await makeOrder({ email: "cancelado@correo.com", requiresInvoice: true, billingInfo: FISCAL, status: "cancelled" });
         await makeOrder({ email: "reembolsado@correo.com", requiresInvoice: true, billingInfo: FISCAL, status: "refunded" });
 
-        const all = await rows();
+        const all = await rows("?estado=todas");
         const only = await rows("?factura=1");
         expect(all.lines).toHaveLength(5);
+        // Sin pedir «todas», el exportador general tampoco incluye cancelados ni reembolsados.
+        expect((await rows()).lines).toHaveLength(3);
         expect(only.lines).toHaveLength(1);
         expect(col(only.header, only.lines[0], "pedido")).toBe(String(pendiente._id).slice(-8).toUpperCase());
         expect(only.response.headers.get("content-disposition")).toMatch(/facturas-por-emitir-\d{4}-\d{2}-\d{2}\.csv/);

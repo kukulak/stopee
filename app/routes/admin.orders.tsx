@@ -10,6 +10,7 @@ import { requireAdmin } from "~/lib/session.server";
 import { sendEmail } from "~/lib/mail.server";
 import { orderShippedEmail } from "~/lib/emailTemplates.server";
 import { logError } from "~/lib/logger.server";
+import { SalesExportButton } from "~/components/admin/SalesExportButton";
 import { parseCutoff, pendingInvoiceFilter } from "~/lib/invoiceQueue.server";
 
 export const meta: MetaFunction = () => [{ title: "Pedidos — Admin STOPee" }];
@@ -345,12 +346,15 @@ export default function AdminOrders() {
             Operación diaria: estado, guía y seguimiento de cada pedido. {totalCount} en total.
           </p>
         </div>
-        <a
-          href="/admin/orders/new"
-          className="flex min-h-11 items-center rounded-full bg-carbon px-5 text-sm font-bold text-hueso hover:bg-carbon/90"
-        >
-          Crear pedido
-        </a>
+        <div className="flex flex-wrap items-center gap-2">
+          <SalesExportButton className="flex min-h-11 items-center rounded-full border border-carbon/15 px-4 text-sm font-semibold text-carbon hover:border-carbon/30" />
+          <a
+            href="/admin/orders/new"
+            className="flex min-h-11 items-center rounded-full bg-carbon px-5 text-sm font-bold text-hueso hover:bg-carbon/90"
+          >
+            Crear pedido
+          </a>
+        </div>
       </div>
 
       <div className="mt-6 flex flex-wrap gap-2">
