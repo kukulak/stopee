@@ -21,7 +21,7 @@ const inputClass =
  * «Datos de facturación (opcional)»: se guardan para llenarse solos cuando la persona pide factura al
  * pagar. Comprar nunca los exige. El precio es el mismo con o sin factura (ya incluye IVA).
  */
-export function BillingCard({ billing }: { billing: BillingInfo | null }) {
+export function BillingCard({ billing, invoicesBoxes = false }: { billing: BillingInfo | null; /** Alguna caja del auto-envío se factura con estos datos. */ invoicesBoxes?: boolean }) {
   const fetcher = useFetcher<BillingActionResult>();
   const [editing, setEditing] = useState(false);
   const [confirmingRemove, setConfirmingRemove] = useState(false);
@@ -95,7 +95,9 @@ export function BillingCard({ billing }: { billing: BillingInfo | null }) {
             ) : (
               <fetcher.Form method="post" action="/cuenta" className="flex flex-wrap items-center gap-2" onSubmit={() => setConfirmingRemove(false)}>
                 <input type="hidden" name="intent" value="billing-remove" />
-                <span className="text-sm text-carbon/70">¿Borrar tus datos fiscales guardados?</span>
+                <span className="text-sm text-carbon/70">
+                  ¿Borrar tus datos fiscales guardados?{invoicesBoxes ? " Tus cajas dejarán de facturarse solas." : ""}
+                </span>
                 <button type="submit" disabled={busy} className="min-h-11 rounded-full bg-red-600 px-4 text-sm font-bold text-white disabled:opacity-60">
                   Sí, borrarlos
                 </button>

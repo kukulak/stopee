@@ -160,6 +160,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
       frequency: s.frequency,
       status: s.status,
       currentPeriodEnd: s.currentPeriodEnd,
+      requiresInvoice: Boolean(s.requiresInvoice),
     })),
     subscriptionProgram: {
       name: programDisplayName(subscriptionConfig),
@@ -193,6 +194,8 @@ export async function action({ request }: ActionFunctionArgs) {
   if (intent === "billing-update" || intent === "billing-remove") {
     if (intent === "billing-remove") {
       await UserModel.updateOne({ _id: userId }, { $unset: { billingInfo: 1 } });
+      // Sin datos fiscales no hay con qué facturar: la factura automática de las cajas se apaga con ellos.
+      await SubscriptionModel.updateMany({ user: userId }, { $set: { requiresInvoice: false } });
       return data({ ok: true, savedIntent: "billing-remove" as const, error: null as string | null });
     }
     const parsed = validateBillingInfo({
@@ -361,6 +364,26 @@ export async function action({ request }: ActionFunctionArgs) {
 
   if (!subscription) {
     return data({ ok: false, savedIntent: null, error: "Suscripción no encontrada." }, { status: 404 });
+  }
+
+  if (intent === "subscription-invoice") {
+    const turnOn = formData.get("invoice") === "on";
+    if (turnOn) {
+      const owner = await UserModel.findById(userId).select("billingInfo").lean();
+      if (!owner?.billingInfo?.rfc) {
+        return data(
+          {
+            ok: false,
+            savedIntent: "subscription-invoice" as const,
+            error: "Primero guarda tus datos de facturación en la sección de arriba y luego prende la factura de cada caja.",
+          },
+          { status: 400 },
+        );
+      }
+    }
+    subscription.requiresInvoice = turnOn;
+    await subscription.save();
+    return data({ ok: true, savedIntent: "subscription-invoice" as const, error: null as string | null });
   }
 
   if (intent === "pause-subscription") {
@@ -617,7 +640,7 @@ export default function Cuenta() {
 
           <AddressBookCard addresses={user.addresses} />
 
-          <BillingCard billing={user.billing} />
+          <BillingCard billing={user.billing} invoicesBoxes={subscriptions.some((s) => s.requiresInvoice)} />
 
           {/* Fidelidad */}
           <div className="mt-8 rounded-3xl border border-lima/30 bg-bosque/5 p-6">
@@ -758,6 +781,33 @@ export default function Cuenta() {
                       >
                         Guardar
                       </button>
+                    </Form>
+
+                    {/* La factura de cada caja: se emite con los datos de «Datos de facturación» (más arriba). */}
+                    <Form method="post" className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-carbon/10 pt-4">
+                      <input type="hidden" name="intent" value="subscription-invoice" />
+                      <input type="hidden" name="subscriptionId" value={sub.id} />
+                      <input type="hidden" name="invoice" value={sub.requiresInvoice ? "off" : "on"} />
+                      <div className="min-w-0 flex-1 basis-60">
+                        <p className="text-sm font-semibold text-carbon">Factura en cada caja</p>
+                        <p className="text-sm text-carbon/60">
+                          {sub.requiresInvoice
+                            ? user.billing
+                              ? `Prendida: cada caja se factura con el RFC ${user.billing.rfc}.`
+                              : "Prendida, pero ya no tienes datos fiscales guardados: agrégalos arriba para que se emita."
+                            : "Apagada: si necesitas factura de una caja, pídela dentro del mismo mes de su cobro."}
+                        </p>
+                      </div>
+                      <button
+                        type="submit"
+                        disabled={isBusy}
+                        className="min-h-11 rounded-full border border-carbon/15 px-4 text-sm font-semibold text-carbon disabled:opacity-60"
+                      >
+                        {sub.requiresInvoice ? "Apagar" : "Prender"}
+                      </button>
+                      {actionData && "savedIntent" in actionData && actionData.savedIntent === "subscription-invoice" && !actionData.ok && (
+                        <p className="basis-full text-sm font-semibold text-red-600">{actionData.error}</p>
+                      )}
                     </Form>
                   </li>
                 ))}

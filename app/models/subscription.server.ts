@@ -36,6 +36,11 @@ const subscriptionSchema = new Schema(
     currentPeriodEnd: { type: Date },
     /** Incrementa con cada renovación de Stripe (factura pagada) que genera un Order. */
     totalOrdersGenerated: { type: Number, default: 0 },
+    /**
+     * «Factura en cada caja»: con esto prendido, cada renovación sale marcada «requiere factura» con los datos
+     * fiscales que la persona tenga guardados en su cuenta en ese momento (no se copian aquí: si los corrige, aplican a la siguiente caja).
+     */
+    requiresInvoice: { type: Boolean, default: false },
     /** A dónde llega la caja: la dirección que escribió al contratar. Cada renovación genera su pedido con esta misma. */
     shippingAddress: {
       name: String,
@@ -52,6 +57,11 @@ const subscriptionSchema = new Schema(
 );
 
 export type SubscriptionDoc = InferSchemaType<typeof subscriptionSchema>;
+
+// En desarrollo se re-registra el modelo en cada recarga (ver Order): si no, el esquema viejo descarta los campos nuevos.
+if (process.env.NODE_ENV !== "production" && models.Subscription) {
+  mongoose.deleteModel("Subscription");
+}
 
 export const SubscriptionModel =
   (models.Subscription as Model<SubscriptionDoc>) ??

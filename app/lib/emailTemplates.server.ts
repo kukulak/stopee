@@ -127,33 +127,58 @@ export function orderConfirmationEmail(data: {
   invoiceRfc?: string;
   /** A dónde pedir la factura después (de «Datos del negocio»). */
   invoiceEmail?: string | null;
+  /** Auto-envío: la factura quedó prendida para cada caja (se emite con los datos de la cuenta). */
+  invoiceRecurring?: boolean;
+  /** Cobro de una renovación del auto-envío: el aviso es «tu caja se está preparando», no «tu auto-envío está activo». */
+  renewal?: { programName: string };
 }) {
   const shippingLine =
     data.shippingLabel || data.destination
       ? `Envío${data.shippingLabel ? ` ${data.shippingLabel}` : ""}${data.shippingFree ? " (sin costo)" : ""}${data.destination ? ` a ${data.destination}` : ""}`
       : "";
-  const paragraphs = [
-    data.frequency ? "Tu auto-envío quedó activo. Gracias por confiar en STOPee." : "Recibimos tu pago. Gracias por tu compra.",
-    data.items.map((i) => `${i.quantity} × ${i.name}`).join("\n"),
-    `Total pagado: $${data.total} MXN (IVA incluido: ${formatMxnCents(ivaBreakdown(data.total).iva)})`,
-    ...(data.orderNumber ? [`Número de pedido: ${data.orderNumber}`] : []),
-    ...(data.frequency ? [`Te enviaremos tu caja ${data.frequency}. Puedes pausarla o cancelarla cuando quieras.`] : []),
-    ...(shippingLine ? [shippingLine] : []),
-    "Preparamos tu pedido y te avisamos por correo en cuanto salga, con tu número de guía.",
-    // El precio es el mismo con o sin factura: aquí solo se dice qué sigue.
-    data.invoiceRfc
-      ? `Registramos tu solicitud de factura con el RFC ${data.invoiceRfc}. La emitiremos con los datos que capturaste y te la enviaremos por correo. El precio no cambia.`
-      : invoiceLaterNote(data.invoiceEmail),
-  ];
+  // El precio es el mismo con o sin factura: aquí solo se dice qué sigue.
+  const invoiceParagraph = data.invoiceRfc
+    ? data.renewal || data.invoiceRecurring
+      ? `Emitiremos la factura de esta caja con el RFC ${data.invoiceRfc} y te la enviaremos por correo. Lo mismo pasará con cada caja; puedes apagarlo cuando quieras en tu cuenta. El precio no cambia.`
+      : `Registramos tu solicitud de factura con el RFC ${data.invoiceRfc}. La emitiremos con los datos que capturaste y te la enviaremos por correo. El precio no cambia.`
+    : data.renewal
+      ? `${invoiceLaterNote(data.invoiceEmail)} Para no tener que pedirla cada vez, prende «Factura en cada caja» en tu cuenta y la emitimos sola.`
+      : invoiceLaterNote(data.invoiceEmail);
+  const itemsLine = data.items.map((i) => `${i.quantity} × ${i.name}`).join("\n");
+  const totalLine = `Total pagado: $${data.total} MXN (IVA incluido: ${formatMxnCents(ivaBreakdown(data.total).iva)})`;
+  const paragraphs = data.renewal
+    ? [
+        `Cobramos tu caja de ${data.renewal.programName}${data.frequency ? ` (llega ${data.frequency})` : ""} y ya la estamos preparando.`,
+        itemsLine,
+        totalLine,
+        ...(data.orderNumber ? [`Número de pedido: ${data.orderNumber}`] : []),
+        ...(shippingLine ? [shippingLine] : []),
+        "Te avisamos por correo en cuanto salga, con tu número de guía. Puedes pausar o cancelar tu auto-envío cuando quieras desde tu cuenta.",
+        invoiceParagraph,
+      ]
+    : [
+        data.frequency ? "Tu auto-envío quedó activo. Gracias por confiar en STOPee." : "Recibimos tu pago. Gracias por tu compra.",
+        itemsLine,
+        totalLine,
+        ...(data.orderNumber ? [`Número de pedido: ${data.orderNumber}`] : []),
+        ...(data.frequency ? [`Te enviaremos tu caja ${data.frequency}. Puedes pausarla o cancelarla cuando quieras.`] : []),
+        ...(shippingLine ? [shippingLine] : []),
+        "Preparamos tu pedido y te avisamos por correo en cuanto salga, con tu número de guía.",
+        invoiceParagraph,
+      ];
   const { html, text } = renderLayout({
-    title: data.frequency ? "Tu auto-envío está activo" : "Recibimos tu pedido",
+    title: data.renewal ? "Tu caja se está preparando" : data.frequency ? "Tu auto-envío está activo" : "Recibimos tu pedido",
     paragraphs,
     action: data.hasAccount
       ? { label: "Ver mis pedidos", url: appUrl("/cuenta") }
       : { label: "¿Dudas? Escríbenos", url: appUrl("/contacto") },
   });
   return {
-    subject: data.frequency ? "Tu auto-envío de STOPee está activo" : "Recibimos tu pedido de STOPee",
+    subject: data.renewal
+      ? `Tu caja de ${data.renewal.programName} se está preparando`
+      : data.frequency
+        ? "Tu auto-envío de STOPee está activo"
+        : "Recibimos tu pedido de STOPee",
     html,
     text,
   };

@@ -451,6 +451,132 @@ describe.skipIf(!hasTestDb)("webhook de Stripe", () => {
       expect(renovacion!.shippingAddress).toMatchObject({ name: "Ana Pérez", postalCode: "03100" });
     });
 
+    describe("factura en cada caja", () => {
+      const FISCAL = { rfc: "PELJ800101AB1", razonSocial: "JUAN PÉREZ LÓPEZ", regimenFiscal: "612", codigoPostalFiscal: "03100", usoCfdi: "G03" };
+      const renewalEvent = (id = "in_test_1") =>
+        makeEvent("invoice.payment_succeeded", {
+          id,
+          object: "invoice",
+          subscription: "sub_test_1",
+          billing_reason: "subscription_cycle",
+          amount_paid: 35910,
+          lines: { data: [] },
+        });
+      const makeSubscription = (userId: unknown, extra: Record<string, unknown> = {}) =>
+        SubscriptionModel.create({
+          user: userId,
+          stripeSubscriptionId: "sub_test_1",
+          stripeCustomerId: "cus_test_1",
+          items: [{ sku: "TEST-1", name: "Concentrado STOPee", quantity: 1, unitPriceMxn: 399 }],
+          frequency: "4-semanas",
+          shippingAddress: { name: "Ana Pérez", line1: "Av. Insurgentes Sur 123", city: "Benito Juárez", state: "Ciudad de México", postalCode: "03100", country: "MX" },
+          ...extra,
+        });
+
+      it("al contratar con factura: la suscripción y el primer pedido la llevan, y el correo lo confirma", async () => {
+        const user = await UserModel.create({ email: "ana@correo.com", passwordHash: "x" });
+        const session = subscriptionSession(String(user._id));
+        session.metadata = {
+          ...session.metadata,
+          invoiceRequested: "true",
+          invRfc: FISCAL.rfc,
+          invRazonSocial: FISCAL.razonSocial,
+          invRegimen: FISCAL.regimenFiscal,
+          invCp: FISCAL.codigoPostalFiscal,
+          invUso: FISCAL.usoCfdi,
+        } as typeof session.metadata;
+        await send(makeEvent("checkout.session.completed", session));
+
+        expect((await SubscriptionModel.findOne().lean())!.requiresInvoice).toBe(true);
+        const first = await OrderModel.findOne({ type: "subscription_first" }).lean();
+        expect(first).toMatchObject({ requiresInvoice: true, billingInfo: { rfc: FISCAL.rfc, usoCfdi: "G03" } });
+        const text = sendEmail.mock.calls[0][0].text as string;
+        expect(text).toContain(FISCAL.rfc);
+        expect(text).toMatch(/cada caja/);
+      });
+
+      it("al contratar sin factura: nada se marca y el correo explica cómo pedirla", async () => {
+        const user = await UserModel.create({ email: "ana@correo.com", passwordHash: "x" });
+        await send(makeEvent("checkout.session.completed", subscriptionSession(String(user._id))));
+        expect((await SubscriptionModel.findOne().lean())!.requiresInvoice).toBe(false);
+        expect((await OrderModel.findOne().lean())!.requiresInvoice).toBe(false);
+        expect(sendEmail.mock.calls[0][0].text).toMatch(/mismo mes calendario/);
+      });
+
+      it("cada renovación sale marcada «requiere factura» con los datos de la cuenta de ese momento", async () => {
+        const user = await UserModel.create({ email: "ana@correo.com", passwordHash: "x", billingInfo: FISCAL });
+        await makeSubscription(user._id, { requiresInvoice: true });
+        await send(renewalEvent());
+
+        const order = await OrderModel.findOne({ type: "subscription_recurring" }).lean();
+        expect(order).toMatchObject({ requiresInvoice: true, billingInfo: { rfc: FISCAL.rfc, razonSocial: FISCAL.razonSocial } });
+
+        // Si corrige sus datos, la siguiente caja sale con los nuevos y la anterior conserva los suyos.
+        await UserModel.updateOne({ _id: user._id }, { $set: { "billingInfo.codigoPostalFiscal": "06700" } });
+        await send(renewalEvent("in_test_2"));
+        const all = await OrderModel.find({ type: "subscription_recurring" }).sort({ createdAt: 1 }).lean();
+        expect(all.map((o) => o.billingInfo?.codigoPostalFiscal)).toEqual(["03100", "06700"]);
+      });
+
+      it("la renovación avisa por correo que la caja se está preparando, con número de pedido y la factura", async () => {
+        const user = await UserModel.create({ email: "ana@correo.com", passwordHash: "x", billingInfo: FISCAL });
+        await makeSubscription(user._id, { requiresInvoice: true });
+        await send(renewalEvent());
+
+        expect(sendEmail).toHaveBeenCalledTimes(1);
+        const mail = sendEmail.mock.calls[0][0];
+        expect(mail.to.email).toBe("ana@correo.com");
+        expect(mail.subject).toMatch(/se está preparando/);
+        const order = await OrderModel.findOne({ type: "subscription_recurring" }).lean();
+        expect(mail.text).toContain(String(order!._id).slice(-8).toUpperCase());
+        expect(mail.text).toContain("1 × Concentrado STOPee");
+        expect(mail.text).not.toContain("(renovación)");
+        expect(mail.text).toContain(FISCAL.rfc);
+      });
+
+      it("renovación sin factura: no se marca, y el correo dice cómo pedirla y cómo prender la automática", async () => {
+        const user = await UserModel.create({ email: "ana@correo.com", passwordHash: "x", billingInfo: FISCAL });
+        await makeSubscription(user._id); // requiresInvoice apagado aunque tenga datos guardados
+        await send(renewalEvent());
+
+        expect((await OrderModel.findOne({ type: "subscription_recurring" }).lean())!.requiresInvoice).toBe(false);
+        const text = sendEmail.mock.calls[0][0].text as string;
+        expect(text).toMatch(/mismo mes calendario/);
+        expect(text).toMatch(/Factura en cada caja/);
+      });
+
+      it("si borró sus datos fiscales, la renovación sale sin factura (no se inventa nada)", async () => {
+        const user = await UserModel.create({ email: "ana@correo.com", passwordHash: "x" });
+        await makeSubscription(user._id, { requiresInvoice: true });
+        await send(renewalEvent());
+        const order = await OrderModel.findOne({ type: "subscription_recurring" }).lean();
+        expect(order!.requiresInvoice).toBe(false);
+        expect(order!.billingInfo?.rfc).toBeUndefined();
+      });
+
+      it("la renovación guarda la caja completa (sku, cantidad y precio) y descuenta las existencias", async () => {
+        const user = await UserModel.create({ email: "ana@correo.com", passwordHash: "x" });
+        await makeSubscription(user._id, {
+          items: [{ sku: "TEST-1", name: "Concentrado STOPee", quantity: 3, unitPriceMxn: 399 }],
+        });
+        await send(renewalEvent());
+        const order = await OrderModel.findOne({ type: "subscription_recurring" }).lean();
+        expect(order!.items).toHaveLength(1);
+        expect(order!.items[0]).toMatchObject({ sku: "TEST-1", quantity: 3, unitPriceMxn: 399, name: "Concentrado STOPee (renovación)" });
+        expect(await stockOf()).toBe(7);
+      });
+
+      it("un aviso repetido no manda el correo de la caja dos veces", async () => {
+        const user = await UserModel.create({ email: "ana@correo.com", passwordHash: "x" });
+        await makeSubscription(user._id);
+        const event = renewalEvent();
+        await send(event);
+        await send(event);
+        expect(await OrderModel.countDocuments({ type: "subscription_recurring" })).toBe(1);
+        expect(sendEmail).toHaveBeenCalledTimes(1);
+      });
+    });
+
     it("un aviso de suscripción sin usuario no crea nada ni falla", async () => {
       const session = subscriptionSession("");
       const response = await send(makeEvent("checkout.session.completed", session));

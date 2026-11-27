@@ -18,6 +18,8 @@ import { siteOrigin } from "~/lib/siteOrigin.server";
 import { BrandText } from "~/components/ui/BrandText";
 import { parseBoxParam } from "~/lib/subscriptionBox";
 import { addressOptionsFromProfile } from "~/lib/addressBook";
+import { getInvoiceRequestEmail } from "~/models/legalSettings.server";
+import { billingDefaultsFromUser } from "~/lib/cartView.server";
 
 export const meta: MetaFunction<typeof loader> = ({ data }) => {
   if (!data) return [{ title: "Auto-envío periódico — STOPee" }];
@@ -71,6 +73,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
     initialBox,
     initialFrequency,
     isLoggedIn: Boolean(user),
+    billingDefaults: billingDefaultsFromUser(user),
+    invoiceEmail: await getInvoiceRequestEmail(),
     cartCount: cart.reduce((sum, item) => sum + item.quantity, 0),
   });
 }
@@ -87,6 +91,8 @@ export default function Suscripcion() {
     initialBox,
     initialFrequency,
     isLoggedIn,
+    billingDefaults,
+    invoiceEmail,
   } = useLoaderData<typeof loader>();
 
   return (
@@ -119,6 +125,8 @@ export default function Suscripcion() {
               initialBox={initialBox}
               initialFrequency={initialFrequency}
               isLoggedIn={isLoggedIn}
+              billingDefaults={billingDefaults}
+              invoiceEmail={invoiceEmail}
             />
           </div>
         </section>

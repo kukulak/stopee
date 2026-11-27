@@ -41,6 +41,7 @@ export function InvoiceFields({
   errors,
   signedIn,
   invoiceEmail,
+  recurring = false,
 }: {
   formId: string;
   /** Los datos guardados en la cuenta (`null` = no tiene o es invitado). */
@@ -51,6 +52,8 @@ export function InvoiceFields({
   signedIn: boolean;
   /** A dónde pedir la factura después (de «Datos del negocio»). */
   invoiceEmail?: string | null;
+  /** Auto-envío: la factura aplica a cada caja y los datos siempre se guardan en la cuenta (de ahí se toman en cada cobro). */
+  recurring?: boolean;
 }) {
   const uid = useId();
   const [requested, setRequested] = useState(false);
@@ -78,15 +81,22 @@ export function InvoiceFields({
           onChange={(e) => setRequested(e.target.checked)}
           className="h-5 w-5 shrink-0 accent-carbon"
         />
-        Requiero factura (CFDI)
+        {recurring ? "Requiero factura de cada caja (CFDI)" : "Requiero factura (CFDI)"}
       </label>
 
       {!open ? (
-        <p className="mt-1 text-xs text-carbon/60">{invoiceLaterNote(invoiceEmail)}</p>
+        <p className="mt-1 text-xs text-carbon/60">
+          {invoiceLaterNote(invoiceEmail)}
+          {recurring ? " O prende la factura de cada caja cuando quieras desde Mi cuenta." : ""}
+        </p>
       ) : (
         <div className="mt-2 flex flex-col gap-3">
           <p className="text-xs text-carbon/60">
-            {hasSaved ? "Usamos los datos guardados en tu cuenta; puedes corregirlos aquí. " : ""}Tu precio no cambia: ya incluye el IVA.
+            {hasSaved ? "Usamos los datos guardados en tu cuenta; puedes corregirlos aquí. " : ""}
+            {recurring
+              ? "Se guardan en tu cuenta y cada caja se factura con ellos; puedes apagarlo cuando quieras en Mi cuenta. "
+              : ""}
+            Tu precio no cambia: ya incluye el IVA.
           </p>
 
           <Field id={id("rfc")} label="RFC" error={err("rfc")}>
@@ -176,7 +186,7 @@ export function InvoiceFields({
             </Field>
           </div>
 
-          {signedIn && (
+          {signedIn && !recurring && (
             <label className="flex min-h-11 cursor-pointer items-center gap-3 text-sm text-carbon">
               <input
                 type="checkbox"

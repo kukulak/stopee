@@ -294,6 +294,15 @@ export default function AdminOrders() {
         })()}
       </div>
 
+      {onlyInvoice && (
+        <p className="mt-3 text-sm text-carbon/60">
+          <a href="/admin/exports/sales?factura=1" className="font-semibold text-bosque underline">
+            Descargar en CSV
+          </a>{" "}
+          los pedidos que pidieron factura, con RFC y demás datos fiscales.
+        </p>
+      )}
+
       {orders.length === 0 ? (
         <p className="mt-8 text-sm text-carbon/60">No hay pedidos con este filtro.</p>
       ) : (

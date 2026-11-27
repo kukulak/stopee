@@ -118,7 +118,13 @@ Por qué esos números:
   gcloud run services update $SERVICE --region $REGION --min-instances 1
   ```
 
-- `--max-instances 1`: el límite de intentos (contraseña de acceso privado, checkout, login) se cuenta en la memoria de cada instancia. Con varias copias se volvería más flojo. Con `min-instances 0` el contador también se reinicia cuando la copia se apaga por inactividad, lo cual no abre ningún hueco: un ataque sostenido mantiene la copia encendida. Cuando el tráfico lo justifique, sube el máximo a 2 o 3 sabiendo eso.
+- `--max-instances 1`: es el tope de gasto y de capacidad. Una sola copia atiende hasta 80 peticiones a la vez (`--concurrency` por defecto), de sobra para el lanzamiento. **Ya no hay razón técnica para dejarlo en 1:** el límite de intentos (contraseña de acceso privado, checkout, login) vive en MongoDB y todas las copias comparten el mismo conteo, así que subirlo no afloja ninguna protección. Súbelo a 3 cuando lances una campaña fuerte o veas que la copia pasa del 60 % de CPU de forma sostenida (*Cloud Run → stopee → Métricas*):
+
+  ```bash
+  gcloud run services update $SERVICE --region $REGION --max-instances 3
+  ```
+
+  Solo se paga por las copias que de verdad se encienden; el máximo es un techo, no un consumo.
 - **Videos:** Cloud Run acepta peticiones de hasta **32 MB**. Fotos y PDF caben sin problema; para videos usa el enlace de YouTube (ya soportado) o súbelos comprimidos.
 
 ## 6. Dominio propio
@@ -247,10 +253,31 @@ gcloud run deploy $SERVICE --source . --region $REGION
 
 Para volver a una versión anterior: *Cloud Run → servicio → Revisiones → Administrar tráfico*.
 
+### Limpieza (después de cada despliegue estable)
+
+Cada despliegue deja una revisión, una imagen y una copia del código fuente. Se conservan la revisión que sirve
+el tráfico y la anterior (para volver atrás); el resto se borra. Las revisiones no cuestan, pero las imágenes y
+las copias del código sí ocupan espacio y se acumulan:
+
+```bash
+# 1. Revisiones: deja la actual y la anterior
+gcloud run revisions list --service $SERVICE --region $REGION
+gcloud run revisions delete <revision-vieja> --region $REGION --quiet
+
+# 2. Imágenes: borra solo las que ya no usa ninguna revisión
+REPO=$REGION-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/$SERVICE
+gcloud artifacts docker images list $REPO --include-tags
+gcloud artifacts docker images delete "$REPO@sha256:<digest-viejo>" --quiet
+
+# 3. Copias del código fuente: borra todas menos la más reciente
+gcloud storage ls gs://run-sources-$PROJECT_ID-$REGION/services/$SERVICE/ | sort
+```
+
+Nunca borres el bucket de archivos subidos (paso 3): ahí viven las imágenes y PDF del sitio.
+
 ## Qué NO está resuelto todavía
 
-- **Correo de confirmación de compra:** el sitio manda «Recibimos tu pedido» al registrarse el pago. Además, Stripe puede enviar su propio recibo (*Configuración → Correos de clientes*, activar «Recibos de pago»). Las renovaciones del auto-envío todavía no mandan confirmación propia.
+- **Correo de confirmación de compra:** el sitio manda «Recibimos tu pedido» al registrarse el pago. Además, Stripe puede enviar su propio recibo (*Configuración → Correos de clientes*, activar «Recibos de pago»). Cada renovación del auto-envío manda además su propio correo («Tu caja se está preparando») y el aviso de «va en camino» sale al marcar el pedido como enviado.
 - **Envío recurrente de suscripciones:** el costo de envío de las cajas periódicas quedó pendiente.
 - **Paquetería real:** los envíos se calculan por zonas de código postal, no con una guía de paquetería.
 - **Respaldos:** Atlas los hace automáticamente en planes de pago; en el plan gratuito, conviene programar `mongodump` periódicos.
-- **Varias instancias:** si algún día subes `--max-instances`, el límite de intentos deja de ser global (ver paso 5).

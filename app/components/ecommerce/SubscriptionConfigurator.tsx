@@ -14,6 +14,8 @@ import {
 import { LegalNotice } from "~/components/ui/LegalNotice";
 import { usePageShowReset } from "~/lib/usePageShowReset";
 import { DeliveryAddressFields, type AddressDefaults } from "~/components/ecommerce/DeliveryAddressFields";
+import { InvoiceFields } from "~/components/ecommerce/InvoiceFields";
+import type { BillingErrors, BillingInfo } from "~/lib/fiscal";
 import { ADDRESS_FIELDS, normalizePhone, type AddressErrors } from "~/lib/deliveryAddress";
 import { subscriptionPageUrl, type BoxLine } from "~/lib/subscriptionBox";
 import type { AddressOption } from "~/lib/addressBook";
@@ -50,6 +52,8 @@ export function SubscriptionConfigurator({
   initialBox,
   initialFrequency,
   isLoggedIn = true,
+  billingDefaults,
+  invoiceEmail,
 }: {
   products: CatalogItem[];
   config: SubscriptionConfig;
@@ -72,6 +76,10 @@ export function SubscriptionConfigurator({
   initialFrequency?: string | null;
   /** Sin sesión no se puede activar: se invita a entrar sin perder la caja. */
   isLoggedIn?: boolean;
+  /** Los datos fiscales guardados en su cuenta, para que no los escriba otra vez. */
+  billingDefaults?: BillingInfo | null;
+  /** A dónde pedir una factura después (de «Datos del negocio»). */
+  invoiceEmail?: string | null;
 }) {
   // Arranca con 1 unidad (la del producto elegido o, si no hay, el primero): así la frecuencia, el
   // precio con descuento y el botón se ven activos desde el primer momento, no bloqueados.
@@ -92,7 +100,7 @@ export function SubscriptionConfigurator({
   const selectedWeeks = frequencies.find((f) => frequencyKey(f.weeks) === frequency)?.weeks;
   // Si la persona se va a pagar y regresa con «atrás», el botón vuelve a estar listo.
   const restores = usePageShowReset();
-  const fetcher = useFetcher<{ error?: string; fieldErrors?: AddressErrors }>({ key: `subscription-${restores}` });
+  const fetcher = useFetcher<{ error?: string; fieldErrors?: AddressErrors; invoiceErrors?: BillingErrors }>({ key: `subscription-${restores}` });
   const isSubmitting = fetcher.state !== "idle";
   const [outOfZone, setOutOfZone] = useState(false);
   // El botón de activar solo se enciende con los datos de entrega completos: un botón de color
@@ -287,6 +295,16 @@ export function SubscriptionConfigurator({
                     onOutOfZoneChange={setOutOfZone}
                     onAddressChange={recheckDelivery}
                   />
+                  <div className="mt-4">
+                    <InvoiceFields
+                      formId={SUBSCRIPTION_FORM_ID}
+                      defaults={billingDefaults}
+                      errors={fetcher.data?.invoiceErrors}
+                      signedIn
+                      invoiceEmail={invoiceEmail}
+                      recurring
+                    />
+                  </div>
                   <div className="mt-4 flex flex-col items-end gap-2">
                     <button
                       type="submit"

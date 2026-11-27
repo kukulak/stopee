@@ -14,7 +14,8 @@ import { resolveLoyaltyTier } from "~/lib/loyalty";
 import { decrementStock } from "~/lib/inventory.server";
 import { orderConfirmationEmail } from "~/lib/emailTemplates.server";
 import { sendEmail } from "~/lib/mail.server";
-import { frequencyLabel } from "~/lib/subscriptionConfig";
+import { frequencyLabel, programDisplayName } from "~/lib/subscriptionConfig";
+import { getSubscriptionConfig } from "~/models/subscriptionSettings.server";
 import { rememberDeliveryAddress } from "~/lib/addressBook.server";
 import { addressFromMetadata } from "~/lib/deliveryAddress";
 import { billingFromMetadata, orderNumber } from "~/lib/fiscal";
@@ -427,6 +428,8 @@ async function handleSubscriptionCheckoutCompleted(session: Stripe.Checkout.Sess
 
   const shippingAddress = addressFromMetadata(session.metadata);
   await warnIfOutsideZone(session.id, shippingAddress?.postalCode);
+  // «Requiero factura de cada caja»: viene validado desde /api/subscription y se guarda en la suscripción.
+  const billingInfo = billingFromMetadata(session.metadata);
 
   // upsert: si Stripe reintenta el evento, la suscripción no se duplica y el resto del proceso continúa.
   await SubscriptionModel.updateOne(
@@ -440,6 +443,7 @@ async function handleSubscriptionCheckoutCompleted(session: Stripe.Checkout.Sess
         frequency,
         discountPercent: Number(session.metadata?.discountPercent ?? 0) || 0,
         shippingAddress,
+        requiresInvoice: Boolean(billingInfo),
         status: "active",
         currentPeriodEnd: new Date(stripeSubscription.current_period_end * 1000),
         nextDeliveryDate: new Date(stripeSubscription.current_period_end * 1000),
@@ -477,6 +481,8 @@ async function handleSubscriptionCheckoutCompleted(session: Stripe.Checkout.Sess
     netAmount,
     type: "subscription_first",
     shippingAddress,
+    requiresInvoice: Boolean(billingInfo),
+    ...(billingInfo ? { billingInfo } : {}),
     status: "paid",
     countsTowardLoyalty: false,
     attribution: readAttribution(session.metadata ?? null),
@@ -499,6 +505,8 @@ async function handleSubscriptionCheckoutCompleted(session: Stripe.Checkout.Sess
     total: netAmount,
     frequency: frequencyLabel(frequency).toLowerCase(),
     hasAccount: true,
+    invoiceRfc: billingInfo?.rfc,
+    invoiceRecurring: Boolean(billingInfo),
   });
 }
 
@@ -520,8 +528,28 @@ async function handleInvoicePaymentSucceeded(invoice: Stripe.Invoice) {
   // último cambio de frecuencia — nunca se reconstruye desde Stripe en cada
   // renovación, para no depender de que sus Price/Product sigan intactos.
   const renewalItems = subscription.items?.length
-    ? subscription.items.map((item) => ({ ...item, name: `${item.name} (renovación)` }))
+    ? // Campo por campo: copiar el subdocumento de Mongoose con `...item` se lleva sus datos internos y deja
+      // sin sku, cantidad ni precio al pedido (y sin descontar existencias).
+      subscription.items.map((item) => ({
+        sku: item.sku,
+        name: `${item.name} (renovación)`,
+        quantity: item.quantity,
+        unitPriceMxn: item.unitPriceMxn,
+      }))
     : [{ sku: "concentrado-1l", name: "STOPee Concentrado 1L (renovación)", quantity: 1, unitPriceMxn: netAmount }];
+
+  // «Factura en cada caja»: se toman los datos fiscales que tenga la cuenta HOY (si los corrigió, aplican a esta caja).
+  // Si la suscripción la pide pero la persona ya borró sus datos, el pedido sale sin factura y el correo se lo explica.
+  const savedBilling = user?.billingInfo?.rfc
+    ? {
+        rfc: user.billingInfo.rfc,
+        razonSocial: user.billingInfo.razonSocial ?? "",
+        regimenFiscal: user.billingInfo.regimenFiscal ?? "",
+        codigoPostalFiscal: user.billingInfo.codigoPostalFiscal ?? "",
+        usoCfdi: user.billingInfo.usoCfdi ?? "G03",
+      }
+    : null;
+  const billingInfo = subscription.requiresInvoice ? savedBilling : null;
 
   const order = await createOrderOnce({
     user: subscription.user,
@@ -538,6 +566,8 @@ async function handleInvoicePaymentSucceeded(invoice: Stripe.Invoice) {
     type: "subscription_recurring",
     // La misma dirección con la que contrató la caja.
     shippingAddress: subscription.shippingAddress?.postalCode ? subscription.shippingAddress : undefined,
+    requiresInvoice: Boolean(billingInfo),
+    ...(billingInfo ? { billingInfo } : {}),
     status: "paid",
     countsTowardLoyalty: false,
   });
@@ -562,6 +592,20 @@ async function handleInvoicePaymentSucceeded(invoice: Stripe.Invoice) {
   if (user && (await claimEffect(order._id, "loyalty"))) {
     await UserModel.updateOne({ _id: user._id }, { $inc: { totalSpentLTV: netAmount } });
   }
+  // «Tu caja se está preparando»: sin esto la persona no se enteraba de que se le cobró y se arma su caja.
+  const programName = programDisplayName(await getSubscriptionConfig());
+  await sendOrderConfirmation(order, {
+    items: renewalItems.map((item) => ({ name: item.name.replace(/ \(renovación\)$/, ""), quantity: item.quantity })),
+    total: netAmount,
+    frequency: frequencyLabel(subscription.frequency).toLowerCase(),
+    destination: subscription.shippingAddress
+      ? [subscription.shippingAddress.city, subscription.shippingAddress.state].filter(Boolean).join(", ")
+      : "",
+    hasAccount: Boolean(user),
+    invoiceRfc: billingInfo?.rfc,
+    invoiceRecurring: Boolean(subscription.requiresInvoice),
+    renewal: { programName },
+  });
 }
 
 /**

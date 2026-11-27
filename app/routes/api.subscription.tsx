@@ -11,6 +11,8 @@ import { checkRateLimit, getClientIp, rateLimitMessage } from "~/lib/rateLimit.s
 import { getShippingConfig } from "~/models/shipping.server";
 import { rememberDeliveryAddress } from "~/lib/addressBook.server";
 import { logError } from "~/lib/logger.server";
+import { billingToMetadata, readInvoiceRequest } from "~/lib/fiscal";
+import { UserModel } from "~/models/user.server";
 import { addressToMetadata, outOfZoneMessage, readAddressFields, validateDeliveryAddress } from "~/lib/deliveryAddress";
 
 export async function action({ request }: ActionFunctionArgs) {
@@ -77,6 +79,16 @@ export async function action({ request }: ActionFunctionArgs) {
     );
   }
 
+  // «Requiero factura de cada caja»: se valida aquí, antes de mandar a la persona a pagar.
+  const invoice = readInvoiceRequest(formData);
+  if (invoice.requested && !invoice.result.ok) {
+    return data(
+      { error: "Revisa los datos de facturación marcados en rojo, o desmarca «Requiero factura».", invoiceErrors: invoice.result.errors },
+      { status: 400 },
+    );
+  }
+  const billingInfo = invoice.requested && invoice.result.ok ? invoice.result.info : null;
+
   const attribution = await getAttribution(request);
 
   // Stripe rechaza metadatos de más de 500 caracteres; se avisa claro en vez de un error genérico.
@@ -93,6 +105,7 @@ export async function action({ request }: ActionFunctionArgs) {
     customerEmail: user.email,
     metadata: {
       ...addressToMetadata(addressResult.address),
+      ...(billingInfo ? billingToMetadata(billingInfo) : {}),
       userId: String(user._id),
       // Igual que cartSkus en el checkout de una sola compra: el webhook
       // reconstruye la caja exacta a partir de esto al confirmar el pago.
@@ -116,6 +129,15 @@ export async function action({ request }: ActionFunctionArgs) {
     await rememberDeliveryAddress(String(user._id), addressResult.address);
   } catch (error) {
     logError("subscription.save-profile-address", error);
+  }
+
+  // Cada renovación toma los datos fiscales de la cuenta, así que aquí siempre se guardan (ya validados).
+  if (billingInfo) {
+    try {
+      await UserModel.updateOne({ _id: user._id }, { $set: { billingInfo } });
+    } catch (error) {
+      logError("subscription.save-billing-info", error);
+    }
   }
 
   return redirect(session.url);

@@ -11,7 +11,7 @@ import { getInvoiceRequestEmail } from "~/models/legalSettings.server";
 import type { BillingInfo } from "~/lib/fiscal";
 import type { getUser } from "~/lib/session.server";
 
-function billingDefaultsFromUser(user: Awaited<ReturnType<typeof getUser>>): BillingInfo | null {
+export function billingDefaultsFromUser(user: Awaited<ReturnType<typeof getUser>>): BillingInfo | null {
   const b = user?.billingInfo;
   if (!b?.rfc) return null;
   return {
