@@ -251,14 +251,55 @@ describe.skipIf(!hasTestDb)("factura en el auto-envío y reporte de ventas", () 
       expect(col(byNumber(emitida), "facturada")).toBe("Si");
     });
 
-    it("con ?factura=1 solo salen los pedidos que pidieron factura", async () => {
-      await makeOrder();
-      await makeOrder({ requiresInvoice: true, billingInfo: FISCAL });
-      const all = await rows();
-      const only = await rows("?factura=1");
-      expect(all.lines).toHaveLength(2);
-      expect(only.lines).toHaveLength(1);
-      expect(only.response.headers.get("content-disposition")).toMatch(/facturas-stopee\.csv/);
+    describe("lista de facturas por emitir (?factura=1)", () => {
+      const col = (header: string[], line: string, name: string) => line.split(",")[header.indexOf(name)].replace(/^"|"$/g, "");
+
+      it("trae SOLO los pendientes: sin ventas normales, sin las ya emitidas y sin cancelados ni reembolsados", async () => {
+        await makeOrder();
+        const pendiente = await makeOrder({ email: "ana@correo.com", requiresInvoice: true, billingInfo: FISCAL });
+        await makeOrder({ email: "luis@correo.com", requiresInvoice: true, billingInfo: FISCAL, invoiceIssuedAt: new Date() });
+        await makeOrder({ email: "cancelado@correo.com", requiresInvoice: true, billingInfo: FISCAL, status: "cancelled" });
+        await makeOrder({ email: "reembolsado@correo.com", requiresInvoice: true, billingInfo: FISCAL, status: "refunded" });
+
+        const all = await rows();
+        const only = await rows("?factura=1");
+        expect(all.lines).toHaveLength(5);
+        expect(only.lines).toHaveLength(1);
+        expect(col(only.header, only.lines[0], "pedido")).toBe(String(pendiente._id).slice(-8).toUpperCase());
+        expect(only.response.headers.get("content-disposition")).toMatch(/facturas-por-emitir-\d{4}-\d{2}-\d{2}\.csv/);
+      });
+
+      it("trae únicamente lo necesario para facturar, con clave y nombre del régimen y del uso de CFDI", async () => {
+        await makeOrder({ requiresInvoice: true, billingInfo: FISCAL, netAmount: 399, utm: "x" });
+        const { header, lines } = await rows("?factura=1");
+        expect(header).toEqual([
+          "pedido", "fecha", "email", "rfc", "razon_social", "regimen_clave", "regimen_nombre", "cp_fiscal",
+          "uso_cfdi_clave", "uso_cfdi_nombre", "conceptos", "subtotal", "iva", "total",
+        ]);
+        const line = lines[0];
+        expect(col(header, line, "rfc")).toBe(FISCAL.rfc);
+        expect(col(header, line, "regimen_clave")).toBe("612");
+        expect(col(header, line, "regimen_nombre")).toMatch(/Personas Físicas con Actividades Empresariales/);
+        expect(col(header, line, "uso_cfdi_clave")).toBe("G03");
+        expect(col(header, line, "uso_cfdi_nombre")).toBe("Gastos en general");
+        expect(col(header, line, "conceptos")).toBe("1x Concentrado 1L");
+        // 399 con IVA incluido = 343.97 + 55.03
+        expect([col(header, line, "subtotal"), col(header, line, "iva"), col(header, line, "total")]).toEqual(["343.97", "55.03", "399.00"]);
+      });
+
+      it("con «hasta» deja fuera lo que llegó después del corte", async () => {
+        await makeOrder({ requiresInvoice: true, billingInfo: FISCAL });
+        const corte = new Date().toISOString();
+        await new Promise((r) => setTimeout(r, 20));
+        await makeOrder({ email: "tarde@correo.com", requiresInvoice: true, billingInfo: FISCAL });
+        expect((await rows(`?factura=1&hasta=${encodeURIComponent(corte)}`)).lines).toHaveLength(1);
+        expect((await rows("?factura=1")).lines).toHaveLength(2);
+      });
+
+      it("sin nada pendiente baja solo los encabezados", async () => {
+        const { lines } = await rows("?factura=1");
+        expect(lines.filter(Boolean)).toHaveLength(0);
+      });
     });
 
     it("solo un administrador puede descargarlo", async () => {

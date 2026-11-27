@@ -1,7 +1,7 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs, MetaFunction } from "react-router";
 import { data } from "react-router";
 import mongoose from "mongoose";
-import { Form, useLoaderData, useSearchParams } from "react-router";
+import { Form, useFetcher, useLoaderData, useSearchParams } from "react-router";
 import { useState } from "react";
 import { billingCopyText, orderNumber, regimenLabel, usoCfdiLabel } from "~/lib/fiscal";
 import { connectDB } from "~/lib/db.server";
@@ -10,6 +10,7 @@ import { requireAdmin } from "~/lib/session.server";
 import { sendEmail } from "~/lib/mail.server";
 import { orderShippedEmail } from "~/lib/emailTemplates.server";
 import { logError } from "~/lib/logger.server";
+import { parseCutoff, pendingInvoiceFilter } from "~/lib/invoiceQueue.server";
 
 export const meta: MetaFunction = () => [{ title: "Pedidos — Admin STOPee" }];
 
@@ -46,8 +47,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
       .lean(),
     OrderModel.countDocuments(query),
     OrderModel.aggregate([{ $group: { _id: "$status", count: { $sum: 1 } } }]),
-    // Facturas pedidas que todavía no se marcan como emitidas.
-    OrderModel.countDocuments({ requiresInvoice: true, invoiceIssuedAt: { $exists: false } }),
+    // Facturas pedidas que todavía no se marcan como emitidas (sin cancelados ni reembolsados): lo mismo que baja el CSV.
+    OrderModel.countDocuments(pendingInvoiceFilter()),
   ]);
   const countByStatus = Object.fromEntries(counts.map((c) => [c._id, c.count]));
   const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
@@ -92,6 +93,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
     })),
     countByStatus,
     invoicesPending,
+    // Corte de esta vista: el CSV y «Marcar como facturadas» cubren exactamente los pedidos que se contaron aquí.
+    asOf: new Date().toISOString(),
     onlyInvoice,
     statusFilter,
     page,
@@ -105,6 +108,15 @@ export async function action({ request }: ActionFunctionArgs) {
   await connectDB();
   const formData = await request.formData();
   const intent = formData.get("intent");
+
+  if (intent === "mark-all-invoiced") {
+    // Cierra la tanda: los pedidos por facturar al corte de la página pasan a facturados. Los que llegaron después no se tocan.
+    const until = parseCutoff(formData.get("hasta"));
+    if (!until) return data({ error: "Recarga la página e inténtalo de nuevo." }, { status: 400 });
+    const result = await OrderModel.updateMany(pendingInvoiceFilter(until), { $set: { invoiceIssuedAt: new Date() } });
+    return data({ ok: true, markedInvoiced: result.modifiedCount });
+  }
+
   const id = String(formData.get("id"));
 
   if (!mongoose.isValidObjectId(id)) {
@@ -240,8 +252,81 @@ function InvoiceBlock({ order, billing }: { order: OrderRow; billing: BillingRow
   );
 }
 
+/** La tanda de facturas: baja lo que falta por emitir y, al terminar, lo marca como facturado de un solo clic. */
+function InvoiceQueue({ pending, asOf }: { pending: number; asOf: string }) {
+  const [confirming, setConfirming] = useState(false);
+  const fetcher = useFetcher<{ ok?: boolean; markedInvoiced?: number; error?: string }>();
+  const saving = fetcher.state !== "idle";
+  const marked = fetcher.data?.ok ? fetcher.data.markedInvoiced ?? 0 : null;
+
+  if (pending === 0) {
+    return (
+      <div role="status" className="mt-4 rounded-2xl border border-carbon/10 bg-white p-4 text-sm">
+        <p className="font-semibold text-carbon">
+          {marked ? `Listo: ${marked} ${marked === 1 ? "pedido marcado" : "pedidos marcados"} como facturado${marked === 1 ? "" : "s"}.` : "Todo al día."}
+        </p>
+        <p className="mt-1 text-carbon/60">No hay facturas por emitir. Cuando alguien pida una, aparecerá aquí.</p>
+      </div>
+    );
+  }
+
+  const plural = pending === 1 ? "pedido" : "pedidos";
+  return (
+    <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+      <p className="text-sm font-semibold text-carbon">
+        {pending} {plural} por facturar
+      </p>
+      <p className="mt-1 text-xs text-carbon/60">
+        El archivo trae solo estos pedidos, con RFC, razón social, régimen, uso de CFDI, conceptos y total.
+      </p>
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <a
+          href={`/admin/exports/sales?factura=1&hasta=${encodeURIComponent(asOf)}`}
+          className="flex min-h-11 items-center rounded-full bg-carbon px-5 text-sm font-bold text-hueso hover:bg-carbon/90"
+        >
+          Descargar {pending} por facturar
+        </a>
+        {!confirming ? (
+          <button
+            type="button"
+            onClick={() => setConfirming(true)}
+            className="min-h-11 rounded-full border border-carbon/20 px-4 text-sm font-semibold text-carbon hover:border-carbon/40"
+          >
+            Ya las facturé
+          </button>
+        ) : (
+          <fetcher.Form method="post" onSubmit={() => setConfirming(false)} className="flex flex-wrap items-center gap-2">
+            <input type="hidden" name="intent" value="mark-all-invoiced" />
+            <input type="hidden" name="hasta" value={asOf} />
+            <span className="text-sm text-carbon">¿Marcar {pending} como facturados?</span>
+            <button
+              type="submit"
+              disabled={saving}
+              className="min-h-11 rounded-full bg-bosque px-4 text-sm font-bold text-hueso disabled:opacity-60"
+            >
+              {saving ? "Guardando…" : "Sí, marcar"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setConfirming(false)}
+              className="min-h-11 rounded-full px-3 text-sm font-semibold text-carbon/70 hover:text-carbon"
+            >
+              Cancelar
+            </button>
+          </fetcher.Form>
+        )}
+      </div>
+      {fetcher.data?.error && (
+        <p role="alert" className="mt-2 text-sm text-red-600">
+          {fetcher.data.error}
+        </p>
+      )}
+    </div>
+  );
+}
+
 export default function AdminOrders() {
-  const { orders, countByStatus, invoicesPending, onlyInvoice, statusFilter, page, totalPages, totalCount } =
+  const { orders, countByStatus, invoicesPending, asOf, onlyInvoice, statusFilter, page, totalPages, totalCount } =
     useLoaderData<typeof loader>();
   const [searchParams] = useSearchParams();
 
@@ -294,14 +379,7 @@ export default function AdminOrders() {
         })()}
       </div>
 
-      {onlyInvoice && (
-        <p className="mt-3 text-sm text-carbon/60">
-          <a href="/admin/exports/sales?factura=1" className="font-semibold text-bosque underline">
-            Descargar en CSV
-          </a>{" "}
-          los pedidos que pidieron factura, con RFC y demás datos fiscales.
-        </p>
-      )}
+      {onlyInvoice && <InvoiceQueue pending={invoicesPending} asOf={asOf} />}
 
       {orders.length === 0 ? (
         <p className="mt-8 text-sm text-carbon/60">No hay pedidos con este filtro.</p>

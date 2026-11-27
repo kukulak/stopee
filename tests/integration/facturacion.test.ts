@@ -188,6 +188,61 @@ describe.skipIf(!hasTestDb)("facturación (CFDI)", () => {
       expect(state.orders[0].invoiceIssuedAt).toBeNull();
     });
 
+    describe("marcar toda la tanda como facturada", () => {
+      const markAll = (cookie: string, hasta: string) =>
+        ordersAction(post("https://stopee.test/admin/orders", { intent: "mark-all-invoiced", hasta }, cookie));
+
+      it("marca los pendientes hasta el corte y deja los que llegaron después", async () => {
+        const cookie = await adminCookie();
+        const a = await makeOrder({ requiresInvoice: true, billingInfo: billing });
+        const b = await makeOrder({ email: "dos@correo.com", requiresInvoice: true, billingInfo: billing });
+        const corte = new Date().toISOString();
+        await new Promise((r) => setTimeout(r, 20));
+        const tarde = await makeOrder({ email: "tarde@correo.com", requiresInvoice: true, billingInfo: billing });
+
+        const response = await markAll(cookie, corte);
+        expect(((await response.json()) as { markedInvoiced: number }).markedInvoiced).toBe(2);
+        expect((await OrderModel.findById(a._id).lean())!.invoiceIssuedAt).toBeTruthy();
+        expect((await OrderModel.findById(b._id).lean())!.invoiceIssuedAt).toBeTruthy();
+        expect((await OrderModel.findById(tarde._id).lean())!.invoiceIssuedAt).toBeUndefined();
+        expect((await list(cookie)).invoicesPending).toBe(1);
+      });
+
+      it("no toca ventas sin factura, ya emitidas, canceladas ni reembolsadas, y no cuenta estas dos como pendientes", async () => {
+        const cookie = await adminCookie();
+        const sin = await makeOrder();
+        const cancelada = await makeOrder({ email: "c@correo.com", requiresInvoice: true, billingInfo: billing, status: "cancelled" });
+        const reembolsada = await makeOrder({ email: "r@correo.com", requiresInvoice: true, billingInfo: billing, status: "refunded" });
+        expect((await list(cookie)).invoicesPending).toBe(0);
+
+        const response = await markAll(cookie, new Date(Date.now() + 1000).toISOString());
+        expect(((await response.json()) as { markedInvoiced: number }).markedInvoiced).toBe(0);
+        for (const o of [sin, cancelada, reembolsada]) {
+          expect((await OrderModel.findById(o._id).lean())!.invoiceIssuedAt).toBeUndefined();
+        }
+      });
+
+      it("sin corte válido no marca nada", async () => {
+        const cookie = await adminCookie();
+        const order = await makeOrder({ requiresInvoice: true, billingInfo: billing });
+        const response = await markAll(cookie, "no-es-fecha");
+        expect(response.status).toBe(400);
+        expect((await OrderModel.findById(order._id).lean())!.invoiceIssuedAt).toBeUndefined();
+      });
+
+      it("un visitante o un cliente no puede marcar la tanda", async () => {
+        const order = await makeOrder({ requiresInvoice: true, billingInfo: billing });
+        const customer = await makeUser({ email: "cliente3@correo.com" });
+        const customerCookie = await cookieFor(customer._id);
+        const hasta = new Date(Date.now() + 1000).toISOString();
+        for (const cookie of ["", customerCookie]) {
+          const seen = await outcomeOf(() => markAll(cookie, hasta));
+          expect((seen as Response).status).not.toBe(200);
+        }
+        expect((await OrderModel.findById(order._id).lean())!.invoiceIssuedAt).toBeUndefined();
+      });
+    });
+
     it("un pedido que no pidió factura no se puede marcar como facturado", async () => {
       const cookie = await adminCookie();
       const order = await makeOrder();
