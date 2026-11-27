@@ -7,6 +7,7 @@ import { REGIMENES_FISCALES, USOS_CFDI, ivaBreakdown, orderNumber } from "~/lib/
 import { parseCutoff, pendingInvoiceFilter } from "~/lib/invoiceQueue.server";
 
 const csvEscape = csvCell;
+const PAYMENT_LABELS: Record<string, string> = { cash: "Efectivo", transfer: "Transferencia", other: "Otro" };
 
 /** Fecha y hora de México (no UTC), que es como se ve el día de una venta en la práctica. */
 const mexicoDateTime = (d: Date) => d.toLocaleString("sv-SE", { timeZone: "America/Mexico_City" });
@@ -35,6 +36,9 @@ export async function loader({ request }: LoaderFunctionArgs) {
     "email",
     "items",
     "tipo",
+    "origen",
+    "pago",
+    "registrado_por",
     "estado",
     "bruto",
     "descuento",
@@ -58,6 +62,9 @@ export async function loader({ request }: LoaderFunctionArgs) {
       csvEscape(o.email),
       csvEscape(o.items.map((i) => `${i.quantity}x ${i.name}`).join(" | ")),
       csvEscape(o.type),
+      csvEscape(o.source === "manual" ? "Manual" : "Web"),
+      csvEscape(PAYMENT_LABELS[o.paymentMethod ?? ""] ?? ""),
+      csvEscape(o.createdByName ?? ""),
       csvEscape(o.status),
       String(o.totalAmount),
       String(o.discountAmount),

@@ -42,6 +42,7 @@ export function InvoiceFields({
   signedIn,
   invoiceEmail,
   recurring = false,
+  staff = false,
 }: {
   formId: string;
   /** Los datos guardados en la cuenta (`null` = no tiene o es invitado). */
@@ -54,6 +55,8 @@ export function InvoiceFields({
   invoiceEmail?: string | null;
   /** Auto-envío: la factura aplica a cada caja y los datos siempre se guardan en la cuenta (de ahí se toman en cada cobro). */
   recurring?: boolean;
+  /** Lo llena el administrador por un cliente (venta manual): sin los avisos que se le hablan al comprador. */
+  staff?: boolean;
 }) {
   const uid = useId();
   const [requested, setRequested] = useState(false);
@@ -85,19 +88,23 @@ export function InvoiceFields({
       </label>
 
       {!open ? (
-        <p className="mt-1 text-xs text-carbon/60">
-          {invoiceLaterNote(invoiceEmail)}
-          {recurring ? " O prende la factura de cada caja cuando quieras desde Mi cuenta." : ""}
-        </p>
+        !staff && (
+          <p className="mt-1 text-xs text-carbon/60">
+            {invoiceLaterNote(invoiceEmail)}
+            {recurring ? " O prende la factura de cada caja cuando quieras desde Mi cuenta." : ""}
+          </p>
+        )
       ) : (
         <div className="mt-2 flex flex-col gap-3">
-          <p className="text-xs text-carbon/60">
-            {hasSaved ? "Usamos los datos guardados en tu cuenta; puedes corregirlos aquí. " : ""}
-            {recurring
-              ? "Se guardan en tu cuenta y cada caja se factura con ellos; puedes apagarlo cuando quieras en Mi cuenta. "
-              : ""}
-            Tu precio no cambia: ya incluye el IVA.
-          </p>
+          {!staff && (
+            <p className="text-xs text-carbon/60">
+              {hasSaved ? "Usamos los datos guardados en tu cuenta; puedes corregirlos aquí. " : ""}
+              {recurring
+                ? "Se guardan en tu cuenta y cada caja se factura con ellos; puedes apagarlo cuando quieras en Mi cuenta. "
+                : ""}
+              Tu precio no cambia: ya incluye el IVA.
+            </p>
+          )}
 
           <Field id={id("rfc")} label="RFC" error={err("rfc")}>
             <input

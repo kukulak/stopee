@@ -56,7 +56,11 @@ export async function loader({ request }: LoaderFunctionArgs) {
   return data({
     orders: orders.map((o) => ({
       id: String(o._id),
-      email: o.email,
+      email: o.email ?? "",
+      customerName: o.customerName ?? "",
+      manual: o.source === "manual",
+      createdByName: o.createdByName ?? "",
+      paymentMethod: o.paymentMethod ?? "",
       items: o.items,
       netAmount: o.netAmount,
       shippingCost: o.shippingCost ?? 0,
@@ -156,7 +160,7 @@ export async function action({ request }: ActionFunctionArgs) {
       if (after && before) {
         const justShipped = after.status === "shipped" && before.status !== "shipped";
         const trackingChanged = Boolean(after.trackingNumber) && after.trackingNumber !== before.trackingNumber;
-        if (justShipped || trackingChanged) {
+        if ((justShipped || trackingChanged) && after.email) {
           await sendEmail({
             to: { email: after.email },
             ...orderShippedEmail({
@@ -175,6 +179,8 @@ export async function action({ request }: ActionFunctionArgs) {
 
   return data({ ok: false, error: "Acción no reconocida." }, { status: 400 });
 }
+
+const PAYMENT_LABELS: Record<string, string> = { cash: "Efectivo", transfer: "Transferencia", other: "Otro" };
 
 const TYPE_LABELS: Record<string, string> = {
   one_time: "Compra única",
@@ -332,10 +338,20 @@ export default function AdminOrders() {
 
   return (
     <div>
-      <h1 className="font-display text-2xl font-black text-carbon sm:text-3xl">Pedidos</h1>
-      <p className="mt-1 text-sm text-carbon/60">
-        Operación diaria: estado, guía y seguimiento de cada pedido. {totalCount} en total.
-      </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="font-display text-2xl font-black text-carbon sm:text-3xl">Pedidos</h1>
+          <p className="mt-1 text-sm text-carbon/60">
+            Operación diaria: estado, guía y seguimiento de cada pedido. {totalCount} en total.
+          </p>
+        </div>
+        <a
+          href="/admin/orders/new"
+          className="flex min-h-11 items-center rounded-full bg-carbon px-5 text-sm font-bold text-hueso hover:bg-carbon/90"
+        >
+          Crear pedido
+        </a>
+      </div>
 
       <div className="mt-6 flex flex-wrap gap-2">
         {STATUS_FILTERS.map((status) => {
@@ -393,7 +409,12 @@ export default function AdminOrders() {
                 </p>
                 <div className="min-w-0 sm:flex-1">
                   <p className="break-all font-semibold text-carbon sm:break-words">
-                    {order.email}
+                    {order.email || order.customerName || "Venta de mostrador"}
+                    {order.manual && (
+                      <span className="ml-2 inline-block rounded-full bg-carbon/10 px-2.5 py-0.5 align-middle text-[11px] font-bold uppercase tracking-wide text-carbon/70">
+                        Manual{order.paymentMethod ? ` · ${PAYMENT_LABELS[order.paymentMethod] ?? order.paymentMethod}` : ""}
+                      </span>
+                    )}
                     {order.requiresInvoice && (
                       <span
                         className={`ml-2 inline-block rounded-full px-2.5 py-0.5 align-middle text-[11px] font-bold uppercase tracking-wide ${
@@ -411,7 +432,8 @@ export default function AdminOrders() {
                   </p>
                   <p className="mt-1 text-xs text-carbon/50">
                     Pedido {order.number} · {new Date(order.createdAt).toLocaleString("es-MX")} ·{" "}
-                    {TYPE_LABELS[order.type] ?? order.type}
+                    {order.manual ? "Venta manual" : TYPE_LABELS[order.type] ?? order.type}
+                    {order.manual && order.createdByName && <> · Registró {order.createdByName}</>}
                     {order.promotionName && (
                       <>
                         {" "}

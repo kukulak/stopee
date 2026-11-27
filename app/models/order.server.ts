@@ -56,7 +56,23 @@ const orderBillingSchema = new Schema(
 const orderSchema = new Schema(
   {
     user: { type: Schema.Types.ObjectId, ref: "User" },
-    email: { type: String, required: true },
+    /** Obligatorio en ventas de la tienda; en una venta manual (mostrador) puede no haber correo. */
+    email: {
+      type: String,
+      required: function (this: { source?: string }) {
+        return this.source !== "manual";
+      },
+      default: "",
+    },
+    /** De dónde salió: la tienda en línea ("web") o una venta que el admin registró a mano ("manual": efectivo, vecinos…). */
+    source: { type: String, enum: ["web", "manual"], default: "web" },
+    /** Cómo se pagó, solo en ventas manuales (en la tienda siempre es tarjeta vía Stripe). */
+    paymentMethod: { type: String, enum: ["", "cash", "transfer", "other"], default: "" },
+    /** Quién del equipo registró la venta manual (cuenta de administrador) y su nombre tal como se veía ese día. */
+    createdBy: { type: Schema.Types.ObjectId, ref: "User" },
+    createdByName: { type: String, default: "", trim: true },
+    /** Nombre del cliente, para ventas manuales sin correo. */
+    customerName: { type: String, default: "", trim: true },
     stripeCheckoutSessionId: { type: String, unique: true, sparse: true },
     stripePaymentIntentId: { type: String },
     /** Presente solo en pedidos generados por una renovación de suscripción. */
@@ -122,6 +138,7 @@ orderSchema.index({ createdAt: -1 });
 orderSchema.index({ status: 1, createdAt: -1 });
 orderSchema.index({ email: 1 });
 orderSchema.index({ requiresInvoice: 1, createdAt: -1 });
+orderSchema.index({ source: 1, createdAt: -1 });
 orderSchema.index({ stripePaymentIntentId: 1 }, { sparse: true });
 
 export type OrderDoc = InferSchemaType<typeof orderSchema>;
