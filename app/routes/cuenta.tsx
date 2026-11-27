@@ -1,7 +1,7 @@
 import { isStaff } from "~/lib/roles";
 import type { ActionFunctionArgs, LoaderFunctionArgs, MetaFunction } from "react-router";
 import { data, redirect } from "react-router";
-import { Form, Link, useActionData, useLoaderData, useNavigation } from "react-router";
+import { Form, Link, useActionData, useLoaderData, useNavigation, useSearchParams } from "react-router";
 import { useState } from "react";
 import { z } from "zod";
 import { Navbar } from "~/components/layout/Navbar";
@@ -28,7 +28,19 @@ import {
   programDisplayName,
 } from "~/lib/subscriptionConfig";
 import { getActiveLoyaltyConfig } from "~/models/promotion.server";
-import { ArrowIcon, CloseIcon } from "~/components/ui/Icons";
+import {
+  ArrowIcon,
+  ChevronIcon,
+  CloseIcon,
+  MailIcon,
+  MapPinIcon,
+  PackageIcon,
+  ReceiptIcon,
+  RepeatIcon,
+  StoreIcon,
+  UserIcon,
+} from "~/components/ui/Icons";
+import { AccountTile, LoyaltyStrip, TileGroup, parseAccountSection, sectionHref } from "~/components/account/AccountHub";
 import { firstNameOf } from "~/lib/names";
 import { describeLoyaltyReward, resolveLoyaltyTier } from "~/lib/loyalty";
 import { AddressBookCard } from "~/components/account/AddressBookCard";
@@ -40,7 +52,7 @@ import { orderNumber, validateBillingInfo } from "~/lib/fiscal";
 import { AllyRequestModel } from "~/models/allyRequest.server";
 import { ProductModel } from "~/models/product.server";
 import { cleanPlainText } from "~/lib/formGuard.server";
-import { normalizeMapsUrl, type RequestStatus } from "~/lib/refillPoints";
+import { normalizeMapsUrl, REQUEST_STATUS_LABELS, type RequestStatus } from "~/lib/refillPoints";
 import { MAPS_URL_ERROR } from "~/lib/refillPoints.server";
 import { normalizePhone } from "~/lib/deliveryAddress";
 import { addressOptionsFromProfile } from "~/lib/addressBook";
@@ -53,6 +65,13 @@ const ORDER_STATUS_LABELS: Record<string, string> = {
   delivered: "Entregado",
   cancelled: "Cancelado",
   refunded: "Reembolsado",
+};
+
+const SUBSCRIPTION_STATUS_LABELS: Record<string, string> = {
+  active: "Activo",
+  paused: "Pausado",
+  past_due: "Pago pendiente",
+  cancelled: "Cancelado",
 };
 
 export const meta: MetaFunction = () => [{ title: "Mi cuenta — STOPee" }];
@@ -392,7 +411,7 @@ export async function action({ request }: ActionFunctionArgs) {
           {
             ok: false,
             savedIntent: "subscription-invoice" as const,
-            error: "Primero guarda tus datos de facturación en la sección de arriba y luego prende la factura de cada caja.",
+            error: "Primero guarda tus datos en «Datos de facturación» (en Mi cuenta) y luego prende la factura de cada caja.",
           },
           { status: 400 },
         );
@@ -454,6 +473,29 @@ export default function Cuenta() {
     user.dogs.length > 0 ? user.dogs : [{ name: "", birthday: "" }],
   );
 
+  const [searchParams] = useSearchParams();
+  const hasPoint = Boolean(ally) || Boolean(allyRequestStatus);
+  const section = parseAccountSection(searchParams.get("seccion"), { hasPoint });
+
+  // Lo que dice cada cuadro del tablero: cómo está eso hoy, sin tener que abrirlo.
+  const inTransit = orders.filter((o) => o.status === "shipped").length;
+  const preparing = orders.filter((o) => o.status === "paid" || o.status === "processing").length;
+  const ordersSummary =
+    orders.length === 0 ? "Todavía no tienes pedidos" : `${orders.length} ${orders.length === 1 ? "pedido" : "pedidos"}`;
+  const ordersBadge = inTransit > 0 ? `${inTransit} en camino` : preparing > 0 ? `${preparing} en preparación` : null;
+  const firstSubscription = subscriptions[0];
+  const subscriptionSummary = firstSubscription
+    ? `${SUBSCRIPTION_STATUS_LABELS[firstSubscription.status] ?? firstSubscription.status} · ${frequencyLabel(firstSubscription.frequency)}`
+    : "Aún no tienes uno";
+  const subscriptionBadge = subscriptions.some((s) => s.status === "past_due") ? "Pago pendiente" : null;
+  const profileSummary = user.dogs.length > 0 ? user.dogs.map((d) => d.name).join(", ") : "Agrega a tu perro";
+  const addressesSummary =
+    user.addresses.length === 0
+      ? "Se guardan con tu primer pedido"
+      : `${user.addresses.length} ${user.addresses.length === 1 ? "guardada" : "guardadas"}`;
+  const billingSummary = user.billing ? `RFC ${user.billing.rfc}` : "Sin datos guardados";
+  const marketingSummary = user.marketing ? "Recibes promociones" : "Sin promociones";
+
   return (
     <div className="flex min-h-screen flex-col bg-hueso">
       <Navbar />
@@ -506,429 +548,476 @@ export default function Cuenta() {
             </Link>
           )}
 
-          <AllyCard ally={ally} requestStatus={allyRequestStatus} orders={allyOrders} orderStatusLabels={ORDER_STATUS_LABELS} />
-
-          {/* Perfil: teléfono, dirección y perros */}
-          <div className="mt-8 rounded-3xl border border-carbon/10 bg-white p-6">
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <p className="font-display font-bold text-carbon">Mi perfil</p>
-                <p className="mt-1 text-sm text-carbon/60">
-                  Teléfono, dirección de envío y tus perros — para tus pedidos y para no perdernos
-                  su cumpleaños.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowProfileForm((v) => !v)}
-                className="min-h-11 shrink-0 rounded-full border border-carbon/15 px-4 text-sm font-semibold text-carbon hover:border-carbon/30"
-              >
-                {showProfileForm ? "Cerrar" : "Editar"}
-              </button>
-            </div>
-
-            {actionData && "savedIntent" in actionData && actionData.savedIntent === "update-profile" && (
-              actionData.ok ? (
-                <p className="mt-3 text-sm font-semibold text-bosque">Perfil actualizado.</p>
-              ) : (
-                <p className="mt-3 text-sm font-semibold text-red-600">{actionData.error}</p>
-              )
-            )}
-
-            {!showProfileForm ? (
-              <div className="mt-4 grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
-                <p className="text-carbon/70">
-                  <span className="font-semibold text-carbon">Teléfono: </span>
-                  {user.phone || "sin registrar"}
-                </p>
-                <p className="text-carbon/70">
-                  <span className="font-semibold text-carbon">Dirección: </span>
-                  {user.address?.line1 ? `${user.address.line1}, ${user.address.city ?? ""}` : "sin registrar"}
-                </p>
-                <p className="text-carbon/70 sm:col-span-2">
-                  <span className="font-semibold text-carbon">Perros: </span>
-                  {user.dogs.length > 0
-                    ? user.dogs.map((d) => (d.birthday ? `${d.name} (cumpleaños ${d.birthday})` : d.name)).join(", ")
-                    : "sin registrar"}
-                </p>
-              </div>
-            ) : (
-              <Form method="post" className="mt-4 flex flex-col gap-4">
-                <input type="hidden" name="intent" value="update-profile" />
-
-                <div>
-                  <label htmlFor="phone" className="text-sm font-semibold text-carbon">
-                    Teléfono
-                  </label>
-                  <input
-                    id="phone"
-                    name="phone"
-                    type="tel"
-                    defaultValue={user.phone}
-                    className="mt-1 w-full min-h-11 rounded-xl border border-carbon/15 px-4 focus:border-oliva focus:outline-none"
-                  />
-                </div>
-
-                <div>
-                  <p className="text-sm font-semibold text-carbon">Dirección principal</p>
-                  <div className="mt-1 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    <input
-                      name="addressLine1"
-                      placeholder="Calle y número"
-                      defaultValue={user.address?.line1}
-                      className="min-h-11 rounded-xl border border-carbon/15 px-4 focus:border-oliva focus:outline-none sm:col-span-2"
-                    />
-                    <input
-                      name="addressLine2"
-                      placeholder="Colonia, interior (opcional)"
-                      defaultValue={user.address?.line2}
-                      className="min-h-11 rounded-xl border border-carbon/15 px-4 focus:border-oliva focus:outline-none sm:col-span-2"
-                    />
-                    <input
-                      name="addressCity"
-                      placeholder="Ciudad"
-                      defaultValue={user.address?.city}
-                      className="min-h-11 rounded-xl border border-carbon/15 px-4 focus:border-oliva focus:outline-none"
-                    />
-                    <input
-                      name="addressState"
-                      placeholder="Estado"
-                      defaultValue={user.address?.state}
-                      className="min-h-11 rounded-xl border border-carbon/15 px-4 focus:border-oliva focus:outline-none"
-                    />
-                    <input
-                      name="addressPostalCode"
-                      placeholder="Código postal"
-                      defaultValue={user.address?.postalCode}
-                      className="min-h-11 rounded-xl border border-carbon/15 px-4 focus:border-oliva focus:outline-none"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <p className="text-sm font-semibold text-carbon">Tus perros</p>
-                  <div className="mt-1 flex flex-col gap-2">
-                    {dogRows.map((dog, i) => (
-                      <div key={i} className="flex flex-wrap items-center gap-2">
-                        <input
-                          name="mascota"
-                          autoComplete="off"
-                          placeholder="Nombre"
-                          defaultValue={dog.name}
-                          className="min-h-11 flex-1 rounded-xl border border-carbon/15 px-4 focus:border-oliva focus:outline-none"
-                        />
-                        <input
-                          name="dogBirthday"
-                          type="date"
-                          defaultValue={dog.birthday ?? ""}
-                          aria-label="Cumpleaños"
-                          className="min-h-11 rounded-xl border border-carbon/15 px-4 focus:border-oliva focus:outline-none"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setDogRows((rows) => rows.filter((_, idx) => idx !== i))}
-                          aria-label="Quitar perro"
-                          className="min-h-11 min-w-11 rounded-full text-carbon/40 hover:text-carbon"
-                        >
-                          <CloseIcon className="mx-auto block h-4 w-4" />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setDogRows((rows) => [...rows, { name: "", birthday: "" }])}
-                    className="mt-2 text-sm font-semibold text-bosque hover:underline"
-                  >
-                    + Agregar otro perro
-                  </button>
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={isSavingProfile}
-                  className="min-h-11 self-start rounded-full bg-carbon px-6 text-sm font-bold text-hueso disabled:opacity-60"
-                >
-                  {isSavingProfile ? "Guardando…" : "Guardar perfil"}
-                </button>
-              </Form>
-            )}
-          </div>
-
-          <AddressBookCard addresses={user.addresses} />
-
-          <MarketingCard subscribed={user.marketing} />
-
-          <BillingCard billing={user.billing} invoicesBoxes={subscriptions.some((s) => s.requiresInvoice)} />
-
-          {/* Fidelidad */}
-          <div className="mt-8 rounded-3xl border border-lima/30 bg-bosque/5 p-6">
-            <p className="font-display font-bold text-carbon">Programa de fidelidad</p>
-            {loyalty.pendingReward ? (
-              <div className="mt-3">
-                <p className="text-sm text-carbon/70">¡Ya ganaste esto para tu próxima compra!</p>
-                <p className="mt-1 inline-block rounded-2xl bg-lima px-4 py-2 font-display text-xl font-black text-carbon">
-                  {describeLoyaltyReward(loyalty.pendingReward)}
-                </p>
-                <p className="mt-2 text-sm text-carbon/70">Se aplica automáticamente al pagar.</p>
-              </div>
-            ) : (
+          {section ? (
+            <>
+            <Link
+              to="/cuenta"
+              className="mt-6 inline-flex min-h-11 items-center gap-1 text-sm font-semibold text-bosque hover:underline"
+            >
+              <ChevronIcon direction="left" className="h-4 w-4" />
+              Mi cuenta
+            </Link>
+            {section === "pedidos" && (
               <>
-                <p className="mt-3 text-sm text-carbon/70">Al completar tu {loyalty.required}ª compra individual ganas:</p>
-                <p className="mt-1 inline-block rounded-2xl bg-lima px-4 py-2 font-display text-xl font-black text-carbon">
-                  {loyalty.nextReward}
-                </p>
-                <p className="mt-3 text-sm text-carbon/70">
-                  Llevas <strong className="text-bosque">{loyalty.count} de {loyalty.required}</strong> compras.
-                </p>
-                <div className="mt-2 flex gap-1.5">
-                  {Array.from({ length: loyalty.required }).map((_, i: number) => (
-                    <span
-                      key={i}
-                      className={`h-2 flex-1 rounded-full ${
-                        i < loyalty.count ? "bg-lima" : "bg-carbon/10"
-                      }`}
-                    />
-                  ))}
-                </div>
+    {/* Pedidos */}
+              <div className="mt-10">
+                <h2 className="font-display text-xl font-black text-carbon">Mis pedidos</h2>
+                {orders.length === 0 ? (
+                  <p className="mt-2 text-sm text-carbon/60">Todavía no tienes pedidos.</p>
+                ) : (
+                  <ul className="mt-4 flex flex-col gap-3">
+                    {orders.map((order) => (
+                      <li
+                        key={order.id}
+                        className="flex items-center justify-between rounded-2xl border border-carbon/10 bg-white p-4"
+                      >
+                        <div>
+                          <p className="text-sm font-semibold text-carbon">
+                            {(order.items as Array<{ quantity: number; name: string }>)
+                              .map((i) => `${i.quantity}× ${i.name}`)
+                              .join(", ")}
+                          </p>
+                          <p className="text-xs text-carbon/50">
+                            Pedido {order.number} · {new Date(order.createdAt).toLocaleDateString("es-MX")} ·{" "}
+                            {ORDER_STATUS_LABELS[order.status] ?? order.status}
+                            {order.shippingCost > 0 && ` · Incluye envío $${order.shippingCost} MXN`}
+                            {order.requiresInvoice && " · Factura solicitada"}
+                          </p>
+                        </div>
+                        <p className="font-display font-bold text-carbon">${order.netAmount} MXN</p>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
               </>
             )}
-          </div>
-
-          {/* Suscripciones */}
-          <div className="mt-10">
-            <h2 className="font-display text-xl font-black text-carbon">Mi suscripción</h2>
-            {subscriptions.length === 0 ? (
-              <p className="mt-2 text-sm text-carbon/60">
-                Aún no tienes un auto-envío activo. Actívalo desde{" "}
-                <a href="/suscripcion" className="font-semibold text-bosque hover:underline">
-                  {subscriptionProgram.name}
-                </a>
-                .
-              </p>
-            ) : (
-              <ul className="mt-4 flex flex-col gap-4">
-                {subscriptions.map((sub) => (
-                  <li
-                    key={sub.id}
-                    className="rounded-3xl border border-carbon/10 bg-white p-5 sm:p-6"
-                  >
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                      <div>
-                        <p className="font-display font-bold text-carbon">
-                          {sub.items.map((i) => `${i.quantity}× ${i.name}`).join(" + ")}
-                        </p>
-                        <p className="text-sm text-carbon/60">
-                          {frequencyLabel(sub.frequency)} · Estado:{" "}
-                          <span className="font-semibold capitalize">
-                            {sub.status === "active"
-                              ? "Activa"
-                              : sub.status === "paused"
-                                ? "Pausada"
-                                : sub.status === "past_due"
-                                  ? "Pago pendiente"
-                                  : "Cancelada"}
-                          </span>
-                        </p>
-                      </div>
-
-                      <div className="flex flex-wrap gap-2">
-                        {sub.status === "active" ? (
-                          <Form method="post">
-                            <input type="hidden" name="intent" value="pause-subscription" />
-                            <input type="hidden" name="subscriptionId" value={sub.id} />
-                            <button
-                              type="submit"
-                              disabled={isBusy}
-                              className="min-h-11 rounded-full border border-carbon/15 px-4 text-sm font-semibold text-carbon disabled:opacity-60"
-                            >
-                              Pausar
-                            </button>
-                          </Form>
-                        ) : sub.status === "paused" ? (
-                          <Form method="post">
-                            <input type="hidden" name="intent" value="resume-subscription" />
-                            <input type="hidden" name="subscriptionId" value={sub.id} />
-                            <button
-                              type="submit"
-                              disabled={isBusy}
-                              className="min-h-11 rounded-full bg-lima px-4 text-sm font-bold text-carbon disabled:opacity-60"
-                            >
-                              Reanudar
-                            </button>
-                          </Form>
-                        ) : null}
-
-                        <Form method="post">
-                          <input type="hidden" name="intent" value="billing-portal" />
+            {section === "auto-envio" && (
+              <>
+    {/* Suscripciones */}
+              <div className="mt-10">
+                <h2 className="font-display text-xl font-black text-carbon">Mi suscripción</h2>
+                {subscriptions.length === 0 ? (
+                  <p className="mt-2 text-sm text-carbon/60">
+                    Aún no tienes un auto-envío activo. Actívalo desde{" "}
+                    <a href="/suscripcion" className="font-semibold text-bosque hover:underline">
+                      {subscriptionProgram.name}
+                    </a>
+                    .
+                  </p>
+                ) : (
+                  <ul className="mt-4 flex flex-col gap-4">
+                    {subscriptions.map((sub) => (
+                      <li
+                        key={sub.id}
+                        className="rounded-3xl border border-carbon/10 bg-white p-5 sm:p-6"
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <div>
+                            <p className="font-display font-bold text-carbon">
+                              {sub.items.map((i) => `${i.quantity}× ${i.name}`).join(" + ")}
+                            </p>
+                            <p className="text-sm text-carbon/60">
+                              {frequencyLabel(sub.frequency)} · Estado:{" "}
+                              <span className="font-semibold capitalize">
+                                {sub.status === "active"
+                                  ? "Activa"
+                                  : sub.status === "paused"
+                                    ? "Pausada"
+                                    : sub.status === "past_due"
+                                      ? "Pago pendiente"
+                                      : "Cancelada"}
+                              </span>
+                            </p>
+                          </div>
+    
+                          <div className="flex flex-wrap gap-2">
+                            {sub.status === "active" ? (
+                              <Form method="post">
+                                <input type="hidden" name="intent" value="pause-subscription" />
+                                <input type="hidden" name="subscriptionId" value={sub.id} />
+                                <button
+                                  type="submit"
+                                  disabled={isBusy}
+                                  className="min-h-11 rounded-full border border-carbon/15 px-4 text-sm font-semibold text-carbon disabled:opacity-60"
+                                >
+                                  Pausar
+                                </button>
+                              </Form>
+                            ) : sub.status === "paused" ? (
+                              <Form method="post">
+                                <input type="hidden" name="intent" value="resume-subscription" />
+                                <input type="hidden" name="subscriptionId" value={sub.id} />
+                                <button
+                                  type="submit"
+                                  disabled={isBusy}
+                                  className="min-h-11 rounded-full bg-lima px-4 text-sm font-bold text-carbon disabled:opacity-60"
+                                >
+                                  Reanudar
+                                </button>
+                              </Form>
+                            ) : null}
+    
+                            <Form method="post">
+                              <input type="hidden" name="intent" value="billing-portal" />
+                              <button
+                                type="submit"
+                                disabled={isBusy}
+                                className="min-h-11 rounded-full border border-carbon/15 px-4 text-sm font-semibold text-carbon disabled:opacity-60"
+                              >
+                                Gestionar pago
+                              </button>
+                            </Form>
+                          </div>
+                        </div>
+    
+                        <Form method="post" className="mt-4 flex flex-wrap items-center gap-2">
+                          <input type="hidden" name="intent" value="update-frequency" />
+                          <input type="hidden" name="subscriptionId" value={sub.id} />
+                          <label htmlFor={`freq-${sub.id}`} className="text-sm text-carbon/60">
+                            Cambiar frecuencia:
+                          </label>
+                          <select
+                            id={`freq-${sub.id}`}
+                            name="frequency"
+                            defaultValue={sub.frequency}
+                            className="min-h-11 rounded-xl border border-carbon/15 px-3 text-sm"
+                          >
+                            {(subscriptionProgram.frequencies.includes(sub.frequency)
+                              ? subscriptionProgram.frequencies
+                              : [sub.frequency, ...subscriptionProgram.frequencies]
+                            ).map((value) => (
+                              <option key={value} value={value}>
+                                {frequencyLabel(value)}
+                              </option>
+                            ))}
+                          </select>
                           <button
                             type="submit"
                             disabled={isBusy}
                             className="min-h-11 rounded-full border border-carbon/15 px-4 text-sm font-semibold text-carbon disabled:opacity-60"
                           >
-                            Gestionar pago
+                            Guardar
                           </button>
                         </Form>
-                      </div>
-                    </div>
-
-                    <Form method="post" className="mt-4 flex flex-wrap items-center gap-2">
-                      <input type="hidden" name="intent" value="update-frequency" />
-                      <input type="hidden" name="subscriptionId" value={sub.id} />
-                      <label htmlFor={`freq-${sub.id}`} className="text-sm text-carbon/60">
-                        Cambiar frecuencia:
-                      </label>
-                      <select
-                        id={`freq-${sub.id}`}
-                        name="frequency"
-                        defaultValue={sub.frequency}
-                        className="min-h-11 rounded-xl border border-carbon/15 px-3 text-sm"
-                      >
-                        {(subscriptionProgram.frequencies.includes(sub.frequency)
-                          ? subscriptionProgram.frequencies
-                          : [sub.frequency, ...subscriptionProgram.frequencies]
-                        ).map((value) => (
-                          <option key={value} value={value}>
-                            {frequencyLabel(value)}
-                          </option>
-                        ))}
-                      </select>
-                      <button
-                        type="submit"
-                        disabled={isBusy}
-                        className="min-h-11 rounded-full border border-carbon/15 px-4 text-sm font-semibold text-carbon disabled:opacity-60"
-                      >
-                        Guardar
-                      </button>
-                    </Form>
-
-                    {/* La factura de cada caja: se emite con los datos de «Datos de facturación» (más arriba). */}
-                    <Form method="post" className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-carbon/10 pt-4">
-                      <input type="hidden" name="intent" value="subscription-invoice" />
-                      <input type="hidden" name="subscriptionId" value={sub.id} />
-                      <input type="hidden" name="invoice" value={sub.requiresInvoice ? "off" : "on"} />
-                      <div className="min-w-0 flex-1 basis-60">
-                        <p className="text-sm font-semibold text-carbon">Factura en cada caja</p>
-                        <p className="text-sm text-carbon/60">
-                          {sub.requiresInvoice
-                            ? user.billing
-                              ? `Prendida: cada caja se factura con el RFC ${user.billing.rfc}.`
-                              : "Prendida, pero ya no tienes datos fiscales guardados: agrégalos arriba para que se emita."
-                            : "Apagada: si necesitas factura de una caja, pídela dentro del mismo mes de su cobro."}
-                        </p>
-                      </div>
-                      <button
-                        type="submit"
-                        disabled={isBusy}
-                        className="min-h-11 rounded-full border border-carbon/15 px-4 text-sm font-semibold text-carbon disabled:opacity-60"
-                      >
-                        {sub.requiresInvoice ? "Apagar" : "Prender"}
-                      </button>
-                      {actionData && "savedIntent" in actionData && actionData.savedIntent === "subscription-invoice" && !actionData.ok && (
-                        <p className="basis-full text-sm font-semibold text-red-600">{actionData.error}</p>
-                      )}
-                    </Form>
-                  </li>
-                ))}
-              </ul>
+    
+                        {/* La factura de cada caja: se emite con los datos de «Datos de facturación» (otra sección de Mi cuenta). */}
+                        <Form method="post" className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-carbon/10 pt-4">
+                          <input type="hidden" name="intent" value="subscription-invoice" />
+                          <input type="hidden" name="subscriptionId" value={sub.id} />
+                          <input type="hidden" name="invoice" value={sub.requiresInvoice ? "off" : "on"} />
+                          <div className="min-w-0 flex-1 basis-60">
+                            <p className="text-sm font-semibold text-carbon">Factura en cada caja</p>
+                            <p className="text-sm text-carbon/60">
+                              {sub.requiresInvoice
+                                ? user.billing
+                                  ? `Prendida: cada caja se factura con el RFC ${user.billing.rfc}.`
+                                  : "Prendida, pero ya no tienes datos fiscales guardados: agrégalos en «Datos de facturación» para que se emita."
+                                : "Apagada: si necesitas factura de una caja, pídela dentro del mismo mes de su cobro."}
+                            </p>
+                          </div>
+                          <button
+                            type="submit"
+                            disabled={isBusy}
+                            className="min-h-11 rounded-full border border-carbon/15 px-4 text-sm font-semibold text-carbon disabled:opacity-60"
+                          >
+                            {sub.requiresInvoice ? "Apagar" : "Prender"}
+                          </button>
+                          {actionData && "savedIntent" in actionData && actionData.savedIntent === "subscription-invoice" && !actionData.ok && (
+                            <p className="basis-full text-sm font-semibold text-red-600">{actionData.error}</p>
+                          )}
+                        </Form>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+              </>
             )}
-          </div>
-
-          {/* Pedidos */}
-          <div className="mt-10">
-            <h2 className="font-display text-xl font-black text-carbon">Mis pedidos</h2>
-            {orders.length === 0 ? (
-              <p className="mt-2 text-sm text-carbon/60">Todavía no tienes pedidos.</p>
-            ) : (
-              <ul className="mt-4 flex flex-col gap-3">
-                {orders.map((order) => (
-                  <li
-                    key={order.id}
-                    className="flex items-center justify-between rounded-2xl border border-carbon/10 bg-white p-4"
-                  >
-                    <div>
-                      <p className="text-sm font-semibold text-carbon">
-                        {(order.items as Array<{ quantity: number; name: string }>)
-                          .map((i) => `${i.quantity}× ${i.name}`)
-                          .join(", ")}
-                      </p>
-                      <p className="text-xs text-carbon/50">
-                        Pedido {order.number} · {new Date(order.createdAt).toLocaleDateString("es-MX")} ·{" "}
-                        {ORDER_STATUS_LABELS[order.status] ?? order.status}
-                        {order.shippingCost > 0 && ` · Incluye envío $${order.shippingCost} MXN`}
-                        {order.requiresInvoice && " · Factura solicitada"}
-                      </p>
-                    </div>
-                    <p className="font-display font-bold text-carbon">${order.netAmount} MXN</p>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-
-          <Form method="post" action="/cuenta/salir" className="mt-12">
-            <button
-              type="submit"
-              className="min-h-11 rounded-full border border-carbon/25 px-6 text-sm font-semibold text-carbon transition-colors hover:bg-carbon/5"
-            >
-              Cerrar sesión
-            </button>
-          </Form>
-
-          {/* Borrar la cuenta va aparte, con su propio espacio y divisor: nadie debe confundirlo con salir. */}
-          <div className="mt-20 border-t border-carbon/10 pt-12">
-          <div className="rounded-3xl border border-red-200 bg-red-50/50 p-6">
-            <p className="font-display font-bold text-red-900">Eliminar mi cuenta</p>
-            <p className="mt-1 text-sm text-red-900/70">
-              Se borra tu perfil (datos de contacto, mascotas, dirección) de forma permanente. Tus
-              pedidos ya pagados se conservan como comprobante, sin ligarlos a tu nombre.
-            </p>
-
-            {deleteError && <p className="mt-3 text-sm font-semibold text-red-700">{deleteError}</p>}
-
-            {!confirmingDelete ? (
-              <button
-                type="button"
-                onClick={() => setConfirmingDelete(true)}
-                className="mt-4 min-h-11 rounded-full border border-red-300 px-5 text-sm font-semibold text-red-700 hover:bg-red-100"
-              >
-                Eliminar mi cuenta
-              </button>
-            ) : (
-              <Form method="post" className="mt-4 max-w-sm">
-                <input type="hidden" name="intent" value="delete-account" />
-                <label htmlFor="delete-account-password" className="block text-sm font-semibold text-red-900">
-                  Escribe tu contraseña para confirmar
-                </label>
-                <input
-                  id="delete-account-password"
-                  name="password"
-                  type="password"
-                  required
-                  autoFocus
-                  autoComplete="current-password"
-                  className="mt-2 min-h-11 w-full rounded-xl border border-red-300 bg-white px-4 text-base text-carbon focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-200"
-                />
-                <div className="mt-3 flex flex-wrap items-center gap-3">
-                  <button
-                    type="submit"
-                    disabled={isDeletingAccount}
-                    className="min-h-11 rounded-full bg-red-600 px-5 text-sm font-bold text-white hover:bg-red-700 disabled:opacity-60"
-                  >
-                    {isDeletingAccount ? "Eliminando…" : "Sí, eliminar mi cuenta"}
-                  </button>
+            {section === "perfil" && (
+              <>
+    {/* Perfil: teléfono, dirección y perros */}
+              <div className="mt-8 rounded-3xl border border-carbon/10 bg-white p-6">
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <p className="font-display font-bold text-carbon">Mi perfil</p>
+                    <p className="mt-1 text-sm text-carbon/60">
+                      Teléfono, dirección de envío y tus perros — para tus pedidos y para no perdernos
+                      su cumpleaños.
+                    </p>
+                  </div>
                   <button
                     type="button"
-                    onClick={() => setConfirmingDelete(false)}
-                    className="min-h-11 rounded-full border border-carbon/15 px-5 text-sm font-semibold text-carbon hover:border-carbon/30"
+                    onClick={() => setShowProfileForm((v) => !v)}
+                    className="min-h-11 shrink-0 rounded-full border border-carbon/15 px-4 text-sm font-semibold text-carbon hover:border-carbon/30"
                   >
-                    Cancelar
+                    {showProfileForm ? "Cerrar" : "Editar"}
                   </button>
                 </div>
-              </Form>
+    
+                {actionData && "savedIntent" in actionData && actionData.savedIntent === "update-profile" && (
+                  actionData.ok ? (
+                    <p className="mt-3 text-sm font-semibold text-bosque">Perfil actualizado.</p>
+                  ) : (
+                    <p className="mt-3 text-sm font-semibold text-red-600">{actionData.error}</p>
+                  )
+                )}
+    
+                {!showProfileForm ? (
+                  <div className="mt-4 grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
+                    <p className="text-carbon/70">
+                      <span className="font-semibold text-carbon">Teléfono: </span>
+                      {user.phone || "sin registrar"}
+                    </p>
+                    <p className="text-carbon/70">
+                      <span className="font-semibold text-carbon">Dirección: </span>
+                      {user.address?.line1 ? `${user.address.line1}, ${user.address.city ?? ""}` : "sin registrar"}
+                    </p>
+                    <p className="text-carbon/70 sm:col-span-2">
+                      <span className="font-semibold text-carbon">Perros: </span>
+                      {user.dogs.length > 0
+                        ? user.dogs.map((d) => (d.birthday ? `${d.name} (cumpleaños ${d.birthday})` : d.name)).join(", ")
+                        : "sin registrar"}
+                    </p>
+                  </div>
+                ) : (
+                  <Form method="post" className="mt-4 flex flex-col gap-4">
+                    <input type="hidden" name="intent" value="update-profile" />
+    
+                    <div>
+                      <label htmlFor="phone" className="text-sm font-semibold text-carbon">
+                        Teléfono
+                      </label>
+                      <input
+                        id="phone"
+                        name="phone"
+                        type="tel"
+                        defaultValue={user.phone}
+                        className="mt-1 w-full min-h-11 rounded-xl border border-carbon/15 px-4 focus:border-oliva focus:outline-none"
+                      />
+                    </div>
+    
+                    <div>
+                      <p className="text-sm font-semibold text-carbon">Dirección principal</p>
+                      <div className="mt-1 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                        <input
+                          name="addressLine1"
+                          placeholder="Calle y número"
+                          defaultValue={user.address?.line1}
+                          className="min-h-11 rounded-xl border border-carbon/15 px-4 focus:border-oliva focus:outline-none sm:col-span-2"
+                        />
+                        <input
+                          name="addressLine2"
+                          placeholder="Colonia, interior (opcional)"
+                          defaultValue={user.address?.line2}
+                          className="min-h-11 rounded-xl border border-carbon/15 px-4 focus:border-oliva focus:outline-none sm:col-span-2"
+                        />
+                        <input
+                          name="addressCity"
+                          placeholder="Ciudad"
+                          defaultValue={user.address?.city}
+                          className="min-h-11 rounded-xl border border-carbon/15 px-4 focus:border-oliva focus:outline-none"
+                        />
+                        <input
+                          name="addressState"
+                          placeholder="Estado"
+                          defaultValue={user.address?.state}
+                          className="min-h-11 rounded-xl border border-carbon/15 px-4 focus:border-oliva focus:outline-none"
+                        />
+                        <input
+                          name="addressPostalCode"
+                          placeholder="Código postal"
+                          defaultValue={user.address?.postalCode}
+                          className="min-h-11 rounded-xl border border-carbon/15 px-4 focus:border-oliva focus:outline-none"
+                        />
+                      </div>
+                    </div>
+    
+                    <div>
+                      <p className="text-sm font-semibold text-carbon">Tus perros</p>
+                      <div className="mt-1 flex flex-col gap-2">
+                        {dogRows.map((dog, i) => (
+                          <div key={i} className="flex flex-wrap items-center gap-2">
+                            <input
+                              name="mascota"
+                              autoComplete="off"
+                              placeholder="Nombre"
+                              defaultValue={dog.name}
+                              className="min-h-11 flex-1 rounded-xl border border-carbon/15 px-4 focus:border-oliva focus:outline-none"
+                            />
+                            <input
+                              name="dogBirthday"
+                              type="date"
+                              defaultValue={dog.birthday ?? ""}
+                              aria-label="Cumpleaños"
+                              className="min-h-11 rounded-xl border border-carbon/15 px-4 focus:border-oliva focus:outline-none"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setDogRows((rows) => rows.filter((_, idx) => idx !== i))}
+                              aria-label="Quitar perro"
+                              className="min-h-11 min-w-11 rounded-full text-carbon/40 hover:text-carbon"
+                            >
+                              <CloseIcon className="mx-auto block h-4 w-4" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setDogRows((rows) => [...rows, { name: "", birthday: "" }])}
+                        className="mt-2 text-sm font-semibold text-bosque hover:underline"
+                      >
+                        + Agregar otro perro
+                      </button>
+                    </div>
+    
+                    <button
+                      type="submit"
+                      disabled={isSavingProfile}
+                      className="min-h-11 self-start rounded-full bg-carbon px-6 text-sm font-bold text-hueso disabled:opacity-60"
+                    >
+                      {isSavingProfile ? "Guardando…" : "Guardar perfil"}
+                    </button>
+                  </Form>
+                )}
+              </div>
+              </>
             )}
-          </div>
-          </div>
+            {section === "direcciones" && (
+              <>
+    <AddressBookCard addresses={user.addresses} />
+              </>
+            )}
+            {section === "facturacion" && (
+              <>
+    <BillingCard billing={user.billing} invoicesBoxes={subscriptions.some((s) => s.requiresInvoice)} />
+              </>
+            )}
+            {section === "correos" && (
+              <>
+    <MarketingCard subscribed={user.marketing} />
+              </>
+            )}
+            {section === "punto" && (
+              <>
+    <AllyCard ally={ally} requestStatus={allyRequestStatus} orders={allyOrders} orderStatusLabels={ORDER_STATUS_LABELS} />
+              </>
+            )}
+            {section === "eliminar" && (
+              <>
+    {/* Borrar la cuenta va aparte, con su propio espacio y divisor: nadie debe confundirlo con salir. */}
+              <div className="mt-6">
+              <div className="rounded-3xl border border-red-200 bg-red-50/50 p-6">
+                <p className="font-display font-bold text-red-900">Eliminar mi cuenta</p>
+                <p className="mt-1 text-sm text-red-900/70">
+                  Se borra tu perfil (datos de contacto, mascotas, dirección) de forma permanente. Tus
+                  pedidos ya pagados se conservan como comprobante, sin ligarlos a tu nombre.
+                </p>
+    
+                {deleteError && <p className="mt-3 text-sm font-semibold text-red-700">{deleteError}</p>}
+    
+                {!confirmingDelete ? (
+                  <button
+                    type="button"
+                    onClick={() => setConfirmingDelete(true)}
+                    className="mt-4 min-h-11 rounded-full border border-red-300 px-5 text-sm font-semibold text-red-700 hover:bg-red-100"
+                  >
+                    Eliminar mi cuenta
+                  </button>
+                ) : (
+                  <Form method="post" className="mt-4 max-w-sm">
+                    <input type="hidden" name="intent" value="delete-account" />
+                    <label htmlFor="delete-account-password" className="block text-sm font-semibold text-red-900">
+                      Escribe tu contraseña para confirmar
+                    </label>
+                    <input
+                      id="delete-account-password"
+                      name="password"
+                      type="password"
+                      required
+                      autoFocus
+                      autoComplete="current-password"
+                      className="mt-2 min-h-11 w-full rounded-xl border border-red-300 bg-white px-4 text-base text-carbon focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-200"
+                    />
+                    <div className="mt-3 flex flex-wrap items-center gap-3">
+                      <button
+                        type="submit"
+                        disabled={isDeletingAccount}
+                        className="min-h-11 rounded-full bg-red-600 px-5 text-sm font-bold text-white hover:bg-red-700 disabled:opacity-60"
+                      >
+                        {isDeletingAccount ? "Eliminando…" : "Sí, eliminar mi cuenta"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setConfirmingDelete(false)}
+                        className="min-h-11 rounded-full border border-carbon/15 px-5 text-sm font-semibold text-carbon hover:border-carbon/30"
+                      >
+                        Cancelar
+                      </button>
+                    </div>
+                  </Form>
+                )}
+              </div>
+              </div>
+              </>
+            )}
+            </>
+          ) : (
+            <>
+            <LoyaltyStrip loyalty={loyalty} pendingRewardText={loyalty.pendingReward ? describeLoyaltyReward(loyalty.pendingReward) : null} />
+  
+            {hasPoint && (
+              <TileGroup title="Mi punto de recarga">
+                <AccountTile
+                  section="punto"
+                  icon={<StoreIcon className="h-6 w-6" />}
+                  title={ally ? "Mi punto de recarga" : "Mi solicitud de punto de recarga"}
+                  summary={ally ? ally.businessName || "Tu punto y tus pedidos de bidón" : REQUEST_STATUS_LABELS[allyRequestStatus!]}
+                />
+              </TileGroup>
+            )}
+  
+            <TileGroup title="Mis compras">
+              <AccountTile
+                section="pedidos"
+                icon={<PackageIcon className="h-6 w-6" />}
+                title="Mis pedidos"
+                summary={ordersSummary}
+                badge={ordersBadge}
+              />
+              <AccountTile
+                section="auto-envio"
+                icon={<RepeatIcon className="h-6 w-6" />}
+                title="Mi auto-envío"
+                summary={subscriptionSummary}
+                badge={subscriptionBadge}
+                badgeTone="warning"
+              />
+            </TileGroup>
+  
+            <TileGroup title="Mi información" columns="grid-cols-2 sm:grid-cols-2 lg:grid-cols-4">
+              <AccountTile section="perfil" icon={<UserIcon className="h-6 w-6" />} title="Perfil y perros" summary={profileSummary} />
+              <AccountTile section="direcciones" icon={<MapPinIcon className="h-6 w-6" />} title="Direcciones" summary={addressesSummary} />
+              <AccountTile section="facturacion" icon={<ReceiptIcon className="h-6 w-6" />} title="Datos de facturación" summary={billingSummary} />
+              <AccountTile section="correos" icon={<MailIcon className="h-6 w-6" />} title="Correos de STOPee" summary={marketingSummary} />
+            </TileGroup>
+  
+            <div className="mt-12 flex flex-wrap items-center gap-x-6 gap-y-3">
+    <Form method="post" action="/cuenta/salir" className="">
+                <button
+                  type="submit"
+                  className="min-h-11 rounded-full border border-carbon/25 px-6 text-sm font-semibold text-carbon transition-colors hover:bg-carbon/5"
+                >
+                  Cerrar sesión
+                </button>
+              </Form>
+              <Link to={sectionHref("eliminar")} className="min-h-11 content-center text-sm font-semibold text-carbon/50 underline hover:text-red-700">
+                Eliminar mi cuenta
+              </Link>
+            </div>
+            </>
+          )}
         </section>
       </main>
 

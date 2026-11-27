@@ -172,7 +172,7 @@ describe.skipIf(!hasTestDb)("factura en el auto-envío y reporte de ventas", () 
       const sub = await makeSubscription(user);
       const response = await toggle(user, sub._id, "on");
       expect(response.status).toBe(400);
-      expect(((await response.json()) as { error: string }).error).toMatch(/datos de facturación/);
+      expect(((await response.json()) as { error: string }).error).toMatch(/datos de facturación/i);
       expect(await flag(sub._id)).toBe(false);
     });
 

@@ -151,3 +151,59 @@ export function TrashIcon({ className }: IconProps) {
     </Svg>
   );
 }
+
+export function PackageIcon({ className }: IconProps) {
+  return (
+    <Svg className={className}>
+      <path d="M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3zM4 7.5l8 4.5 8-4.5M12 12v9" {...STROKE} />
+    </Svg>
+  );
+}
+
+export function RepeatIcon({ className }: IconProps) {
+  return (
+    <Svg className={className}>
+      <path d="M17 3l4 4-4 4M21 7H8a4 4 0 0 0-4 4v1M7 21l-4-4 4-4M3 17h13a4 4 0 0 0 4-4v-1" {...STROKE} />
+    </Svg>
+  );
+}
+
+export function UserIcon({ className }: IconProps) {
+  return (
+    <Svg className={className}>
+      <path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM5 20c0-3.3 3.1-6 7-6s7 2.7 7 6" {...STROKE} />
+    </Svg>
+  );
+}
+
+export function MapPinIcon({ className }: IconProps) {
+  return (
+    <Svg className={className}>
+      <path d="M12 21s7-6.2 7-11a7 7 0 1 0-14 0c0 4.8 7 11 7 11zM12 12.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z" {...STROKE} />
+    </Svg>
+  );
+}
+
+export function ReceiptIcon({ className }: IconProps) {
+  return (
+    <Svg className={className}>
+      <path d="M6 3h12v18l-3-2-3 2-3-2-3 2V3zM9 8h6M9 12h6" {...STROKE} />
+    </Svg>
+  );
+}
+
+export function MailIcon({ className }: IconProps) {
+  return (
+    <Svg className={className}>
+      <path d="M4 6h16v12H4zM4 7l8 6 8-6" {...STROKE} />
+    </Svg>
+  );
+}
+
+export function StoreIcon({ className }: IconProps) {
+  return (
+    <Svg className={className}>
+      <path d="M4 9l1.5-5h13L20 9M4 9v11h16V9M4 9h16M9 20v-6h6v6" {...STROKE} />
+    </Svg>
+  );
+}
