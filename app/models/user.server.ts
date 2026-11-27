@@ -87,6 +87,22 @@ const loyaltyRewardSchema = new Schema(
   { _id: false },
 );
 
+/**
+ * Datos para facturar (CFDI 4.0). Totalmente opcionales: nadie queda sin comprar por no tenerlos. Se
+ * guardan ya limpios (ver validateBillingInfo en ~/lib/fiscal) y los códigos del SAT van como código
+ * ("612", "G03"), no como texto, para poder copiarlos tal cual al sistema que emite la factura.
+ */
+const billingInfoSchema = new Schema(
+  {
+    rfc: { type: String, trim: true, uppercase: true, maxlength: 13 },
+    razonSocial: { type: String, trim: true, maxlength: 200 },
+    regimenFiscal: { type: String, trim: true, maxlength: 3 },
+    codigoPostalFiscal: { type: String, trim: true, maxlength: 5 },
+    usoCfdi: { type: String, trim: true, maxlength: 3 },
+  },
+  { _id: false },
+);
+
 const userSchema = new Schema(
   {
     email: { type: String, required: true, unique: true, lowercase: true, trim: true },
@@ -102,6 +118,8 @@ const userSchema = new Schema(
     phone: { type: String, trim: true, default: "" },
     address: { type: addressSchema, default: () => ({}) },
     savedAddresses: { type: [savedAddressSchema], default: [] },
+    /** Datos de facturación guardados para futuras compras. Vacío = no ha guardado ninguno. */
+    billingInfo: { type: billingInfoSchema, default: undefined },
     /** Aliado de recarga: lo activa un administrador. No es un rol (el rol es solo del equipo). */
     isRefillAlly: { type: Boolean, default: false },
     allyStation: { type: allyStationSchema, default: undefined },

@@ -4,6 +4,7 @@ import { PROMOTION_TYPES, type PromotionType } from "~/data/promotionTypes";
 import { PromotionModel } from "~/models/promotion.server";
 import { uploadedFileToPublicUrl } from "~/lib/upload.server";
 import { getCatalogItemBySku } from "~/lib/catalog.server";
+import { endOfDayMx, isDayString, startOfDayMx } from "~/lib/promotionDates";
 
 const baseSchema = z.object({
   name: z.string().trim().min(2, "Ponle un nombre a la promoción."),
@@ -54,6 +55,16 @@ export async function buildPromotionDocFromFormData(
 
   const { type } = base.data;
 
+  // Las fechas son días completos en hora de México: «termina el 27» incluye todo el 27.
+  const startDay = (base.data.startsAt ?? "").trim();
+  const endDay = (base.data.endsAt ?? "").trim();
+  if ((startDay && !isDayString(startDay)) || (endDay && !isDayString(endDay))) {
+    return { ok: false, error: "Revisa las fechas de inicio y fin.", status: 400 };
+  }
+  if (startDay && endDay && endDay < startDay) {
+    return { ok: false, error: "La fecha de fin no puede ser anterior a la de inicio.", status: 400 };
+  }
+
   const rawCtaHref = (base.data.bannerCtaHref ?? "").trim();
   const bannerCtaHref = rawCtaHref ? normalizeLinkTarget(rawCtaHref) : "/tienda";
   if (!bannerCtaHref) return { ok: false, error: LINK_TARGET_ERROR, status: 400 };
@@ -65,8 +76,8 @@ export async function buildPromotionDocFromFormData(
   const doc: Record<string, unknown> = {
     name: base.data.name,
     type,
-    startsAt: base.data.startsAt ? new Date(base.data.startsAt) : undefined,
-    endsAt: base.data.endsAt ? new Date(base.data.endsAt) : undefined,
+    startsAt: startDay ? startOfDayMx(startDay) : undefined,
+    endsAt: endDay ? endOfDayMx(endDay) : undefined,
     usageLimit: base.data.usageLimit,
     banner: {
       enabled: base.data.bannerEnabled === "on",
@@ -83,14 +94,20 @@ export async function buildPromotionDocFromFormData(
   switch (type as PromotionType) {
     case "coupon": {
       const code = String(formData.get("code") ?? "").trim().toUpperCase();
-      if (!code || !percentage) {
-        return { ok: false, error: "El cupón necesita código y porcentaje.", status: 400 };
+      // «Se aplica sola»: el cupón no necesita código, el carrito lo toma cuando cumple sus reglas.
+      const autoApply = formData.get("couponAutoApply") === "on";
+      if (!percentage || (!code && !autoApply)) {
+        return {
+          ok: false,
+          error: autoApply ? "Ingresa el % de descuento." : "El cupón necesita código y porcentaje.",
+          status: 400,
+        };
       }
-      const exists = await PromotionModel.findOne({
+      const exists = code && (await PromotionModel.findOne({
         type: "coupon",
         "coupon.code": code,
         ...(options.existingId ? { _id: { $ne: options.existingId } } : {}),
-      });
+      }));
       if (exists) {
         return { ok: false, error: "Ya existe un cupón con ese código.", status: 409 };
       }
@@ -135,6 +152,7 @@ export async function buildPromotionDocFromFormData(
 
       doc.coupon = {
         code,
+        autoApply,
         percentage,
         forCustomers,
         forAllies,

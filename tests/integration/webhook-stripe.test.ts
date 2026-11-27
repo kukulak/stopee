@@ -163,6 +163,65 @@ describe.skipIf(!hasTestDb)("webhook de Stripe", () => {
       expect(sendEmail.mock.calls[0][0].subject).toBe("Recibimos tu pedido de STOPee");
     });
 
+    describe("factura (CFDI)", () => {
+      const invoiceMeta = {
+        invoiceRequested: "true",
+        invRfc: "PELJ800101AB1",
+        invRazonSocial: "JUAN PÉREZ LÓPEZ",
+        invRegimen: "612",
+        invCp: "03100",
+        invUso: "G03",
+      };
+
+      it("guarda los datos fiscales en el pedido, lo marca «requiere factura» y el correo lo confirma", async () => {
+        await send(completed(oneTimeSession({}, invoiceMeta)));
+        const order = await OrderModel.findOne({ stripeCheckoutSessionId: "cs_test_compra1" }).lean();
+        expect(order!.requiresInvoice).toBe(true);
+        expect(order!.billingInfo).toMatchObject({
+          rfc: "PELJ800101AB1",
+          razonSocial: "JUAN PÉREZ LÓPEZ",
+          regimenFiscal: "612",
+          codigoPostalFiscal: "03100",
+          usoCfdi: "G03",
+        });
+        // El precio no cambia por pedir factura: lo cobrado es lo mismo.
+        expect(order!.netAmount).toBe(848);
+
+        const mail = sendEmail.mock.calls[0][0];
+        expect(mail.text).toContain("PELJ800101AB1");
+        expect(mail.text).toContain("El precio no cambia");
+        expect(mail.text).not.toContain("¿Necesitas factura después?");
+      });
+
+      it("sin pedir factura: el pedido no lleva datos fiscales y el correo explica cómo pedirla después, con el número de pedido", async () => {
+        const { updateLegalSettings } = await import("~/models/legalSettings.server");
+        await updateLegalSettings({ correoFacturacion: "facturas@stopee.test" });
+        await send(completed());
+        const order = await OrderModel.findOne({ stripeCheckoutSessionId: "cs_test_compra1" }).lean();
+        expect(order!.requiresInvoice).toBe(false);
+        expect(order!.billingInfo).toBeUndefined();
+
+        const text = sendEmail.mock.calls[0][0].text as string;
+        expect(text).toMatch(/¿Necesitas factura después\? Puedes solicitarla dentro del mismo mes calendario/);
+        expect(text).toContain("a facturas@stopee.test");
+        expect(text).toContain(`Número de pedido: ${String(order!._id).slice(-8).toUpperCase()}`);
+        expect(text).toMatch(/IVA incluido: \$116\.97/); // 848 / 1.16 = 731.03 → IVA 116.97
+      });
+
+      it("el correo de facturación cae al de contacto si no hay uno propio, y a Contacto si no hay ninguno", async () => {
+        const { updateLegalSettings } = await import("~/models/legalSettings.server");
+        await updateLegalSettings({ correoFacturacion: "", correoContacto: "hola@stopee.test" });
+        await send(completed());
+        expect(sendEmail.mock.calls[0][0].text).toContain("a hola@stopee.test");
+
+        sendEmail.mockClear();
+        await OrderModel.deleteMany({});
+        await updateLegalSettings({ correoContacto: "" });
+        await send(completed());
+        expect(sendEmail.mock.calls[0][0].text).toContain("por la página de Contacto");
+      });
+    });
+
     it("la dirección que escribió en nuestro carrito (metadata) es la que queda en el pedido", async () => {
       const session = oneTimeSession(
         { shipping_details: null },

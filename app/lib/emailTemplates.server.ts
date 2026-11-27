@@ -3,6 +3,8 @@
  * (los clientes de correo ignoran las hojas de estilo) y siempre con versión
  * en texto plano. El contenido que escribe un visitante se escapa.
  */
+import { formatMxnCents, invoiceLaterNote, ivaBreakdown } from "~/lib/fiscal";
+
 const COLORS = { bosque: "#3E531D", lima: "#B5D334", carbon: "#181C14", hueso: "#FDFBF7" };
 
 function escapeHtml(value: string) {
@@ -119,6 +121,12 @@ export function orderConfirmationEmail(data: {
   /** "Ciudad, Estado" de la dirección de envío. */
   destination?: string;
   hasAccount: boolean;
+  /** Para pedir factura después y para que el cliente lo mencione al escribirnos. */
+  orderNumber?: string;
+  /** El cliente ya pidió factura al pagar: se le dice que la emitiremos con el RFC que capturó. */
+  invoiceRfc?: string;
+  /** A dónde pedir la factura después (de «Datos del negocio»). */
+  invoiceEmail?: string | null;
 }) {
   const shippingLine =
     data.shippingLabel || data.destination
@@ -127,10 +135,15 @@ export function orderConfirmationEmail(data: {
   const paragraphs = [
     data.frequency ? "Tu auto-envío quedó activo. Gracias por confiar en STOPee." : "Recibimos tu pago. Gracias por tu compra.",
     data.items.map((i) => `${i.quantity} × ${i.name}`).join("\n"),
-    `Total pagado: $${data.total} MXN`,
+    `Total pagado: $${data.total} MXN (IVA incluido: ${formatMxnCents(ivaBreakdown(data.total).iva)})`,
+    ...(data.orderNumber ? [`Número de pedido: ${data.orderNumber}`] : []),
     ...(data.frequency ? [`Te enviaremos tu caja ${data.frequency}. Puedes pausarla o cancelarla cuando quieras.`] : []),
     ...(shippingLine ? [shippingLine] : []),
     "Preparamos tu pedido y te avisamos por correo en cuanto salga, con tu número de guía.",
+    // El precio es el mismo con o sin factura: aquí solo se dice qué sigue.
+    data.invoiceRfc
+      ? `Registramos tu solicitud de factura con el RFC ${data.invoiceRfc}. La emitiremos con los datos que capturaste y te la enviaremos por correo. El precio no cambia.`
+      : invoiceLaterNote(data.invoiceEmail),
   ];
   const { html, text } = renderLayout({
     title: data.frequency ? "Tu auto-envío está activo" : "Recibimos tu pedido",

@@ -1,16 +1,27 @@
 import type { CartLine } from "~/components/ecommerce/CartDrawer";
 import type { CatalogItem } from "~/lib/catalog.server";
 import { getCart, getCartCoupon, getCartShippingMethod } from "~/lib/cart.server";
-import { getCatalogItemBySku } from "~/lib/catalog.server";
+import { getCatalogItemBySku, isRefillAlly } from "~/lib/catalog.server";
 import { addressDefaultsFromProfile } from "~/lib/deliveryAddress";
 import { addressOptionsFromProfile } from "~/lib/addressBook";
-import { checkCouponEligibility } from "~/lib/couponRules.server";
-import { stackPercents } from "~/lib/couponRules";
-import { evaluateRequirementPromotion } from "~/lib/promotionEngine.server";
-import { findRedeemableCoupon } from "~/models/promotion.server";
+import { resolveCartDiscount } from "~/lib/cartDiscount.server";
 import { getPasswordGateConfig } from "~/models/passwordGate.server";
 import { buildShippingQuote, type ShippingConfig } from "~/models/shipping.server";
+import { getInvoiceRequestEmail } from "~/models/legalSettings.server";
+import type { BillingInfo } from "~/lib/fiscal";
 import type { getUser } from "~/lib/session.server";
+
+function billingDefaultsFromUser(user: Awaited<ReturnType<typeof getUser>>): BillingInfo | null {
+  const b = user?.billingInfo;
+  if (!b?.rfc) return null;
+  return {
+    rfc: b.rfc,
+    razonSocial: b.razonSocial ?? "",
+    regimenFiscal: b.regimenFiscal ?? "",
+    codigoPostalFiscal: b.codigoPostalFiscal ?? "",
+    usoCfdi: b.usoCfdi ?? "G03",
+  };
+}
 
 /**
  * Todo lo que el carrito necesita para dibujarse: renglones, descuento (cupón,
@@ -46,79 +57,58 @@ export async function buildCartView(
 
   const subtotalMxn = lines.reduce((sum, line) => sum + line.product.priceMxn * line.quantity, 0);
 
-  let coupon: { code: string; percentage: number } | null = null;
-  let couponStackable = false;
-  let couponNotice: { code: string; message: string; cta: "login" | "verify" | null } | null = null;
-  let gateBenefitLabel: string | null = null;
-  if (couponCode) {
-    const promo = await findRedeemableCoupon(couponCode);
-    if (promo?.coupon?.percentage) {
-      // Las reglas del cupón (compra mínima, producto requerido, un uso por cliente…)
-      // se revisan aquí cada vez: si el carrito deja de cumplirlas, el cupón queda
-      // guardado pero sin aplicar, con un aviso de qué falta.
-      const eligibility = await checkCouponEligibility(promo, {
-        lines: lines.map((l) => ({ sku: l.sku, quantity: l.quantity, unitPriceMxn: l.product.priceMxn })),
-        user,
-        nameBySku: new Map(catalogItems.map((item) => [item.sku, item.name])),
-      });
-      if (eligibility.ok) {
-        coupon = { code: couponCode, percentage: promo.coupon.percentage };
-        couponStackable = Boolean(promo.coupon.stackable);
-        const gateConfigForBanner = await getPasswordGateConfig();
-        if (gateConfigForBanner.linkedPromotionId === String(promo._id)) {
-          gateBenefitLabel = gateConfigForBanner.cartBannerMessage;
-        }
-      } else {
-        couponNotice = {
-          code: couponCode,
-          message: eligibility.reason,
-          cta: eligibility.kind === "login" || eligibility.kind === "verify" ? eligibility.kind : null,
-        };
-      }
-    }
-  }
+  // Un solo cálculo (el mismo que usa el pago) elige el descuento: el que más le conviene al cliente.
+  const gateConfig = await getPasswordGateConfig();
+  const discount = await resolveCartDiscount({
+    lines: lines.map((l) => ({ sku: l.sku, quantity: l.quantity, unitPriceMxn: l.product.priceMxn })),
+    user,
+    nameBySku: new Map(catalogItems.map((item) => [item.sku, item.name])),
+    couponCode,
+    couponLabel: async (promotionId) =>
+      gateConfig.linkedPromotionId === promotionId ? gateConfig.cartBannerMessage || null : null,
+  });
+  const discountPercent = discount.percent;
+  const discountLabel = discount.label;
 
-  const isFirstPurchase = Boolean(user && user.individualPurchaseCount === 0);
-  const requirementMatch = await evaluateRequirementPromotion(
-    lines.map((l) => ({ sku: l.sku, quantity: l.quantity, unitPriceMxn: l.product.priceMxn })),
-    isFirstPurchase,
-  );
-  const requirementGift = requirementMatch?.rewardGiftSku
-    ? (bySku.get(requirementMatch.rewardGiftSku) ?? (await getCatalogItemBySku(requirementMatch.rewardGiftSku, { includeUnavailable: true })))?.name ?? null
+  const coupon = discount.appliedCouponCode
+    ? { code: discount.appliedCouponCode, percentage: discount.percent }
     : null;
 
-  // La recompensa de lealtad (si la tiene) es para SU SIGUIENTE compra, nunca
-  // permanente — ver app/lib/loyalty.ts y webhooks.stripe.tsx.
-  const pendingReward = user?.loyaltyPendingReward;
-  const loyaltyGift = pendingReward?.rewardType === "gift" ? pendingReward.giftDescription ?? null : null;
-  const loyaltyDiscountPercent = pendingReward?.rewardType === "discount" ? pendingReward.percentage ?? 0 : 0;
-
-  // Prioridad para el DESCUENTO: un cupón explícito del cliente gana sobre
-  // una promoción condicional, y esta a su vez gana sobre la lealtad. Los
-  // regalos (requisito + lealtad) no compiten entre sí, ambos se muestran.
-  let discountPercent = 0;
-  let discountLabel = "";
-  if (coupon) {
-    discountPercent = coupon.percentage;
-    discountLabel = gateBenefitLabel ?? `Cupón ${coupon.code}`;
-    // Solo si el cupón lo permite se suma a la recompensa de lealtad ya ganada.
-    if (couponStackable && loyaltyDiscountPercent > 0) {
-      discountPercent = stackPercents(coupon.percentage, loyaltyDiscountPercent);
-      discountLabel = `${discountLabel} + ${pendingReward?.promotionName ?? "Recompensa de lealtad"}`;
-    }
-  } else if (requirementMatch?.rewardDiscountPercentage) {
-    discountPercent = requirementMatch.rewardDiscountPercentage;
-    discountLabel = requirementMatch.name;
-  } else if (loyaltyDiscountPercent > 0) {
-    discountPercent = loyaltyDiscountPercent;
-    discountLabel = pendingReward?.promotionName ?? "Recompensa de lealtad";
+  // Avisos de un cupón escrito que no está aplicando: o todavía no cumple sus reglas, o hay un descuento mejor.
+  let couponNotice: {
+    code: string;
+    message: string;
+    cta: "login" | "verify" | null;
+    heading?: string;
+    tone?: "warn" | "info";
+  } | null = null;
+  if (discount.couponProblem) {
+    const { code, reason, kind } = discount.couponProblem;
+    couponNotice = { code, message: reason, cta: kind === "login" || kind === "verify" ? kind : null };
+  } else if (discount.couponBeaten) {
+    couponNotice = {
+      code: discount.couponBeaten.code,
+      heading: `Cupón ${discount.couponBeaten.code} guardado`,
+      tone: "info",
+      message: `Aplicamos ${discount.label} (${discount.percent}%) porque te conviene más que tu cupón (${discount.couponBeaten.percentage}%). Los descuentos no se suman.`,
+      cta: null,
+    };
   }
+  // Una recompensa de lealtad que no hizo falta usar no se pierde: queda para la siguiente compra.
+  const discountNotice = discount.loyaltyKept
+    ? `Tu recompensa de lealtad (${discount.loyaltyKept.percentage}%) se guarda para tu siguiente compra.`
+    : null;
 
+  const requirementGift = discount.requirement?.rewardGiftSku
+    ? (bySku.get(discount.requirement.rewardGiftSku) ??
+        (await getCatalogItemBySku(discount.requirement.rewardGiftSku, { includeUnavailable: true })))?.name ?? null
+    : null;
+  const loyaltyGift = discount.loyaltyGiftDescription ?? null;
   const gifts = [requirementGift, loyaltyGift].filter((g): g is string => Boolean(g));
 
   // El envío gratis se evalúa sobre lo que realmente se paga por productos (ya con descuento).
   const discountedSubtotal = Math.round(subtotalMxn * (1 - discountPercent / 100));
-  const shipping = buildShippingQuote(shippingConfig, discountedSubtotal, cartShippingMethod);
+  const shipping = buildShippingQuote(shippingConfig, discountedSubtotal, cartShippingMethod, { isAlly: isRefillAlly(user) });
 
   return {
     lines,
@@ -127,12 +117,17 @@ export async function buildCartView(
     discountLabel,
     coupon,
     couponNotice,
+    discountNotice,
     gifts,
     shipping,
     deliveryZone: shippingConfig.zone,
     addressDefaults: addressDefaultsFromProfile(user),
     // null = visita sin sesión: no se ofrecen ni se guardan direcciones.
     addressBook: user ? addressOptionsFromProfile(user) : null,
+    // Factura: los datos fiscales guardados en la cuenta (para precargarlos) y a dónde pedirla después.
+    billingDefaults: billingDefaultsFromUser(user),
+    invoiceEmail: await getInvoiceRequestEmail(),
+    signedIn: Boolean(user),
   };
 }
 

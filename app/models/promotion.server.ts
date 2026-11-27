@@ -81,6 +81,11 @@ const promotionSchema = new Schema(
       forAllies: { type: Boolean },
       /** Puede sumarse a la recompensa de lealtad del cliente. Por defecto, no se combina con nada. */
       stackable: { type: Boolean, default: false },
+      /**
+       * Se aplica sola al carrito de quien cumpla sus reglas, sin escribir ningún código (p. ej. «10% de
+       * apertura en toda la tienda»). Con esto el código es opcional.
+       */
+      autoApply: { type: Boolean, default: false },
     },
     bogo: {
       buyQuantity: { type: Number, min: 1, default: 1 },
@@ -148,6 +153,12 @@ const promotionSchema = new Schema(
 
 export type PromotionDoc = InferSchemaType<typeof promotionSchema>;
 
+// En desarrollo se re-registra el modelo en cada recarga: si no, mongoose conserva el esquema viejo y descarta en
+// silencio los campos nuevos al guardar (igual que en Product, User y AllyRequest).
+if (process.env.NODE_ENV !== "production" && models.Promotion) {
+  mongoose.deleteModel("Promotion");
+}
+
 export const PromotionModel =
   (models.Promotion as Model<PromotionDoc>) ?? model<PromotionDoc>("Promotion", promotionSchema);
 
@@ -183,28 +194,43 @@ export async function getActiveBannerPromotions() {
   return PromotionModel.find(activeBannerPromotionFilter()).sort({ updatedAt: -1 }).lean();
 }
 
+/** Vigente hoy y con usos disponibles: lo que debe cumplir un cupón para poder canjearse. */
+function redeemableWindow() {
+  const now = new Date();
+  return [
+    { $or: [{ startsAt: { $exists: false } }, { startsAt: null }, { startsAt: { $lte: now } }] },
+    { $or: [{ endsAt: { $exists: false } }, { endsAt: null }, { endsAt: { $gte: now } }] },
+    {
+      $or: [
+        { usageLimit: { $exists: false } },
+        { usageLimit: null },
+        { usageLimit: 0 },
+        { $expr: { $lt: [{ $ifNull: ["$timesUsed", 0] }, "$usageLimit"] } },
+      ],
+    },
+  ];
+}
+
 /**
  * Cupón activo y vigente por código, para redimir en checkout. Respeta la
  * fecha de inicio, la de fin y el tope de usos (`usageLimit`): un cupón con
  * "primeros 100" deja de servir en cuanto se canjea el número 100.
  */
 export async function findRedeemableCoupon(code: string) {
-  const now = new Date();
   return PromotionModel.findOne({
     type: "coupon",
     isActive: true,
     "coupon.code": code.toUpperCase().trim(),
-    $and: [
-      { $or: [{ startsAt: { $exists: false } }, { startsAt: null }, { startsAt: { $lte: now } }] },
-      { $or: [{ endsAt: { $exists: false } }, { endsAt: null }, { endsAt: { $gte: now } }] },
-      {
-        $or: [
-          { usageLimit: { $exists: false } },
-          { usageLimit: null },
-          { usageLimit: 0 },
-          { $expr: { $lt: [{ $ifNull: ["$timesUsed", 0] }, "$usageLimit"] } },
-        ],
-      },
-    ],
+    $and: redeemableWindow(),
+  });
+}
+
+/** Cupones vigentes marcados «se aplica sola»: se prueban contra cada carrito sin que el cliente escriba nada. */
+export async function findAutoApplyCoupons() {
+  return PromotionModel.find({
+    type: "coupon",
+    isActive: true,
+    "coupon.autoApply": true,
+    $and: redeemableWindow(),
   });
 }

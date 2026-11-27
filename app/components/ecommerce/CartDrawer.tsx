@@ -9,6 +9,8 @@ import { DeliveryAddressFields, type AddressDefaults } from "~/components/ecomme
 import type { AddressErrors } from "~/lib/deliveryAddress";
 import type { AddressOption } from "~/lib/addressBook";
 import type { DeliveryZone } from "~/lib/deliveryZone";
+import { InvoiceFields } from "~/components/ecommerce/InvoiceFields";
+import { PRICES_INCLUDE_IVA, formatMxnCents, ivaBreakdown, type BillingErrors, type BillingInfo } from "~/lib/fiscal";
 
 const CHECKOUT_FORM_ID = "checkout-form";
 
@@ -95,11 +97,15 @@ export function CartDrawer({
   discountLabel,
   coupon,
   couponNotice,
+  discountNotice,
   gifts,
   shipping,
   deliveryZone,
   addressDefaults,
   addressBook,
+  billingDefaults,
+  invoiceEmail,
+  signedIn = false,
   onClose,
 }: {
   lines: CartLine[];
@@ -108,7 +114,16 @@ export function CartDrawer({
   discountLabel?: string;
   coupon: { code: string; percentage: number } | null;
   /** Cupón guardado que todavía no se puede aplicar (compra mínima, producto requerido, sesión…). */
-  couponNotice?: { code: string; message: string; cta: "login" | "verify" | null } | null;
+  couponNotice?: {
+    code: string;
+    message: string;
+    cta: "login" | "verify" | null;
+    /** Título distinto al de «guardado, aún sin aplicar» (p. ej. cuando otro descuento le conviene más). */
+    heading?: string;
+    tone?: "warn" | "info";
+  } | null;
+  /** Aviso corto sobre los descuentos (p. ej. que una recompensa de lealtad se guarda para la próxima compra). */
+  discountNotice?: string | null;
   gifts?: string[];
   shipping: ShippingQuote;
   /** Zona donde se entrega: fuera de ella no se puede pagar. */
@@ -117,12 +132,17 @@ export function CartDrawer({
   addressDefaults?: AddressDefaults;
   /** Las direcciones guardadas en su cuenta (`null` si no ha iniciado sesión). */
   addressBook?: AddressOption[] | null;
+  /** Datos fiscales guardados en la cuenta, para precargar «Requiero factura» (`null` = no tiene o es invitado). */
+  billingDefaults?: BillingInfo | null;
+  /** A dónde pedir la factura después de comprar (de «Datos del negocio»). */
+  invoiceEmail?: string | null;
+  signedIn?: boolean;
   /** Cierra el panel del carrito (el botón del carrito vacío lo usa antes de llevar a la tienda). */
   onClose?: () => void;
 }) {
   // Si la persona se va a pagar y regresa con «atrás», el botón vuelve a estar listo.
   const restores = usePageShowReset();
-  const checkoutFetcher = useFetcher<{ error?: string; fieldErrors?: AddressErrors }>({ key: `checkout-${restores}` });
+  const checkoutFetcher = useFetcher<{ error?: string; fieldErrors?: AddressErrors; invoiceErrors?: BillingErrors }>({ key: `checkout-${restores}` });
   const couponFetcher = useFetcher<{ error?: string; ok?: boolean; cta?: "login" | "verify" | null }>();
   const isCheckingOut = checkoutFetcher.state !== "idle";
   const isApplyingCoupon = couponFetcher.state !== "idle";
@@ -138,6 +158,8 @@ export function CartDrawer({
     shipping.options.find((option) => option.id === pendingMethod) ?? shipping.selected;
   const shippingCost = selectedShipping?.cost ?? 0;
   const totalMxn = discountedSubtotal + shippingCost;
+  // Todos los precios (y el envío) ya incluyen IVA: el desglose es informativo y no cambia lo que se paga.
+  const iva = ivaBreakdown(totalMxn);
   // Algo del carrito supera la existencia (se agotó o bajó el stock después de agregarlo): no se deja pagar.
   const hasStockProblem = lines.some((line) => line.quantity > line.product.stock);
 
@@ -187,9 +209,15 @@ export function CartDrawer({
                 </couponFetcher.Form>
               </div>
             ) : couponNotice ? (
-              <div className="rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-900">
+              <div
+                className={`rounded-xl px-3 py-2 text-sm ${
+                  couponNotice.tone === "info" ? "bg-carbon/5 text-carbon" : "bg-amber-50 text-amber-900"
+                }`}
+              >
                 <div className="flex items-start justify-between gap-2">
-                  <p className="font-semibold">Cupón {couponNotice.code} guardado, aún sin aplicar</p>
+                  <p className="font-semibold">
+                    {couponNotice.heading ?? `Cupón ${couponNotice.code} guardado, aún sin aplicar`}
+                  </p>
                   <couponFetcher.Form method="post" action="/tienda">
                     <input type="hidden" name="intent" value="remove-coupon" />
                     <button type="submit" aria-label="Quitar cupón" className="-my-2 min-h-11 min-w-11 text-amber-900/60 hover:text-amber-900">
@@ -227,6 +255,7 @@ export function CartDrawer({
                 </button>
               </couponFetcher.Form>
             )}
+            {discountNotice && <p className="mt-2 text-xs text-carbon/60">{discountNotice}</p>}
             {couponFetcher.data?.error && (
               <p className="mt-1 text-xs font-semibold text-red-600">
                 {couponFetcher.data.error}
@@ -247,6 +276,45 @@ export function CartDrawer({
 
           <ShippingMethods shipping={shipping} selectedId={selectedShipping?.id ?? null} onPending={setPendingMethod} />
 
+          {/* El resumen va antes de pedir la dirección: primero se ve cuánto se paga. */}
+          <div className="border-t border-carbon/10 pt-4" role="group" aria-label="Resumen del pedido">
+            <div className="mb-1 flex justify-between gap-4 text-sm text-carbon/60">
+              <span>Productos</span>
+              <span>${subtotalMxn} MXN</span>
+            </div>
+            {discountPercent > 0 && (
+              <div className="mb-1 flex justify-between gap-4 text-sm text-bosque">
+                <span>
+                  {discountLabel || "Descuento aplicado"} (-{discountPercent}%)
+                </span>
+                <span>-${subtotalMxn - discountedSubtotal} MXN</span>
+              </div>
+            )}
+            {selectedShipping && (
+              <div className="mb-1 flex justify-between gap-4 text-sm text-carbon/60">
+                <span>Envío</span>
+                <span className={selectedShipping.isFree ? "font-semibold text-bosque" : ""}>
+                  {shippingCost === 0 ? "Gratis" : `$${shippingCost} MXN`}
+                </span>
+              </div>
+            )}
+            <div className="mb-1 mt-2 flex flex-col gap-0.5 border-t border-dashed border-carbon/15 pt-2 text-xs text-carbon/50">
+              <div className="flex justify-between gap-4">
+                <span>Subtotal sin IVA</span>
+                <span>{formatMxnCents(iva.subtotal)}</span>
+              </div>
+              <div className="flex justify-between gap-4">
+                <span>IVA (16%) incluido</span>
+                <span>{formatMxnCents(iva.iva)}</span>
+              </div>
+            </div>
+            <div className="flex justify-between font-display text-lg font-black text-carbon">
+              <span>Total</span>
+              <span>${totalMxn} MXN</span>
+            </div>
+            <p className="mt-1 text-xs text-carbon/50">{PRICES_INCLUDE_IVA}.</p>
+          </div>
+
           <DeliveryAddressFields
             formId={CHECKOUT_FORM_ID}
             // Sin método elegido (envío apagado) también se necesita la dirección completa.
@@ -258,26 +326,13 @@ export function CartDrawer({
             onOutOfZoneChange={setOutOfZone}
           />
 
-          <div className="border-t border-carbon/10 pt-4">
-            {discountPercent > 0 && (
-              <div className="mb-1 flex justify-between text-sm text-bosque">
-                <span>{discountLabel || "Descuento aplicado"}</span>
-                <span>-{discountPercent}%</span>
-              </div>
-            )}
-            {selectedShipping && (
-              <div className="mb-1 flex justify-between gap-4 text-sm text-carbon/60">
-                <span>Envío</span>
-                <span className={selectedShipping.isFree ? "font-semibold text-bosque" : ""}>
-                  {shippingCost === 0 ? "Gratis" : `$${shippingCost} MXN`}
-                </span>
-              </div>
-            )}
-            <div className="flex justify-between font-display text-lg font-black text-carbon">
-              <span>Total</span>
-              <span>${totalMxn} MXN</span>
-            </div>
-          </div>
+          <InvoiceFields
+            formId={CHECKOUT_FORM_ID}
+            defaults={billingDefaults}
+            errors={checkoutFetcher.data?.invoiceErrors}
+            signedIn={signedIn}
+            invoiceEmail={invoiceEmail}
+          />
 
           <CheckoutSteps />
 
@@ -299,7 +354,7 @@ export function CartDrawer({
               disabled={isCheckingOut || hasStockProblem || outOfZone}
               className="min-h-11 w-full rounded-full bg-carbon px-6 text-sm font-bold text-hueso transition-transform hover:scale-105 active:scale-95 disabled:opacity-60"
             >
-              {isCheckingOut ? "Redirigiendo a pago…" : "Ir a pagar"}
+              {isCheckingOut ? "Redirigiendo a pago…" : `Ir a pagar · $${totalMxn} MXN`}
             </button>
           </checkoutFetcher.Form>
           <LegalNotice action="pagar" newTab className="text-center" />
@@ -406,6 +461,11 @@ function ShippingMethods({
           <span className="font-semibold text-red-600">{fetcher.data.error}</span>
         ) : shipping.freeRemaining !== null ? (
           <span className="text-carbon/60">
+            {shipping.freeThreshold !== null && (
+              <>
+                Llevas <strong className="text-carbon">${shipping.freeThreshold - shipping.freeRemaining} MXN</strong>.{" "}
+              </>
+            )}
             Agrega <strong className="text-carbon">${shipping.freeRemaining} MXN</strong> más y tu envío es gratis.
           </span>
         ) : shipping.options[0]?.isFree ? (

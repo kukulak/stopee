@@ -211,6 +211,7 @@ export default function Tienda() {
     discountLabel,
     coupon,
     couponNotice,
+    discountNotice,
     gifts,
     heroSlides,
     isPreview,
@@ -220,6 +221,9 @@ export default function Tienda() {
     deliveryZone,
     addressDefaults,
     addressBook,
+    billingDefaults,
+    invoiceEmail,
+    signedIn,
   } = useLoaderData<typeof loader>();
   const itemCount = lines.reduce((sum, l) => sum + l.quantity, 0);
 
@@ -307,11 +311,15 @@ export default function Tienda() {
           discountLabel={discountLabel}
           coupon={coupon}
           couponNotice={couponNotice}
+          discountNotice={discountNotice}
           gifts={gifts}
           shipping={shipping}
           deliveryZone={deliveryZone}
           addressDefaults={addressDefaults}
           addressBook={addressBook}
+          billingDefaults={billingDefaults}
+          invoiceEmail={invoiceEmail}
+          signedIn={signedIn}
           onClose={() => setCartOpen(false)}
         />
       </CartOverlay>

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { toDayInputValue } from "~/lib/promotionDates";
 import { PROMOTION_TYPES, type PromotionType } from "~/data/promotionTypes";
 import { CloseIcon } from "~/components/ui/Icons";
 
@@ -30,10 +31,7 @@ function Field({ label, htmlFor, children }: { label: string; htmlFor: string; c
   );
 }
 
-function toDateInputValue(value?: string | Date | null) {
-  if (!value) return "";
-  return new Date(value).toISOString().slice(0, 10);
-}
+const toDateInputValue = toDayInputValue;
 
 export type PromotionDefaults = {
   name?: string;
@@ -51,6 +49,7 @@ export type PromotionDefaults = {
     minQuantity?: number | null;
     requiredSkus?: string[];
     stackable?: boolean;
+    autoApply?: boolean;
     forCustomers?: boolean | null;
     forAllies?: boolean | null;
   } | null;
@@ -93,6 +92,7 @@ export function PromotionFormFields({
   defaults?: PromotionDefaults;
 }) {
   const [type, setType] = useState<PromotionType>(defaults?.type ?? "coupon");
+  const [autoApply, setAutoApply] = useState(Boolean(defaults?.coupon?.autoApply));
   const tiers = defaults?.tieredSpend?.tiers ?? [];
   const selectedBuyTogether = new Set(defaults?.buyTogether?.productIds ?? []);
   const [requirementCondition, setRequirementCondition] = useState<"product_in_cart" | "product_spend" | "first_purchase">(
@@ -128,8 +128,8 @@ export function PromotionFormFields({
       {type === "coupon" && (
         <div className="flex flex-col gap-4">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-            <Field label="Código" htmlFor="code">
-              <input id="code" name="code" required defaultValue={defaults?.coupon?.code} placeholder="BIENVENIDA10" className={`${inputClass} uppercase`} />
+            <Field label={autoApply ? "Código (opcional)" : "Código"} htmlFor="code">
+              <input id="code" name="code" required={!autoApply} defaultValue={defaults?.coupon?.code} placeholder={autoApply ? "Sin código" : "BIENVENIDA10"} className={`${inputClass} uppercase`} />
             </Field>
             <Field label="% de descuento" htmlFor="percentage">
               <input id="percentage" name="percentage" type="number" min={1} max={100} required defaultValue={defaults?.coupon?.percentage} className={inputClass} />
@@ -137,6 +137,23 @@ export function PromotionFormFields({
             <Field label="Máximo de usos en total (opcional)" htmlFor="usageLimit">
               <input id="usageLimit" name="usageLimit" type="number" min={1} placeholder="Sin límite" defaultValue={defaults?.usageLimit ?? undefined} className={inputClass} />
             </Field>
+          </div>
+
+          <div className="flex flex-col gap-1">
+            <label className="flex min-h-11 items-center gap-3 text-sm font-semibold text-carbon">
+              <input
+                type="checkbox"
+                name="couponAutoApply"
+                checked={autoApply}
+                onChange={(e) => setAutoApply(e.target.checked)}
+                className="h-5 w-5 shrink-0 accent-lima"
+              />
+              Se aplica sola, sin escribir código
+            </label>
+            <p className="text-xs text-carbon/50">
+              Ideal para «10% de apertura en toda la tienda»: el carrito lo aplica a quien cumpla las reglas de abajo y
+              la fecha de vigencia. Si el cliente tiene otro descuento mejor, se aplica el mejor; nunca se suman.
+            </p>
           </div>
 
           <fieldset className="flex flex-col gap-1 rounded-2xl border border-carbon/10 p-3 sm:p-4">
@@ -240,13 +257,16 @@ export function PromotionFormFields({
 
               <fieldset className="flex flex-col gap-1">
                 <legend className="text-sm font-bold text-carbon">Combinación con otras promociones</legend>
+                <p className="text-xs text-carbon/50">
+                  Los descuentos no se suman: a cada cliente se le aplica el que más le conviene. La única excepción es esta.
+                </p>
                 <label className="flex min-h-11 items-center gap-3 text-sm text-carbon">
                   <input type="checkbox" name="couponStackable" defaultChecked={defaults?.coupon?.stackable} className="h-5 w-5 shrink-0 accent-lima" />
                   Se puede sumar a la recompensa de lealtad del cliente
                 </label>
                 <p className="text-xs text-carbon/50">
-                  Sin marcar, el cupón no se combina con nada: si el cliente tiene otra promoción, se aplica solo el
-                  cupón y la otra se conserva para su siguiente compra.
+                  Sin marcar, el cupón no se combina con nada: se aplica el mejor descuento y la recompensa de lealtad
+                  que no se use se conserva para la siguiente compra.
                 </p>
               </fieldset>
             </div>

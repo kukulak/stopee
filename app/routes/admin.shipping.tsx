@@ -73,6 +73,11 @@ export async function action({ request }: ActionFunctionArgs) {
   if (freeShippingEnabled && (!Number.isFinite(threshold) || threshold <= 0)) {
     return data({ ok: false as const, error: "Escribe desde qué monto el envío es gratis (mayor a $0)." }, { status: 400 });
   }
+  const allyFreeShippingEnabled = formData.get("allyFreeShippingEnabled") === "on";
+  const allyThreshold = readMoney("allyFreeShippingThreshold");
+  if (allyFreeShippingEnabled && (!Number.isFinite(allyThreshold) || allyThreshold <= 0)) {
+    return data({ ok: false as const, error: "Escribe desde qué monto el envío es gratis para Puntos de Recarga (mayor a $0)." }, { status: 400 });
+  }
   if (isEnabled && !SHIPPING_METHOD_IDS.some((id) => methods[id].isActive)) {
     return data(
       { ok: false as const, error: "Deja activa al menos una opción de envío, o apaga el cobro de envío." },
@@ -97,6 +102,10 @@ export async function action({ request }: ActionFunctionArgs) {
     freeShippingEnabled,
     // Si está apagado se conserva el monto que ya había en vez de borrarlo.
     freeShippingThreshold: Number.isFinite(threshold) && threshold > 0 ? threshold : current.freeShippingThreshold,
+    allyFreeShippingEnabled,
+    // Si está apagado se conserva el monto que ya había en vez de borrarlo.
+    allyFreeShippingThreshold:
+      Number.isFinite(allyThreshold) && allyThreshold > 0 ? allyThreshold : current.allyFreeShippingThreshold,
   };
   await saveShippingConfig(next);
   return data({ ok: true as const, error: null });
@@ -255,6 +264,34 @@ export default function AdminShipping() {
           <p className="mt-2 text-xs text-carbon/50">
             Se compara contra el subtotal de productos ya con descuentos, sin envío. Al alcanzarlo, la opción que el
             cliente elija cuesta $0. Mientras no llegue, el carrito le muestra cuánto le falta.
+          </p>
+        </fieldset>
+
+        <fieldset className="w-full min-w-0 max-w-full rounded-3xl border border-carbon/10 bg-white p-4 sm:p-6">
+          <legend className="sr-only">Envío gratis para Puntos de Recarga</legend>
+          <h2 className="font-display text-lg font-bold text-carbon">Envío gratis para Puntos de Recarga</h2>
+          <label className="mt-3 flex min-h-11 items-start gap-3 text-sm font-medium text-carbon">
+            <input type="checkbox" name="allyFreeShippingEnabled" defaultChecked={config.allyFreeShippingEnabled} className="mt-0.5 h-5 w-5 shrink-0 accent-lima" />
+            Envío gratis para aliados a partir de un monto de compra
+          </label>
+          <div className="mt-3 max-w-xs">
+            <Field label="Monto mínimo (MXN)" htmlFor="allyFreeShippingThreshold">
+              <input
+                id="allyFreeShippingThreshold"
+                name="allyFreeShippingThreshold"
+                type="number"
+                inputMode="decimal"
+                min={1}
+                step="1"
+                defaultValue={config.allyFreeShippingThreshold}
+                className={inputClass}
+              />
+            </Field>
+          </div>
+          <p className="mt-2 text-xs text-carbon/50">
+            Aplica a las cuentas de aliado, en cualquiera de las dos opciones de envío, con el mismo cálculo de arriba (subtotal de
+            productos ya con descuentos). Si el envío gratis para todos está prendido con un monto menor, el aliado recibe el más
+            bajo de los dos.
           </p>
         </fieldset>
 

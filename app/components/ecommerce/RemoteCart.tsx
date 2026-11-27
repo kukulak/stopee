@@ -30,11 +30,15 @@ export function RemoteCart({ open, onClose }: { open: boolean; onClose: () => vo
           discountLabel={cart.discountLabel}
           coupon={cart.coupon}
           couponNotice={cart.couponNotice}
+          discountNotice={cart.discountNotice}
           gifts={cart.gifts}
           shipping={cart.shipping}
           deliveryZone={cart.deliveryZone}
           addressDefaults={cart.addressDefaults}
           addressBook={cart.addressBook}
+          billingDefaults={cart.billingDefaults}
+          invoiceEmail={cart.invoiceEmail}
+          signedIn={cart.signedIn}
           onClose={onClose}
         />
       ) : (

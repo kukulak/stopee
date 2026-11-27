@@ -34,6 +34,10 @@ export type ShippingConfig = {
   freeShippingEnabled: boolean;
   /** Subtotal (ya con descuentos) a partir del cual el envío es gratis. */
   freeShippingThreshold: number;
+  /** Envío gratis para Puntos de Recarga (aliados): tiene su propio interruptor, independiente del de clientes. */
+  allyFreeShippingEnabled: boolean;
+  /** Subtotal a partir del cual el envío es gratis para un aliado. */
+  allyFreeShippingThreshold: number;
   /** Dónde se entrega: fuera de estos códigos postales no se puede pagar (ver ~/lib/deliveryZone). */
   zone: DeliveryZone;
 };
@@ -82,6 +86,8 @@ export const DEFAULT_SHIPPING_CONFIG: ShippingConfig = {
   },
   freeShippingEnabled: false,
   freeShippingThreshold: 599,
+  allyFreeShippingEnabled: true,
+  allyFreeShippingThreshold: 1699,
   zone: DEFAULT_DELIVERY_ZONE,
 };
 
@@ -105,6 +111,8 @@ const shippingSettingsSchema = new Schema(
     home: { type: methodSchema },
     freeShippingEnabled: { type: Boolean, default: false },
     freeShippingThreshold: { type: Number, min: 0, default: 599 },
+    allyFreeShippingEnabled: { type: Boolean, default: true },
+    allyFreeShippingThreshold: { type: Number, min: 0, default: 1699 },
     zoneName: { type: String, trim: true, maxlength: 80 },
     zonePostalRanges: { type: String, trim: true, maxlength: 2000 },
   },
@@ -112,6 +120,12 @@ const shippingSettingsSchema = new Schema(
 );
 
 export type ShippingSettingsDoc = InferSchemaType<typeof shippingSettingsSchema>;
+
+// En desarrollo se re-registra el modelo en cada recarga: si no, mongoose conserva el esquema viejo y descarta en
+// silencio los campos nuevos al guardar (igual que en Product, User y AllyRequest).
+if (process.env.NODE_ENV !== "production" && models.ShippingSettings) {
+  mongoose.deleteModel("ShippingSettings");
+}
 
 export const ShippingSettingsModel =
   (models.ShippingSettings as Model<ShippingSettingsDoc>) ??
@@ -153,6 +167,8 @@ export async function getShippingConfig(): Promise<ShippingConfig> {
     },
     freeShippingEnabled: stored?.freeShippingEnabled ?? DEFAULT_SHIPPING_CONFIG.freeShippingEnabled,
     freeShippingThreshold: stored?.freeShippingThreshold ?? DEFAULT_SHIPPING_CONFIG.freeShippingThreshold,
+    allyFreeShippingEnabled: stored?.allyFreeShippingEnabled ?? DEFAULT_SHIPPING_CONFIG.allyFreeShippingEnabled,
+    allyFreeShippingThreshold: stored?.allyFreeShippingThreshold ?? DEFAULT_SHIPPING_CONFIG.allyFreeShippingThreshold,
     zone: mergeZone(stored?.zoneName, stored?.zonePostalRanges),
   };
 }
@@ -181,6 +197,8 @@ export async function saveShippingConfig(config: ShippingConfig) {
         home: config.methods.home,
         freeShippingEnabled: config.freeShippingEnabled,
         freeShippingThreshold: config.freeShippingThreshold,
+        allyFreeShippingEnabled: config.allyFreeShippingEnabled,
+        allyFreeShippingThreshold: config.allyFreeShippingThreshold,
         zoneName: config.zone.name,
         zonePostalRanges: config.zone.postalRanges,
       },
@@ -214,22 +232,30 @@ export type ShippingQuote = {
 };
 
 /**
- * Función pura: dado el subtotal de PRODUCTOS (ya con descuento, sin envío) y
- * el método que eligió el cliente, devuelve lo que se ofrece y se cobra. La
- * usan el carrito (para mostrarlo) y el checkout (para cobrarlo), así nunca
- * pueden diferir.
+ * Función pura: dado el subtotal de PRODUCTOS (ya con descuento, sin envío), el
+ * método que eligió el cliente y si quien compra es un Punto de Recarga, devuelve
+ * lo que se ofrece y se cobra. La usan el carrito (para mostrarlo) y el checkout
+ * (para cobrarlo), así nunca pueden diferir.
+ *
+ * Meta de envío gratis: la de clientes (si está prendida) y, para un aliado, la
+ * suya (si está prendida). Un aliado cuenta con las dos y gana la más baja,
+ * para que una promoción abierta a todos nunca le salga peor que a un cliente.
  */
 export function buildShippingQuote(
   config: ShippingConfig,
   subtotalMxn: number,
   selectedId?: string | null,
+  viewer: { isAlly?: boolean } = {},
 ): ShippingQuote {
   if (!config.isEnabled) {
     return { enabled: false, options: [], selected: null, freeThreshold: null, freeRemaining: null };
   }
 
-  const qualifiesForFree =
-    config.freeShippingEnabled && config.freeShippingThreshold > 0 && subtotalMxn >= config.freeShippingThreshold;
+  const goals: number[] = [];
+  if (config.freeShippingEnabled && config.freeShippingThreshold > 0) goals.push(config.freeShippingThreshold);
+  if (viewer.isAlly && config.allyFreeShippingEnabled && config.allyFreeShippingThreshold > 0) goals.push(config.allyFreeShippingThreshold);
+  const freeGoal = goals.length > 0 ? Math.min(...goals) : null;
+  const qualifiesForFree = freeGoal !== null && subtotalMxn >= freeGoal;
 
   const options: ShippingOption[] = SHIPPING_METHOD_IDS.filter((id) => config.methods[id].isActive).map((id) => {
     const method = config.methods[id];
@@ -244,20 +270,16 @@ export function buildShippingQuote(
   });
 
   const selected = options.find((option) => option.id === selectedId) ?? options[0] ?? null;
-  const showsFreeShippingGoal = config.freeShippingEnabled && config.freeShippingThreshold > 0;
 
   return {
     enabled: true,
     options,
     selected,
-    freeThreshold: showsFreeShippingGoal ? config.freeShippingThreshold : null,
-    freeRemaining:
-      showsFreeShippingGoal && !qualifiesForFree && subtotalMxn > 0
-        ? Math.max(0, config.freeShippingThreshold - subtotalMxn)
-        : null,
+    freeThreshold: freeGoal,
+    freeRemaining: freeGoal !== null && !qualifiesForFree && subtotalMxn > 0 ? Math.max(0, freeGoal - subtotalMxn) : null,
   };
 }
 
-export async function getShippingQuote(subtotalMxn: number, selectedId?: string | null) {
-  return buildShippingQuote(await getShippingConfig(), subtotalMxn, selectedId);
+export async function getShippingQuote(subtotalMxn: number, selectedId?: string | null, viewer: { isAlly?: boolean } = {}) {
+  return buildShippingQuote(await getShippingConfig(), subtotalMxn, selectedId, viewer);
 }

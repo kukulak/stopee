@@ -530,11 +530,20 @@ describe.skipIf(!hasTestDb)("ir a pagar", () => {
       expect(sent.metadata.giftSku).toBe("ATOM");
     });
 
-    it("el cupón del cliente gana sobre la promoción automática (no se suman)", async () => {
+    it("el cupón y la promoción automática no se suman: gana la que más descuenta", async () => {
       await makeCoupon({}, {});
       await makeRequirement({ condition: "product_in_cart", targetSku: "CONC-1L", minQuantity: 1, rewardDiscountPercentage: 30 });
       await pay({ items: [{ sku: "CONC-1L", quantity: 1 }], couponCode: "VERANO10" });
-      expect(percentOff()).toBe(10);
+      expect(percentOff()).toBe(30);
+      expect(charged().metadata.promotionType).toBe("by_requirement");
+
+      // Si el cupón es el mejor, gana el cupón.
+      createSession.mockClear();
+      createCoupon.mockClear();
+      await PromotionModel.updateOne({ type: "coupon" }, { "coupon.percentage": 40 });
+      await pay({ items: [{ sku: "CONC-1L", quantity: 1 }], couponCode: "VERANO10" });
+      expect(percentOff()).toBe(40);
+      expect(charged().metadata.promotionType).toBe("coupon");
     });
 
     it("la promoción de primera compra solo aplica a quien tiene cuenta y no ha comprado", async () => {
@@ -551,6 +560,294 @@ describe.skipIf(!hasTestDb)("ir a pagar", () => {
       createSession.mockClear();
       await pay({ items: [{ sku: "CONC-1L", quantity: 1 }] }, { user: nuevo._id });
       expect(percentOff()).toBe(20);
+    });
+  });
+
+  describe("descuentos que se aplican solos", () => {
+    const makeAuto = (percentage: number, rules: Record<string, unknown> = {}, extra: Record<string, unknown> = {}) =>
+      PromotionModel.create({
+        name: "Apertura",
+        type: "coupon",
+        isActive: true,
+        coupon: { autoApply: true, percentage, forCustomers: true, forAllies: false, ...rules },
+        ...extra,
+      });
+
+    it("se aplica sin escribir nada y queda anotada en el pedido", async () => {
+      await makeAuto(10);
+      await pay({ items: [{ sku: "CONC-1L", quantity: 1 }] });
+      expect(percentOff()).toBe(10);
+      expect(charged().metadata.promotionName).toBe("Apertura");
+      expect(charged().metadata.promotionType).toBe("coupon");
+    });
+
+    it("compite con el cupón escrito: gana el que más descuenta, sin sumarse", async () => {
+      await makeAuto(10);
+      await makeCoupon({ percentage: 5 }, {});
+      await pay({ items: [{ sku: "CONC-1L", quantity: 1 }], couponCode: "VERANO10" });
+      expect(percentOff()).toBe(10);
+      expect(charged().metadata.promotionName).toBe("Apertura");
+
+      createSession.mockClear();
+      createCoupon.mockClear();
+      await PromotionModel.updateOne({ "coupon.code": "VERANO10" }, { "coupon.percentage": 15 });
+      await pay({ items: [{ sku: "CONC-1L", quantity: 1 }], couponCode: "VERANO10" });
+      expect(percentOff()).toBe(15);
+      expect(charged().metadata.promotionName).toBe("Cupón de prueba");
+    });
+
+    it("con empate gana el cupón que el cliente escribió", async () => {
+      await makeAuto(10);
+      await makeCoupon({ percentage: 10 }, {});
+      await pay({ items: [{ sku: "CONC-1L", quantity: 1 }], couponCode: "VERANO10" });
+      expect(charged().metadata.promotionName).toBe("Cupón de prueba");
+    });
+
+    it("respeta a quién va dirigido: uno solo para clientes no le toca a un aliado", async () => {
+      await makeAuto(10);
+      const ally = await makeUser({ email: "aliado@correo.com", isRefillAlly: true, allyStation: { businessName: "Vet" } });
+      await pay({ items: [{ sku: "CONC-1L", quantity: 1 }] }, { user: ally._id });
+      expect(createCoupon).not.toHaveBeenCalled();
+
+      await PromotionModel.updateOne({ type: "coupon" }, { "coupon.forAllies": true });
+      createSession.mockClear();
+      await pay({ items: [{ sku: "CONC-1L", quantity: 1 }] }, { user: ally._id });
+      expect(percentOff()).toBe(10);
+    });
+
+    it("no aplica si venció, si ya se agotaron sus usos o si el carrito no cumple sus reglas", async () => {
+      await makeAuto(10, {}, { endsAt: new Date(Date.now() - 86_400_000) });
+      await pay({ items: [{ sku: "CONC-1L", quantity: 1 }] });
+      expect(createCoupon).not.toHaveBeenCalled();
+
+      await PromotionModel.deleteMany({});
+      await makeAuto(10, {}, { usageLimit: 3, timesUsed: 3 });
+      createSession.mockClear();
+      await pay({ items: [{ sku: "CONC-1L", quantity: 1 }] });
+      expect(createCoupon).not.toHaveBeenCalled();
+
+      await PromotionModel.deleteMany({});
+      await makeAuto(10, { minSpendMxn: 1000 });
+      createSession.mockClear();
+      await pay({ items: [{ sku: "CONC-1L", quantity: 1 }] }); // $399 < $1,000
+      expect(createCoupon).not.toHaveBeenCalled();
+      createSession.mockClear();
+      await pay({ items: [{ sku: "CONC-1L", quantity: 3 }] }); // $1,197
+      expect(percentOff()).toBe(10);
+    });
+
+    it("si la recompensa de lealtad es menor, no se gasta: queda para la siguiente compra", async () => {
+      await makeAuto(10);
+      const user = await makeUser({ loyaltyPendingReward: { rewardType: "discount", percentage: 5 } });
+      await pay({ items: [{ sku: "CONC-1L", quantity: 1 }] }, { user: user._id });
+      expect(percentOff()).toBe(10);
+      expect(charged().metadata.usedLoyaltyReward).toBe("false");
+    });
+
+    it("el carrito explica qué se aplicó y por qué", async () => {
+      const { loader: cartLoader } = (await import("~/routes/api.carrito")) as never as { loader: Action };
+      const view = async (cart: Cart, user?: unknown) => {
+        const cookies = [await cartCookie(cart)];
+        if (user) cookies.push(await loginCookie(user));
+        const res = await asResponse(cartLoader)({
+          request: new Request("https://stopee.test/api/carrito", { headers: { cookie: cookies.join("; ") } }),
+          params: {},
+          context: {},
+        });
+        return (await res.json()) as {
+          discountPercent: number;
+          discountLabel: string;
+          coupon: { code: string } | null;
+          couponNotice: { code: string; heading?: string; message: string } | null;
+          discountNotice: string | null;
+        };
+      };
+
+      await makeAuto(10);
+      await makeCoupon({ percentage: 5 }, {});
+      const user = await makeUser({ loyaltyPendingReward: { rewardType: "discount", percentage: 7 } });
+      const cart = await view({ items: [{ sku: "CONC-1L", quantity: 1 }], couponCode: "VERANO10" }, user._id);
+
+      expect(cart.discountPercent).toBe(10);
+      expect(cart.discountLabel).toBe("Apertura");
+      expect(cart.coupon).toBeNull();
+      expect(cart.couponNotice?.heading).toMatch(/VERANO10 guardado/);
+      expect(cart.couponNotice?.message).toMatch(/Apertura \(10%\).*no se suman/);
+      expect(cart.discountNotice).toMatch(/lealtad \(7%\).*siguiente compra/);
+    });
+
+    it("una promoción que «termina hoy» sigue valiendo hoy, y una que terminó ayer ya no", async () => {
+      const { endOfDayMx } = await import("~/lib/promotionDates");
+      const day = (offset: number) => new Date(Date.now() + offset * 86_400_000 - 6 * 3_600_000).toISOString().slice(0, 10);
+      await makeAuto(10, {}, { endsAt: endOfDayMx(day(0)) });
+      await pay({ items: [{ sku: "CONC-1L", quantity: 1 }] });
+      expect(percentOff()).toBe(10);
+
+      await PromotionModel.deleteMany({});
+      await makeAuto(10, {}, { endsAt: endOfDayMx(day(-1)) });
+      createSession.mockClear();
+      createCoupon.mockClear();
+      await pay({ items: [{ sku: "CONC-1L", quantity: 1 }] });
+      expect(createCoupon).not.toHaveBeenCalled();
+    });
+
+    it("en el admin, las fechas se guardan como días completos y el fin no puede ser antes del inicio", async () => {
+      const { buildPromotionDocFromFormData } = await import("~/lib/promotionForm.server");
+      const form = (fields: Record<string, string>) => {
+        const f = new FormData();
+        for (const [k, v] of Object.entries({ name: "Apertura", type: "coupon", percentage: "10", couponForCustomers: "on", couponAutoApply: "on", ...fields })) f.set(k, v);
+        return f;
+      };
+      const ok = await buildPromotionDocFromFormData(form({ startsAt: "2026-11-26", endsAt: "2026-11-27" }));
+      expect(ok.ok).toBe(true);
+      if (ok.ok) {
+        expect((ok.doc.startsAt as Date).toISOString()).toBe("2026-11-26T06:00:00.000Z");
+        expect((ok.doc.endsAt as Date).toISOString()).toBe("2026-11-28T05:59:59.999Z");
+      }
+      expect((await buildPromotionDocFromFormData(form({ startsAt: "2026-11-27", endsAt: "2026-11-26" }))).ok).toBe(false);
+      expect((await buildPromotionDocFromFormData(form({ endsAt: "mañana" }))).ok).toBe(false);
+    });
+
+    it("en el admin, el código es opcional solo si el cupón se aplica solo", async () => {
+      const { buildPromotionDocFromFormData } = await import("~/lib/promotionForm.server");
+      const form = (fields: Record<string, string>) => {
+        const f = new FormData();
+        for (const [k, v] of Object.entries({ name: "Apertura", type: "coupon", percentage: "10", couponForCustomers: "on", ...fields })) f.set(k, v);
+        return f;
+      };
+      const sinCodigo = await buildPromotionDocFromFormData(form({}));
+      expect(sinCodigo.ok).toBe(false);
+
+      const auto = await buildPromotionDocFromFormData(form({ couponAutoApply: "on" }));
+      expect(auto.ok).toBe(true);
+      if (auto.ok) expect(auto.doc.coupon).toMatchObject({ autoApply: true, code: "" });
+
+      const sinPorcentaje = await buildPromotionDocFromFormData(form({ couponAutoApply: "on", percentage: "" }));
+      expect(sinPorcentaje.ok).toBe(false);
+    });
+  });
+
+  describe("IVA y factura (CFDI)", () => {
+    const FACTURA: Record<string, string> = {
+      invoiceRequested: "on",
+      invRfc: "pelj-800101 ab1",
+      invRazonSocial: "juan pérez lópez",
+      invRegimen: "612",
+      invCp: "03100",
+      invUso: "G03",
+    };
+
+    it("Stripe NO agrega impuestos encima: los precios ya traen el IVA", async () => {
+      await pay({ items: [{ sku: "CONC-1L", quantity: 1 }], shippingMethod: "home" });
+      const sent = charged() as unknown as Record<string, unknown> & { line_items: Record<string, unknown>[] };
+      expect(sent.automatic_tax).toBeUndefined();
+      expect(sent.tax_id_collection).toBeUndefined();
+      for (const line of sent.line_items) {
+        expect(line.tax_rates).toBeUndefined();
+        expect(line.dynamic_tax_rates).toBeUndefined();
+      }
+      expect(JSON.stringify(sent)).not.toMatch(/tax_behavior|"tax_rates"|automatic_tax/);
+      // Se cobra exactamente el precio de catálogo.
+      expect(sent.line_items[0]).toMatchObject({ price_data: { unit_amount: 39900 } });
+    });
+
+    it("pedir factura no cambia el precio y manda los datos limpios en la metadata", async () => {
+      await pay({ items: [{ sku: "CONC-1L", quantity: 2 }] });
+      const sinFactura = charged();
+      createSession.mockClear();
+
+      const r = await pay({ items: [{ sku: "CONC-1L", quantity: 2 }] }, { body: FACTURA });
+      expect(r.status).toBe(302); // a la pantalla de pago de Stripe
+      const conFactura = charged();
+      expect(conFactura.line_items).toEqual(sinFactura.line_items);
+      expect(conFactura.shipping_options).toEqual(sinFactura.shipping_options);
+      expect(conFactura.metadata).toMatchObject({
+        invoiceRequested: "true",
+        invRfc: "PELJ800101AB1", // acepta minúsculas, espacios y guiones
+        invRazonSocial: "JUAN PÉREZ LÓPEZ",
+        invRegimen: "612",
+        invCp: "03100",
+        invUso: "G03",
+      });
+      expect(sinFactura.metadata.invoiceRequested).toBeUndefined();
+    });
+
+    it("sin marcar la casilla, los campos fiscales sueltos se ignoran", async () => {
+      await pay({ items: [{ sku: "CONC-1L", quantity: 1 }] }, { body: { ...FACTURA, invoiceRequested: "" } });
+      expect(charged().metadata.invoiceRequested).toBeUndefined();
+      expect(charged().metadata.invRfc).toBeUndefined();
+    });
+
+    it("datos fiscales mal escritos: 400 con el error de cada campo, y nada llega a Stripe", async () => {
+      const r = await pay(
+        { items: [{ sku: "CONC-1L", quantity: 1 }] },
+        { body: { ...FACTURA, invRfc: "123", invCp: "31", invRegimen: "" } },
+      );
+      expect(r.status).toBe(400);
+      const body = (await r.json()) as { error: string; invoiceErrors: Record<string, string> };
+      expect(body.error).toMatch(/desmarca «Requiero factura»/);
+      expect(Object.keys(body.invoiceErrors).sort()).toEqual(["codigoPostalFiscal", "regimenFiscal", "rfc"]);
+      expect(createSession).not.toHaveBeenCalled();
+    });
+
+    it("un régimen de empresa con RFC de persona física se rechaza", async () => {
+      const r = await pay({ items: [{ sku: "CONC-1L", quantity: 1 }] }, { body: { ...FACTURA, invRegimen: "601" } });
+      expect(r.status).toBe(400);
+      expect(((await r.json()) as { invoiceErrors: Record<string, string> }).invoiceErrors.regimenFiscal).toMatch(/empresas/);
+    });
+
+    it("un invitado puede pedir factura (no se guarda nada en ninguna cuenta)", async () => {
+      const r = await pay({ items: [{ sku: "CONC-1L", quantity: 1 }] }, { body: FACTURA });
+      expect(r.status).toBe(302);
+      expect(await UserModel.countDocuments()).toBe(0);
+    });
+
+    it("con sesión, «guardar en mi cuenta» deja los datos en el perfil; sin pedirlo, no", async () => {
+      const user = await makeUser();
+      await pay({ items: [{ sku: "CONC-1L", quantity: 1 }] }, { user: user._id, body: FACTURA });
+      expect((await UserModel.findById(user._id).lean())!.billingInfo).toBeUndefined();
+
+      createSession.mockClear();
+      await pay({ items: [{ sku: "CONC-1L", quantity: 1 }] }, { user: user._id, body: { ...FACTURA, invSave: "on" } });
+      expect((await UserModel.findById(user._id).lean())!.billingInfo).toMatchObject({
+        rfc: "PELJ800101AB1",
+        razonSocial: "JUAN PÉREZ LÓPEZ",
+        regimenFiscal: "612",
+        codigoPostalFiscal: "03100",
+        usoCfdi: "G03",
+      });
+    });
+
+    it("datos inválidos no se guardan en el perfil aunque pidan guardarlos", async () => {
+      const user = await makeUser();
+      await pay({ items: [{ sku: "CONC-1L", quantity: 1 }] }, { user: user._id, body: { ...FACTURA, invRfc: "mal", invSave: "on" } });
+      expect((await UserModel.findById(user._id).lean())!.billingInfo).toBeUndefined();
+    });
+
+    it("el carrito precarga los datos guardados y explica cómo pedir factura después", async () => {
+      const { updateLegalSettings } = await import("~/models/legalSettings.server");
+      await updateLegalSettings({ correoFacturacion: "facturas@stopee.test" });
+      const user = await makeUser({
+        billingInfo: { rfc: "PELJ800101AB1", razonSocial: "JUAN PÉREZ LÓPEZ", regimenFiscal: "612", codigoPostalFiscal: "03100", usoCfdi: "G03" },
+      });
+      const { loader: cartLoader } = (await import("~/routes/api.carrito")) as never as { loader: Action };
+      const view = async (withUser: boolean) => {
+        const cookies = [await cartCookie({ items: [{ sku: "CONC-1L", quantity: 1 }] })];
+        if (withUser) cookies.push(await loginCookie(user._id));
+        const res = await asResponse(cartLoader)({
+          request: new Request("https://stopee.test/api/carrito", { headers: { cookie: cookies.join("; ") } }),
+          params: {},
+          context: {},
+        });
+        return (await res.json()) as { billingDefaults: { rfc: string } | null; invoiceEmail: string; signedIn: boolean };
+      };
+      const logged = await view(true);
+      expect(logged.billingDefaults?.rfc).toBe("PELJ800101AB1");
+      expect(logged.signedIn).toBe(true);
+      expect(logged.invoiceEmail).toBe("facturas@stopee.test");
+      const guest = await view(false);
+      expect(guest.billingDefaults).toBeNull();
+      expect(guest.signedIn).toBe(false);
     });
   });
 
@@ -571,12 +868,22 @@ describe.skipIf(!hasTestDb)("ir a pagar", () => {
       expect(charged().metadata.usedLoyaltyReward).toBe("true");
     });
 
-    it("un cupón normal no se combina con el premio de lealtad (el premio se conserva)", async () => {
+    it("un cupón normal no se combina con el premio de lealtad: si el cupón es mejor, el premio se conserva", async () => {
+      await makeCoupon({}, {});
+      await PromotionModel.updateOne({ type: "coupon" }, { "coupon.percentage": 15 });
+      const user = await makeUser({ loyaltyPendingReward: { rewardType: "discount", percentage: 12 } });
+      await pay({ items: [{ sku: "CONC-1L", quantity: 1 }], couponCode: "VERANO10" }, { user: user._id });
+      expect(percentOff()).toBe(15);
+      expect(charged().metadata.usedLoyaltyReward).toBe("false");
+    });
+
+    it("si el premio de lealtad es mejor que el cupón, se usa el premio y el cupón no descuenta", async () => {
       await makeCoupon();
       const user = await makeUser({ loyaltyPendingReward: { rewardType: "discount", percentage: 12 } });
       await pay({ items: [{ sku: "CONC-1L", quantity: 1 }], couponCode: "VERANO10" }, { user: user._id });
-      expect(percentOff()).toBe(10);
-      expect(charged().metadata.usedLoyaltyReward).toBe("false");
+      expect(percentOff()).toBe(12);
+      expect(charged().metadata.usedLoyaltyReward).toBe("true");
+      expect(charged().metadata.promotionType).toBe("loyalty");
     });
 
     it("un cupón marcado como acumulable sí se suma, con descuentos encadenados (10% y 12% = 21%)", async () => {
@@ -631,6 +938,141 @@ describe.skipIf(!hasTestDb)("ir a pagar", () => {
       await PromotionModel.updateMany({}, { "coupon.percentage": 20 });
       await pay({ items: [{ sku: "CONC-1L", quantity: 2 }], couponCode: "VERANO10" });
       expect(shippingAmount()).toBe(6900);
+    });
+
+    describe("envío gratis para Puntos de Recarga", () => {
+      // Concentrado 1L cuesta $399: 2 pzas = $798 (no llega), 3 pzas = $1,197 (llega).
+      const allyShipping = (changes: Record<string, unknown> = {}) =>
+        shipping({ freeShippingEnabled: false, allyFreeShippingThreshold: 1000, ...changes });
+      const makeAlly = () => makeUser({ isRefillAlly: true, allyStation: { businessName: "Vet", neighborhood: "Roma" } });
+
+      it("un aliado paga envío gratis al llegar a su monto, aunque el envío gratis de clientes esté apagado", async () => {
+        await allyShipping();
+        const ally = await makeAlly();
+
+        await pay({ items: [{ sku: "CONC-1L", quantity: 3 }] }, { user: ally._id });
+        expect(shippingAmount()).toBe(0);
+        expect(charged().metadata.shippingCost).toBe("0");
+        expect(charged().shipping_options![0].shipping_rate_data.display_name).toMatch(/gratis/);
+
+        // También el envío a domicilio (la opción cara) sale gratis.
+        createSession.mockClear();
+        await pay({ items: [{ sku: "CONC-1L", quantity: 3 }], shippingMethod: "home" }, { user: ally._id });
+        expect(shippingAmount()).toBe(0);
+        expect(charged().metadata.shippingMethod).toBe("home");
+      });
+
+      it("con el interruptor de aliados apagado, el mismo carrito de aliado paga envío", async () => {
+        await allyShipping({ allyFreeShippingEnabled: false });
+        const ally = await makeAlly();
+        await pay({ items: [{ sku: "CONC-1L", quantity: 3 }] }, { user: ally._id });
+        expect(shippingAmount()).toBe(6900);
+      });
+
+      it("un aliado que no llega a su monto paga el envío normal", async () => {
+        await allyShipping();
+        const ally = await makeAlly();
+        await pay({ items: [{ sku: "CONC-1L", quantity: 2 }] }, { user: ally._id });
+        expect(shippingAmount()).toBe(6900);
+      });
+
+      it("un cliente normal con el mismo carrito sigue pagando envío: el monto de aliados no es para todos", async () => {
+        await allyShipping();
+        const customer = await makeUser();
+
+        await pay({ items: [{ sku: "CONC-1L", quantity: 3 }] }, { user: customer._id });
+        expect(shippingAmount()).toBe(6900);
+
+        createSession.mockClear();
+        await pay({ items: [{ sku: "CONC-1L", quantity: 3 }] }); // sin sesión
+        expect(shippingAmount()).toBe(6900);
+      });
+
+      it("una cuenta que dejó de ser aliado pierde el envío gratis al instante (se lee de la base, no de la cookie)", async () => {
+        await allyShipping();
+        const ally = await makeAlly();
+        const cookie = ally._id;
+        await UserModel.updateOne({ _id: ally._id }, { $set: { isRefillAlly: false } });
+        await pay({ items: [{ sku: "CONC-1L", quantity: 3 }] }, { user: cookie });
+        expect(shippingAmount()).toBe(6900);
+      });
+
+      it("se mide sobre el subtotal ya con descuento", async () => {
+        await allyShipping();
+        const ally = await makeAlly();
+        await makeCoupon({ forAllies: true });
+        await PromotionModel.updateMany({}, { "coupon.percentage": 30 });
+        // $1,197 con 30% de descuento queda en $838: bajo el monto de $1,000.
+        await pay({ items: [{ sku: "CONC-1L", quantity: 3 }], couponCode: "VERANO10" }, { user: ally._id });
+        expect(shippingAmount()).toBe(6900);
+      });
+
+      it("el monto de aliados se edita en Admin > Envíos, exige un número mayor a cero y solo lo guarda un admin", async () => {
+        const { action: adminShipping } = (await import("~/routes/admin.shipping")) as never as { action: Action };
+        const { getShippingConfig } = await import("~/models/shipping.server");
+        const admin = await makeUser({ email: "admin@correo.com", role: "admin", twoFactor: { enabledAt: new Date() } });
+        const s = await sessionStorage.getSession();
+        s.set("userId", String(admin._id));
+        s.set("iat", Date.now());
+        s.set("mfa", true);
+        const adminCookie = (await sessionStorage.commitSession(s)).split(";")[0];
+
+        const base = DEFAULT_SHIPPING_CONFIG;
+        const form = (over: Record<string, string> = {}) => ({
+          isEnabled: "on",
+          pickup_label: base.methods.pickup.label,
+          pickup_cost: "69",
+          pickup_active: "on",
+          home_label: base.methods.home.label,
+          home_cost: "150",
+          home_active: "on",
+          zoneName: base.zone.name,
+          zonePostalRanges: base.zone.postalRanges,
+          allyFreeShippingEnabled: "on",
+          allyFreeShippingThreshold: "1699",
+          ...over,
+        });
+        const send = (fields: Record<string, string>, cookie?: string) =>
+          asResponse(adminShipping)({
+            request: new Request("https://stopee.test/admin/shipping", {
+              method: "POST",
+              headers: { ...(cookie ? { cookie } : {}), origin: "https://stopee.test" },
+              body: new URLSearchParams(fields),
+            }),
+            params: {},
+            context: {},
+          });
+
+        expect((await send(form({ allyFreeShippingThreshold: "2100" }), adminCookie)).status).toBe(200);
+        expect((await getShippingConfig()).allyFreeShippingThreshold).toBe(2100);
+
+        for (const bad of ["", "0", "-5", "mucho"]) {
+          const r = await send(form({ allyFreeShippingThreshold: bad }), adminCookie);
+          expect(r.status).toBe(400);
+          expect((await getShippingConfig()).allyFreeShippingThreshold).toBe(2100);
+        }
+
+        // Apagado, el monto puede ir vacío y se conserva el que había.
+        const off = form({ allyFreeShippingThreshold: "" });
+        delete (off as Record<string, string>).allyFreeShippingEnabled;
+        expect((await send(off, adminCookie)).status).toBe(200);
+        const saved = await getShippingConfig();
+        expect(saved.allyFreeShippingEnabled).toBe(false);
+        expect(saved.allyFreeShippingThreshold).toBe(2100);
+
+        // Sin sesión de admin no se cambia nada.
+        const anon = await outcomeOf(() => send(form({ allyFreeShippingThreshold: "5" })));
+        expect(anon.status).not.toBe(200);
+        expect((await getShippingConfig()).allyFreeShippingThreshold).toBe(2100);
+        expect((await getShippingConfig()).allyFreeShippingEnabled).toBe(false);
+      });
+
+      it("si el envío gratis de clientes tiene un monto menor, el aliado recibe ese (el más bajo de los dos)", async () => {
+        await allyShipping({ freeShippingEnabled: true, freeShippingThreshold: 700 });
+        const ally = await makeAlly();
+        await pay({ items: [{ sku: "CONC-1L", quantity: 2 }] }, { user: ally._id }); // $798 >= $700
+        expect(shippingAmount()).toBe(0);
+      });
     });
 
     it("el envío se cobra aparte: no entra en los renglones ni lo descuenta un cupón", async () => {

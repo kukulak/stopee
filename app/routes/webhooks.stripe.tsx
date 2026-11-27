@@ -17,6 +17,8 @@ import { sendEmail } from "~/lib/mail.server";
 import { frequencyLabel } from "~/lib/subscriptionConfig";
 import { rememberDeliveryAddress } from "~/lib/addressBook.server";
 import { addressFromMetadata } from "~/lib/deliveryAddress";
+import { billingFromMetadata, orderNumber } from "~/lib/fiscal";
+import { getInvoiceRequestEmail } from "~/models/legalSettings.server";
 import { isPostalCodeInZone } from "~/lib/deliveryZone";
 import { getShippingConfig } from "~/models/shipping.server";
 import { logError, logWarn } from "~/lib/logger.server";
@@ -172,12 +174,17 @@ const NO_EFFECTS_YET = {
  */
 async function sendOrderConfirmation(
   order: { _id: unknown; email: string },
-  data: Parameters<typeof orderConfirmationEmail>[0],
+  data: Omit<Parameters<typeof orderConfirmationEmail>[0], "orderNumber" | "invoiceEmail">,
 ) {
   if (!order.email || order.email === "desconocido@stopee.com.mx") return;
   if (!(await claimEffect(order._id, "confirmationEmail"))) return;
   try {
-    const result = await sendEmail({ to: { email: order.email }, ...orderConfirmationEmail(data) });
+    const mail = orderConfirmationEmail({
+      ...data,
+      orderNumber: orderNumber(order._id),
+      invoiceEmail: await getInvoiceRequestEmail(),
+    });
+    const result = await sendEmail({ to: { email: order.email }, ...mail });
     if (!result.ok) throw new Error(`correo no enviado: ${result.reason}`);
   } catch (error) {
     logError("webhook.confirmation-email", error, { orderId: String(order._id) });
@@ -331,6 +338,8 @@ async function handleOneTimeCheckoutCompleted(session: Stripe.Checkout.Session) 
   const user = userId && userId !== "guest" ? await UserModel.findById(userId) : null;
 
   const appliedPromotion = readAppliedPromotion(session.metadata ?? null);
+  // «Requiero factura»: los datos ya vienen validados desde el pago (api.checkout) y viajan en la metadata.
+  const billingInfo = billingFromMetadata(session.metadata);
 
   const order = await createOrderOnce({
     user: user?._id,
@@ -348,6 +357,8 @@ async function handleOneTimeCheckoutCompleted(session: Stripe.Checkout.Session) 
     shippingMethodLabel,
     shippingFree,
     shippingAddress,
+    requiresInvoice: Boolean(billingInfo),
+    ...(billingInfo ? { billingInfo } : {}),
     type: "one_time",
     status: "paid",
     countsTowardLoyalty: true,
@@ -378,6 +389,7 @@ async function handleOneTimeCheckoutCompleted(session: Stripe.Checkout.Session) 
     shippingFree,
     destination: shippingAddress ? [shippingAddress.city, shippingAddress.state].filter(Boolean).join(", ") : "",
     hasAccount: Boolean(user),
+    invoiceRfc: billingInfo?.rfc,
   });
 }
 

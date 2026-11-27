@@ -33,6 +33,8 @@ import { firstNameOf } from "~/lib/names";
 import { describeLoyaltyReward, resolveLoyaltyTier } from "~/lib/loyalty";
 import { AddressBookCard } from "~/components/account/AddressBookCard";
 import { AllyCard } from "~/components/account/AllyCard";
+import { BillingCard } from "~/components/account/BillingCard";
+import { orderNumber, validateBillingInfo } from "~/lib/fiscal";
 import { AllyRequestModel } from "~/models/allyRequest.server";
 import { ProductModel } from "~/models/product.server";
 import { cleanPlainText } from "~/lib/formGuard.server";
@@ -118,6 +120,15 @@ export async function loader({ request }: LoaderFunctionArgs) {
       phone: user.phone ?? "",
       address: user.address ?? {},
       addresses: addressOptionsFromProfile(user),
+      billing: user.billingInfo?.rfc
+        ? {
+            rfc: user.billingInfo.rfc,
+            razonSocial: user.billingInfo.razonSocial ?? "",
+            regimenFiscal: user.billingInfo.regimenFiscal ?? "",
+            codigoPostalFiscal: user.billingInfo.codigoPostalFiscal ?? "",
+            usoCfdi: user.billingInfo.usoCfdi ?? "G03",
+          }
+        : null,
       dogs: dogs.map((d) => ({ name: d.name, birthday: d.birthday ? new Date(d.birthday).toISOString().slice(0, 10) : "" })),
     },
     loyalty: {
@@ -140,6 +151,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
       shippingCost: o.shippingCost ?? 0,
       status: o.status,
       createdAt: o.createdAt,
+      number: orderNumber(o._id),
+      requiresInvoice: Boolean(o.requiresInvoice),
     })),
     subscriptions: subscriptions.map((s) => ({
       id: String(s._id),
@@ -175,6 +188,28 @@ export async function action({ request }: ActionFunctionArgs) {
       { ok: result.ok, savedIntent: intent, error: result.ok ? null : result.error },
       { status: result.ok ? 200 : 400 },
     );
+  }
+
+  if (intent === "billing-update" || intent === "billing-remove") {
+    if (intent === "billing-remove") {
+      await UserModel.updateOne({ _id: userId }, { $unset: { billingInfo: 1 } });
+      return data({ ok: true, savedIntent: "billing-remove" as const, error: null as string | null });
+    }
+    const parsed = validateBillingInfo({
+      rfc: formData.get("invRfc"),
+      razonSocial: formData.get("invRazonSocial"),
+      regimenFiscal: formData.get("invRegimen"),
+      codigoPostalFiscal: formData.get("invCp"),
+      usoCfdi: formData.get("invUso"),
+    });
+    if (!parsed.ok) {
+      return data(
+        { ok: false, savedIntent: "billing-update" as const, error: "Revisa los datos marcados en rojo.", errors: parsed.errors },
+        { status: 400 },
+      );
+    }
+    await UserModel.updateOne({ _id: userId }, { $set: { billingInfo: parsed.info } });
+    return data({ ok: true, savedIntent: "billing-update" as const, error: null as string | null });
   }
 
   if (intent === "ally-update") {
@@ -582,6 +617,8 @@ export default function Cuenta() {
 
           <AddressBookCard addresses={user.addresses} />
 
+          <BillingCard billing={user.billing} />
+
           {/* Fidelidad */}
           <div className="mt-8 rounded-3xl border border-lima/30 bg-bosque/5 p-6">
             <p className="font-display font-bold text-carbon">Programa de fidelidad</p>
@@ -747,9 +784,10 @@ export default function Cuenta() {
                           .join(", ")}
                       </p>
                       <p className="text-xs text-carbon/50">
-                        {new Date(order.createdAt).toLocaleDateString("es-MX")} ·{" "}
+                        Pedido {order.number} · {new Date(order.createdAt).toLocaleDateString("es-MX")} ·{" "}
                         {ORDER_STATUS_LABELS[order.status] ?? order.status}
                         {order.shippingCost > 0 && ` · Incluye envío $${order.shippingCost} MXN`}
+                        {order.requiresInvoice && " · Factura solicitada"}
                       </p>
                     </div>
                     <p className="font-display font-bold text-carbon">${order.netAmount} MXN</p>

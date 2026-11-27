@@ -13,6 +13,7 @@ Dependiendo de cómo interactúes con nosotros, podemos recabar:
 
 - **Datos de identificación y contacto:** nombre, correo electrónico, teléfono.
 - **Datos de envío:** nombre de quien recibe, teléfono y dirección de entrega (calle, alcaldía o municipio y código postal).
+- **Datos fiscales (solo si los capturas):** RFC, nombre o razón social, régimen fiscal, código postal fiscal y uso del CFDI, para emitir tu factura. Son opcionales: puedes comprar sin darlos.
 - **Aviso de cobertura:** si tu código postal está fuera de nuestra zona de entrega y nos dejas tu correo para avisarte cuando lleguemos, guardamos tu correo y tu código postal.
 - **Datos de tu(s) perro(s):** si decides agregarlos a tu cuenta (nombre, raza u otros datos que tú captures), únicamente para personalizar tu experiencia.
 - **Datos de pago:** no almacenamos los datos completos de tu tarjeta. El cobro lo procesa directamente Stripe, Inc., conforme a sus propias políticas de privacidad y seguridad (certificación PCI-DSS).
@@ -27,6 +28,7 @@ Dependiendo de cómo interactúes con nosotros, podemos recabar:
 - Gestionar tu cuenta, tu historial de compras y tu programa de lealtad.
 - Contactarte sobre el estado de tu pedido o para brindarte soporte.
 - Avisarte cuando lleguemos a tu zona, si nos pediste que lo hiciéramos, y saber en qué zonas hay más interés para decidir a dónde crecer.
+- Emitir tu factura (CFDI) cuando la solicitas.
 - Cumplir con obligaciones fiscales y legales.
 
 **Finalidades secundarias** (puedes oponerte sin que esto afecte tu compra):
@@ -190,6 +192,8 @@ const legalSettingsSchema = new Schema(
     razonSocial: { type: String, default: "" },
     direccionFiscal: { type: String, default: "" },
     correoContacto: { type: String, default: "" },
+    /** A dónde escribe quien necesita factura después de comprar. Vacío = se usa el correo de contacto. */
+    correoFacturacion: { type: String, default: "" },
     telefono: { type: String, default: "" },
     tiemposEnvio: { type: String, default: "" },
     politicaDevoluciones: { type: String, default: "" },
@@ -248,6 +252,19 @@ const getLegalSettingsCache = createTtlCache<Awaited<ReturnType<typeof getLegalS
 /** getLegalSettings con caché corta, para el layout raíz (que lo lee en cada petición). */
 export function getLegalSettingsCached() {
   return getLegalSettingsCache.get(getLegalSettings);
+}
+
+/**
+ * Correo al que se piden facturas después de la compra: el de facturación y, si no lo han llenado,
+ * el de contacto. Vacío si el negocio no ha capturado ninguno (los textos mandan entonces a Contacto).
+ */
+export async function getInvoiceRequestEmail(): Promise<string> {
+  try {
+    const settings = await getLegalSettingsCached();
+    return (settings.correoFacturacion || settings.correoContacto || "").trim();
+  } catch {
+    return "";
+  }
 }
 
 export async function updateLegalSettings(

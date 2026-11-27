@@ -41,6 +41,18 @@ const effectsSchema = new Schema(
   { _id: false },
 );
 
+/** Datos fiscales que el cliente capturó al pagar (CFDI 4.0). Solo existen si pidió factura. */
+const orderBillingSchema = new Schema(
+  {
+    rfc: { type: String, trim: true, uppercase: true },
+    razonSocial: { type: String, trim: true },
+    regimenFiscal: { type: String, trim: true },
+    codigoPostalFiscal: { type: String, trim: true },
+    usoCfdi: { type: String, trim: true },
+  },
+  { _id: false },
+);
+
 const orderSchema = new Schema(
   {
     user: { type: Schema.Types.ObjectId, ref: "User" },
@@ -84,6 +96,11 @@ const orderSchema = new Schema(
     shippingMethodLabel: { type: String, default: "" },
     /** true si el envío salió gratis por alcanzar el monto mínimo. */
     shippingFree: { type: Boolean, default: false },
+    /** El cliente marcó «Requiero factura (CFDI)» al pagar. Sin marcar, puede pedirla después por correo. */
+    requiresInvoice: { type: Boolean, default: false },
+    billingInfo: { type: orderBillingSchema, default: undefined },
+    /** Cuándo se marcó como facturada (la factura se emite a mano fuera de la tienda). */
+    invoiceIssuedAt: { type: Date },
     shippingAddress: {
       name: String,
       phone: String,
@@ -104,9 +121,16 @@ orderSchema.index({ user: 1, createdAt: -1 });
 orderSchema.index({ createdAt: -1 });
 orderSchema.index({ status: 1, createdAt: -1 });
 orderSchema.index({ email: 1 });
+orderSchema.index({ requiresInvoice: 1, createdAt: -1 });
 orderSchema.index({ stripePaymentIntentId: 1 }, { sparse: true });
 
 export type OrderDoc = InferSchemaType<typeof orderSchema>;
+
+// En desarrollo se re-registra el modelo en cada recarga: si no, mongoose conserva el esquema viejo y descarta en
+// silencio los campos nuevos al guardar (igual que en Product, User y Promotion).
+if (process.env.NODE_ENV !== "production" && models.Order) {
+  mongoose.deleteModel("Order");
+}
 
 export const OrderModel =
   (models.Order as Model<OrderDoc>) ?? model<OrderDoc>("Order", orderSchema);

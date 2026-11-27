@@ -1,4 +1,5 @@
 import { describeCouponRules } from "~/lib/couponRules";
+import { formatDayMx } from "~/lib/promotionDates";
 import type { LoaderFunctionArgs } from "react-router";
 import type { ActionFunctionArgs, MetaFunction } from "react-router";
 import { data } from "react-router";
@@ -224,8 +225,8 @@ export default function AdminDiscounts() {
                     {(p.startsAt || p.endsAt) && (
                       <>
                         {" "}
-                        · {p.startsAt ? new Date(p.startsAt).toLocaleDateString("es-MX") : "sin inicio"} –{" "}
-                        {p.endsAt ? new Date(p.endsAt).toLocaleDateString("es-MX") : "sin fin"}
+                        · {p.startsAt ? formatDayMx(p.startsAt) : "sin inicio"} –{" "}
+                        {p.endsAt ? formatDayMx(p.endsAt) : "sin fin"}
                       </>
                     )}
                   </p>
@@ -300,7 +301,12 @@ function describePromotion(p: PromotionRow): string {
   switch (p.type) {
     case "coupon":
       if (!p.coupon) return "";
-      return [`Código ${p.coupon.code} · ${p.coupon.percentage}% de descuento`, ...describeCouponRules(p.coupon)].join(" · ");
+      return [
+        p.coupon.autoApply
+          ? `Se aplica sola${p.coupon.code ? ` (también con el código ${p.coupon.code})` : ""} · ${p.coupon.percentage}% de descuento`
+          : `Código ${p.coupon.code} · ${p.coupon.percentage}% de descuento`,
+        ...describeCouponRules(p.coupon),
+      ].join(" · ");
     case "bogo":
       return p.bogo
         ? `Compra ${p.bogo.buyQuantity}, llévate ${p.bogo.getQuantity} con ${p.bogo.getDiscountPercentage}% de descuento${p.bogo.applicableSku ? ` (${p.bogo.applicableSku})` : ""}`

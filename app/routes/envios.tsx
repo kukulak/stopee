@@ -5,6 +5,8 @@ import { Navbar } from "~/components/layout/Navbar";
 import { Footer } from "~/components/layout/Footer";
 import { Breadcrumbs } from "~/components/ui/Breadcrumbs";
 import { getCart } from "~/lib/cart.server";
+import { getUser } from "~/lib/session.server";
+import { isRefillAlly } from "~/lib/catalog.server";
 import { renderMarkdown } from "~/lib/markdown.server";
 import { getShippingConfig } from "~/models/shipping.server";
 import { SHIPPING_METHOD_IDS, type ShippingMethodId } from "~/lib/shippingMethods";
@@ -22,7 +24,7 @@ export const meta: MetaFunction = () => [
 const ANCHORS: Record<ShippingMethodId, string> = { pickup: "recoleccion", home: "domicilio" };
 
 export async function loader({ request }: LoaderFunctionArgs) {
-  const [cart, config] = await Promise.all([getCart(request), getShippingConfig()]);
+  const [cart, config, user] = await Promise.all([getCart(request), getShippingConfig(), getUser(request)]);
   const methods = SHIPPING_METHOD_IDS.filter((id) => config.methods[id].isActive).map((id) => {
     const method = config.methods[id];
     return {
@@ -41,6 +43,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
     zoneName: config.zone.name,
     methods,
     freeShippingThreshold: config.isEnabled && config.freeShippingEnabled ? config.freeShippingThreshold : null,
+    // Solo se le dice a quien ya es aliado: para el resto es información que no necesita.
+    allyFreeShippingThreshold: config.isEnabled && config.allyFreeShippingEnabled && isRefillAlly(user) ?config.allyFreeShippingThreshold : null,
   });
 }
 
@@ -48,7 +52,7 @@ const proseClass =
   "prose max-w-none prose-headings:font-display prose-headings:font-black prose-headings:text-carbon prose-h2:mt-6 prose-h2:text-lg prose-p:text-carbon/80 prose-li:text-carbon/80 prose-strong:text-carbon";
 
 export default function Envios() {
-  const { cartCount, shippingEnabled, zoneName, methods, freeShippingThreshold } = useLoaderData<typeof loader>();
+  const { cartCount, shippingEnabled, zoneName, methods, freeShippingThreshold, allyFreeShippingThreshold } = useLoaderData<typeof loader>();
 
   return (
     <div className="flex min-h-screen flex-col bg-hueso">
@@ -72,6 +76,13 @@ export default function Envios() {
           {freeShippingThreshold !== null && (
             <p className="mt-4 rounded-2xl bg-lima/20 px-4 py-3 text-sm font-semibold text-bosque">
               Envío gratis en compras desde ${freeShippingThreshold} MXN, en cualquiera de las dos opciones.
+            </p>
+          )}
+
+          {allyFreeShippingThreshold !== null && (
+            <p className="mt-4 rounded-2xl bg-lima/20 px-4 py-3 text-sm font-semibold text-bosque">
+              Como Punto de Recarga, tu envío es gratis en compras desde ${allyFreeShippingThreshold} MXN, en cualquiera de las dos
+              opciones.
             </p>
           )}
 

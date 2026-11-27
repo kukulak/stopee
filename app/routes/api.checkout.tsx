@@ -8,14 +8,13 @@ import { getUser } from "~/lib/session.server";
 import { buildShippingQuote, getShippingConfig } from "~/models/shipping.server";
 import { rememberDeliveryAddress } from "~/lib/addressBook.server";
 import { addressToMetadata, outOfZoneMessage, readAddressFields, validateDeliveryAddress } from "~/lib/deliveryAddress";
+import { billingToMetadata, readInvoiceRequest } from "~/lib/fiscal";
+import { UserModel } from "~/models/user.server";
 import { createOneTimeCheckoutSession } from "~/lib/stripe.server";
 import { getAttribution } from "~/lib/attribution.server";
 import { logEvent, getOrCreateVisitorId } from "~/lib/tracking.server";
 import { readConsent } from "~/lib/consent.server";
-import { findRedeemableCoupon } from "~/models/promotion.server";
-import { checkCouponEligibility } from "~/lib/couponRules.server";
-import { stackPercents } from "~/lib/couponRules";
-import { evaluateRequirementPromotion } from "~/lib/promotionEngine.server";
+import { resolveCartDiscount } from "~/lib/cartDiscount.server";
 import { logError } from "~/lib/logger.server";
 import { soldOutMessage, stockLimitMessage } from "~/lib/stock";
 import { checkRateLimit, getClientIp, rateLimitMessage } from "~/lib/rateLimit.server";
@@ -78,81 +77,25 @@ export async function action({ request }: ActionFunctionArgs) {
     };
   });
 
-  // Orden de prioridad para el DESCUENTO automático: un cupón explícito del
-  // cliente gana sobre cualquier promoción condicional, y esta a su vez gana
-  // sobre el descuento de lealtad (el más genérico de los tres). Los REGALOS
-  // no compiten entre sí — son aditivos, así que un regalo por requisito y un
-  // regalo de lealtad pueden entregarse en el mismo pedido.
-  let discountPercent: number | undefined;
-  let appliedPromotion: { id: string; name: string; type: string } | null = null;
-  let giftSku: string | undefined;
-  let loyaltyGiftDescription: string | undefined;
-  let usedLoyaltyReward = false;
-
-  let couponStackable = false;
-
-  if (couponCode) {
-    const promo = await findRedeemableCoupon(couponCode);
-    if (promo?.coupon?.percentage) {
-      // Mismas reglas que vio el cliente en el carrito, revisadas otra vez al pagar:
-      // pudo cambiar el carrito, usar el cupón en otro pedido o vencer el cupón.
-      const eligibility = await checkCouponEligibility(promo, {
-        lines: validItems.map((item) => ({ sku: item.sku, quantity: item.quantity, unitPriceMxn: bySku.get(item.sku)!.priceMxn })),
-        user,
-        nameBySku: new Map(catalogItems.map((item) => [item.sku, item.name])),
-      });
-      if (!eligibility.ok) {
-        return data({ error: `El cupón ${couponCode} no se puede aplicar: ${eligibility.reason}` }, { status: 400 });
-      }
-      discountPercent = promo.coupon.percentage;
-      couponStackable = Boolean(promo.coupon.stackable);
-      appliedPromotion = { id: String(promo._id), name: promo.name, type: promo.type };
-    }
+  // Un solo cálculo (el mismo que ve el cliente en el carrito) elige el descuento: de todos los que le tocan
+  // se aplica el que más le conviene y no se suman. Los REGALOS no compiten: un regalo por requisito y uno de
+  // lealtad pueden entregarse en el mismo pedido.
+  const discount = await resolveCartDiscount({
+    // Mismas reglas que vio el cliente en el carrito, revisadas otra vez al pagar:
+    // pudo cambiar el carrito, usar el cupón en otro pedido o vencer el cupón.
+    lines: validItems.map((item) => ({ ...item, unitPriceMxn: bySku.get(item.sku)!.priceMxn })),
+    user,
+    nameBySku: new Map(catalogItems.map((item) => [item.sku, item.name])),
+    couponCode,
+  });
+  if (discount.couponProblem) {
+    return data({ error: `El cupón ${couponCode} no se puede aplicar: ${discount.couponProblem.reason}` }, { status: 400 });
   }
-
-  const isFirstPurchase = Boolean(user && user.individualPurchaseCount === 0);
-  const requirementMatch = await evaluateRequirementPromotion(
-    validItems.map((item) => ({ ...item, unitPriceMxn: bySku.get(item.sku)!.priceMxn })),
-    isFirstPurchase,
-  );
-  if (requirementMatch) {
-    giftSku = requirementMatch.rewardGiftSku;
-    if (discountPercent === undefined && requirementMatch.rewardDiscountPercentage) {
-      discountPercent = requirementMatch.rewardDiscountPercentage;
-      appliedPromotion = { id: requirementMatch.id, name: requirementMatch.name, type: "by_requirement" };
-    } else if (!appliedPromotion && giftSku) {
-      // Solo trae regalo (sin descuento asignado a esta orden) — igual se
-      // registra qué promoción fue, para medir su efectividad en el dashboard.
-      appliedPromotion = { id: requirementMatch.id, name: requirementMatch.name, type: "by_requirement" };
-    }
-  }
-
-  // Recompensa de lealtad pendiente — se ganó al completar un ciclo anterior
-  // y es para ESTA compra únicamente; el webhook la limpia en cuanto se use.
-  const pendingReward = user?.loyaltyPendingReward;
-  if (pendingReward?.rewardType === "gift" && pendingReward.giftDescription) {
-    loyaltyGiftDescription = pendingReward.giftDescription;
-    usedLoyaltyReward = true;
-  } else if (
-    pendingReward?.rewardType === "discount" &&
-    pendingReward.percentage &&
-    discountPercent !== undefined &&
-    couponStackable &&
-    appliedPromotion?.type === "coupon"
-  ) {
-    // Cupón marcado como "se puede sumar": conserva su promoción registrada y
-    // además consume la recompensa de lealtad.
-    discountPercent = stackPercents(discountPercent, pendingReward.percentage);
-    usedLoyaltyReward = true;
-  } else if (pendingReward?.rewardType === "discount" && pendingReward.percentage && discountPercent === undefined) {
-    discountPercent = pendingReward.percentage;
-    appliedPromotion = {
-      id: pendingReward.promotionId ? String(pendingReward.promotionId) : "loyalty",
-      name: pendingReward.promotionName ?? "Lealtad",
-      type: "loyalty",
-    };
-    usedLoyaltyReward = true;
-  }
+  const discountPercent: number | undefined = discount.percent > 0 ? discount.percent : undefined;
+  const appliedPromotion = discount.promotion;
+  const giftSku = discount.requirement?.rewardGiftSku;
+  const loyaltyGiftDescription = discount.loyaltyGiftDescription;
+  const usedLoyaltyReward = discount.usedLoyaltyReward;
 
   // El método de envío lo eligió el cliente en el carrito; el costo se vuelve a
   // calcular aquí con las mismas reglas (nunca se confía en un monto del
@@ -160,7 +103,9 @@ export async function action({ request }: ActionFunctionArgs) {
   const productsSubtotal = validItems.reduce((sum, item) => sum + bySku.get(item.sku)!.priceMxn * item.quantity, 0);
   const discountedSubtotal = Math.round(productsSubtotal * (1 - (discountPercent ?? 0) / 100));
   const shippingConfig = await getShippingConfig();
-  const shippingQuote = buildShippingQuote(shippingConfig, discountedSubtotal, await getCartShippingMethod(request));
+  const shippingQuote = buildShippingQuote(shippingConfig, discountedSubtotal, await getCartShippingMethod(request), {
+    isAlly: isRefillAlly(user),
+  });
   const shippingChoice = shippingQuote.selected;
   if (shippingQuote.enabled && !shippingChoice) {
     return data({ error: "No hay opciones de envío disponibles por ahora. Escríbenos y te ayudamos." }, { status: 400 });
@@ -169,7 +114,8 @@ export async function action({ request }: ActionFunctionArgs) {
   // Candado de zona: la dirección se valida AQUÍ, en el servidor, con la misma regla que ve el
   // carrito. Nada de lo que mande el navegador basta para saltarse la zona de entrega. El punto
   // de entrega solo necesita nombre, teléfono y código postal; el domicilio, la dirección completa.
-  const addressResult = validateDeliveryAddress(readAddressFields(await request.formData()), {
+  const formData = await request.formData();
+  const addressResult = validateDeliveryAddress(readAddressFields(formData), {
     mode: shippingChoice?.id === "pickup" ? "pickup" : "home",
     zone: shippingConfig.zone,
   });
@@ -183,6 +129,17 @@ export async function action({ request }: ActionFunctionArgs) {
     );
   }
   const deliveryAddress = addressResult.address;
+
+  // Factura (CFDI): opcional. Solo si marcó «Requiero factura» se revisan sus datos: unos datos mal escritos
+  // harían que la factura saliera rechazada, así que se piden corregidos o se desmarca la casilla.
+  const invoice = readInvoiceRequest(formData);
+  if (invoice.requested && !invoice.result.ok) {
+    return data(
+      { error: "Revisa los datos de facturación marcados en rojo, o desmarca «Requiero factura».", invoiceErrors: invoice.result.errors },
+      { status: 400 },
+    );
+  }
+  const billingInfo = invoice.requested && invoice.result.ok ? invoice.result.info : null;
 
   const giftProduct = giftSku ? await getCatalogItemBySku(giftSku, { includeUnavailable: true }) : null;
 
@@ -217,6 +174,7 @@ export async function action({ request }: ActionFunctionArgs) {
       deliveryAddress,
       metadata: {
         ...addressToMetadata(deliveryAddress),
+        ...(billingInfo ? billingToMetadata(billingInfo) : {}),
         userId: user ? String(user._id) : "guest",
         // Se incluye el precio unitario cobrado (no solo el SKU) para que el
         // webhook registre el pedido con el precio real de esta compra, sin
@@ -258,6 +216,15 @@ export async function action({ request }: ActionFunctionArgs) {
       await rememberDeliveryAddress(String(user._id), deliveryAddress);
     } catch (error) {
       logError("checkout.save-profile-address", error);
+    }
+  }
+
+  // Si pidió guardar sus datos fiscales en su cuenta, se guardan (comodidad: nunca debe impedir el pago).
+  if (user && billingInfo && invoice.requested && invoice.saveToProfile) {
+    try {
+      await UserModel.updateOne({ _id: user._id }, { $set: { billingInfo } });
+    } catch (error) {
+      logError("checkout.save-billing-info", error);
     }
   }
 

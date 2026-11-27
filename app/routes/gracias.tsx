@@ -14,6 +14,8 @@ import { getUser } from "~/lib/session.server";
 import { stripe } from "~/lib/stripe.server";
 import { frequencyLabel } from "~/lib/subscriptionConfig";
 import { OrderModel } from "~/models/order.server";
+import { getInvoiceRequestEmail } from "~/models/legalSettings.server";
+import { invoiceLaterNote, orderNumber as toOrderNumber } from "~/lib/fiscal";
 import { SubscriptionModel } from "~/models/subscription.server";
 
 export const meta: MetaFunction = () => [{ title: "Gracias por tu compra — STOPee" }, { name: "robots", content: "noindex" }];
@@ -65,6 +67,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
   let total: number | null = null;
   let frequency: string | null = null;
   let email = stripeEmail;
+  let orderNum: string | null = null;
+  let invoiceRequested = false;
 
   if (kind === "suscripcion") {
     const subscription = stripeSubscriptionId
@@ -81,6 +85,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
       items = (order.items as Item[]).map((i) => ({ name: i.name, quantity: i.quantity }));
       total = order.netAmount;
       email = order.email || email;
+      orderNum = toOrderNumber(order._id);
+      invoiceRequested = Boolean(order.requiresInvoice);
     }
   }
 
@@ -102,13 +108,16 @@ export async function loader({ request }: LoaderFunctionArgs) {
       maskedEmail: maskEmail(email),
       signedIn: Boolean(user),
       cartCount,
+      orderNumber: orderNum,
+      invoiceRequested,
+      invoiceNote: paidPurchase && !invoiceRequested ? invoiceLaterNote(await getInvoiceRequestEmail()) : null,
     },
     { headers },
   );
 }
 
 export default function Gracias() {
-  const { kind, confirmed, awaitingPayment, items, total, frequency, maskedEmail, signedIn, cartCount } =
+  const { kind, confirmed, awaitingPayment, items, total, frequency, maskedEmail, signedIn, cartCount, orderNumber, invoiceRequested, invoiceNote } =
     useLoaderData<typeof loader>();
   const isSubscription = kind === "suscripcion";
 
@@ -181,9 +190,21 @@ export default function Gracias() {
                 </ul>
                 {total !== null && (
                   <p className="mt-4 border-t border-carbon/10 pt-4 text-carbon/70">
-                    Total pagado: <span className="font-semibold text-carbon">${total} MXN</span>
+                    Total pagado: <span className="font-semibold text-carbon">${total} MXN</span> (IVA incluido)
+                    {orderNumber && (
+                      <>
+                        <br />
+                        Número de pedido: <span className="font-semibold text-carbon">{orderNumber}</span>
+                      </>
+                    )}
                   </p>
                 )}
+                {invoiceRequested && (
+                  <p className="mt-3 text-sm text-carbon/70">
+                    Registramos tu solicitud de factura. La emitiremos con los datos que capturaste y te la enviaremos por correo.
+                  </p>
+                )}
+                {invoiceNote && <p className="mt-3 text-xs text-carbon/60">{invoiceNote}</p>}
                 {frequency && (
                   <p className="mt-4 border-t border-carbon/10 pt-4 text-carbon/70">
                     La enviaremos <span className="font-semibold text-carbon">{frequency}</span>. Puedes pausarla o

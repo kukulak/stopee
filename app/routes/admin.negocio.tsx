@@ -22,6 +22,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     razonSocial: settings.razonSocial ?? "",
     direccionFiscal: settings.direccionFiscal ?? "",
     correoContacto: settings.correoContacto ?? "",
+    correoFacturacion: settings.correoFacturacion ?? "",
     telefono: settings.telefono ?? "",
     whatsappNumber: settings.whatsappNumber ?? "",
     socialUrls: (settings.socialLinks ?? []).map((link) => link.url),
@@ -42,6 +43,7 @@ const businessDataSchema = z.object({
   razonSocial: z.string().trim().max(200),
   direccionFiscal: z.string().trim().max(400),
   correoContacto: optionalEmail,
+  correoFacturacion: z.union([z.literal(""), z.string().trim().email("El correo para facturas no es válido.")]),
   telefono: z.string().trim().max(30),
   tiemposEnvio: z.string().trim().max(1000),
   politicaDevoluciones: z.string().trim().max(1000),
@@ -55,6 +57,7 @@ export async function action({ request }: ActionFunctionArgs) {
     razonSocial: formData.get("razonSocial"),
     direccionFiscal: formData.get("direccionFiscal"),
     correoContacto: formData.get("correoContacto"),
+    correoFacturacion: formData.get("correoFacturacion"),
     telefono: formData.get("telefono"),
     tiemposEnvio: formData.get("tiemposEnvio"),
     politicaDevoluciones: formData.get("politicaDevoluciones"),
@@ -220,6 +223,7 @@ export default function AdminNegocio() {
   const [razonSocial, setRazonSocial] = useState(data.razonSocial);
   const [direccionFiscal, setDireccionFiscal] = useState(data.direccionFiscal);
   const [correoContacto, setCorreoContacto] = useState(data.correoContacto);
+  const [correoFacturacion, setCorreoFacturacion] = useState(data.correoFacturacion);
   const [telefono, setTelefono] = useState(data.telefono);
   const [whatsappNumber, setWhatsappNumber] = useState(data.whatsappNumber);
   const [tiemposEnvio, setTiemposEnvio] = useState(data.tiemposEnvio);
@@ -287,6 +291,20 @@ export default function AdminNegocio() {
                 placeholder="hola@tudominio.com"
                 className={inputClass}
               />
+            </Field>
+            <Field label="Correo para solicitar facturas (opcional)" htmlFor="correoFacturacion">
+              <input
+                id="correoFacturacion"
+                name="correoFacturacion"
+                type="email"
+                value={correoFacturacion}
+                onChange={(e) => setCorreoFacturacion(e.target.value)}
+                placeholder="Si lo dejas vacío, se usa el correo de contacto"
+                className={inputClass}
+              />
+              <p className="mt-1 text-xs text-carbon/50">
+                Aparece en el carrito, en la página de gracias y en el correo de confirmación para quien necesite factura después de comprar.
+              </p>
             </Field>
             <Field label="Teléfono de contacto (opcional)" htmlFor="telefono">
               <input
