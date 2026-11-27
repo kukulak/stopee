@@ -8,6 +8,8 @@ const leadSchema = new Schema({
   discountCodeAssigned: { type: String, default: "BIENVENIDA10" },
   /** 'converted' se marca cuando el lead completa su primera compra pagada. 'pending' = aún sin compra. */
   status: { type: String, enum: ["pending", "converted"], default: "pending" },
+  /** Cuándo aceptó recibir novedades por correo (al apuntarse a la lista o marcar la casilla al pagar). Vacío = no ha aceptado. */
+  marketingOptInAt: { type: Date },
   /** Fecha en que el admin ya le escribió (exportó el CSV o lo marcó a mano). Vacío = sin contactar. */
   contactedAt: { type: Date },
   source: {

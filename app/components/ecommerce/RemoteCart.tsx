@@ -39,6 +39,7 @@ export function RemoteCart({ open, onClose }: { open: boolean; onClose: () => vo
           billingDefaults={cart.billingDefaults}
           invoiceEmail={cart.invoiceEmail}
           signedIn={cart.signedIn}
+          marketingOptedIn={cart.marketingOptedIn}
           onClose={onClose}
         />
       ) : (

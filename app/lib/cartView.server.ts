@@ -128,6 +128,8 @@ export async function buildCartView(
     billingDefaults: billingDefaultsFromUser(user),
     invoiceEmail: await getInvoiceRequestEmail(),
     signedIn: Boolean(user),
+    // Quien ya aceptó recibir promociones no vuelve a ver la casilla al pagar.
+    marketingOptedIn: Boolean(user?.marketingOptInAt),
   };
 }
 

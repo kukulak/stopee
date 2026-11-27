@@ -224,6 +224,7 @@ export default function Tienda() {
     billingDefaults,
     invoiceEmail,
     signedIn,
+    marketingOptedIn,
   } = useLoaderData<typeof loader>();
   const itemCount = lines.reduce((sum, l) => sum + l.quantity, 0);
 
@@ -320,6 +321,7 @@ export default function Tienda() {
           billingDefaults={billingDefaults}
           invoiceEmail={invoiceEmail}
           signedIn={signedIn}
+          marketingOptedIn={marketingOptedIn}
           onClose={() => setCartOpen(false)}
         />
       </CartOverlay>

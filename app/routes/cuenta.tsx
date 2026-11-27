@@ -34,6 +34,8 @@ import { describeLoyaltyReward, resolveLoyaltyTier } from "~/lib/loyalty";
 import { AddressBookCard } from "~/components/account/AddressBookCard";
 import { AllyCard } from "~/components/account/AllyCard";
 import { BillingCard } from "~/components/account/BillingCard";
+import { MarketingCard } from "~/components/account/MarketingCard";
+import { LeadModel } from "~/models/lead.server";
 import { orderNumber, validateBillingInfo } from "~/lib/fiscal";
 import { AllyRequestModel } from "~/models/allyRequest.server";
 import { ProductModel } from "~/models/product.server";
@@ -116,6 +118,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
       name: user.name,
       email: user.email,
       emailVerified: Boolean(user.emailVerifiedAt),
+      marketing: Boolean(user.marketingOptInAt),
       isAdmin: isStaff(user.role),
       phone: user.phone ?? "",
       address: user.address ?? {},
@@ -284,6 +287,20 @@ export async function action({ request }: ActionFunctionArgs) {
 
     await UserModel.findByIdAndUpdate(userId, { phone: parsed.data.phone, address, dogs });
     return data({ ok: true, savedIntent: "update-profile" as const, error: null as string | null });
+  }
+
+  if (intent === "marketing-update") {
+    const on = formData.get("marketing") === "on";
+    const account = await UserModel.findById(userId).select("email").lean();
+    if (on) {
+      // Conserva la fecha en que lo aceptó por primera vez.
+      await UserModel.updateOne({ _id: userId, marketingOptInAt: { $exists: false } }, { $set: { marketingOptInAt: new Date() } });
+    } else {
+      await UserModel.updateOne({ _id: userId }, { $unset: { marketingOptInAt: 1 } });
+      // Si además estaba en la lista de espera con este correo, tampoco debe seguir recibiendo.
+      if (account?.email) await LeadModel.updateMany({ email: account.email }, { $unset: { marketingOptInAt: 1 } });
+    }
+    return data({ ok: true, savedIntent: "marketing-update" as const, error: null as string | null });
   }
 
   if (intent === "resend-verification") {
@@ -639,6 +656,8 @@ export default function Cuenta() {
           </div>
 
           <AddressBookCard addresses={user.addresses} />
+
+          <MarketingCard subscribed={user.marketing} />
 
           <BillingCard billing={user.billing} invoicesBoxes={subscriptions.some((s) => s.requiresInvoice)} />
 

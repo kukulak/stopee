@@ -191,10 +191,17 @@ export async function action({ request }: ActionFunctionArgs) {
       $setOnInsert: {
         email: parsed.data.email,
         registeredAt: new Date(),
+        // Al apuntarse a la lista pide justo esto: que le avisemos y le mandemos su descuento (ver el texto del formulario).
+        marketingOptInAt: new Date(),
         source
       }
     },
     { upsert: true, includeResultMetadata: true }
+  )
+  // Si ya estaba en la lista pero había dejado de recibir correos y vuelve a apuntarse, es un permiso nuevo.
+  await LeadModel.updateOne(
+    { email: parsed.data.email, marketingOptInAt: { $exists: false } },
+    { $set: { marketingOptInAt: new Date() } }
   )
 
   // Correo de bienvenida solo la primera vez: si ya estaba en la lista no se

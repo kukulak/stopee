@@ -15,6 +15,8 @@ import { checkRateLimit, getClientIp, rateLimitMessage } from "~/lib/rateLimit.s
 import { ResendVerification } from "~/components/ui/ResendVerification";
 import { CheckIcon } from "~/components/ui/Icons";
 import { LegalNotice } from "~/components/ui/LegalNotice";
+import { MarketingOptIn } from "~/components/ui/MarketingOptIn";
+import { readMarketingOptIn } from "~/lib/marketing";
 
 export const meta: MetaFunction = () => [{ title: "Crear cuenta — STOPee" }];
 
@@ -67,6 +69,8 @@ export async function action({ request }: ActionFunctionArgs) {
   const { email, password } = parsed.data;
   const name = parsed.data.name ?? "";
   const dogName = parsed.data.dogName ?? "";
+  // Solo cuenta cuando confirme su correo (el CSV de campañas pide correo confirmado): nadie queda apuntado por un tercero.
+  const marketing = readMarketingOptIn(formData);
 
   // Tope por correo: sin él, alguien podría llenar de mensajes la bandeja de un tercero.
   const emailLimit = await checkRateLimit(`registro-email:${email}`, { max: 3, windowMs: 60 * 60 * 1000 });
@@ -95,7 +99,7 @@ export async function action({ request }: ActionFunctionArgs) {
 
   let user;
   try {
-    user = await UserModel.create({ email, passwordHash, name, dogName });
+    user = await UserModel.create({ email, passwordHash, name, dogName, ...(marketing ? { marketingOptInAt: new Date() } : {}) });
   } catch (error) {
     // Dos registros del mismo correo a la vez: el segundo choca con el índice único y se trata como "ya existe".
     if ((error as { code?: number }).code === 11000) return data({ error: null, sentTo: email, maskedEmail: maskEmail(email) });
@@ -220,6 +224,8 @@ export default function Registro() {
             </label>
             <input id="mascota" name="mascota" type="text" autoComplete="off" className={inputClass} />
           </div>
+
+          <MarketingOptIn />
 
           {actionData?.error && (
             <p className="text-sm font-semibold text-red-600">{actionData.error}</p>

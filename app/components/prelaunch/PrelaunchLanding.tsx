@@ -307,7 +307,8 @@ function WaitlistForm({
         <p className="mt-3 text-xs text-slate-200/60">{microcopy}</p>
       )}
       <p className="mt-2 text-xs text-slate-200/50">
-        Al registrar tu correo, tus datos se tratan como explica nuestro{' '}
+        Al registrar tu correo aceptas que te avisemos de la apertura y te mandemos novedades y promociones de
+        STOPee; puedes darte de baja cuando quieras. Tus datos se tratan como explica nuestro{' '}
         <Link to="/aviso-de-privacidad" className="underline underline-offset-2 hover:text-white">
           aviso de privacidad
         </Link>

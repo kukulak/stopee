@@ -8,6 +8,7 @@ import { OrderModel } from "~/models/order.server";
 import { LeadModel } from "~/models/lead.server";
 import { AnalyticsEventModel } from "~/models/analyticsEvent.server";
 import { ArrowLabel } from "~/components/ui/Icons";
+import { CampaignExportButton } from "~/components/admin/CampaignExportButton";
 import { requireAdmin } from "~/lib/session.server";
 import { isStaff, isSuperAdmin, ROLE_LABELS, type UserRole } from "~/lib/roles";
 
@@ -180,12 +181,15 @@ export default function AdminCustomers() {
             compró sin registrarse y quién dejó el carrito a medias.
           </p>
         </div>
-        <Link
-          to="/admin/customers/new"
-          className="inline-flex min-h-11 items-center rounded-full bg-carbon px-6 text-sm font-bold text-hueso transition-colors hover:bg-bosque"
-        >
-          Nuevo usuario
-        </Link>
+        <div className="flex flex-wrap items-center gap-2">
+          <CampaignExportButton className="flex min-h-11 items-center rounded-full border border-carbon/15 px-4 text-sm font-semibold text-carbon hover:border-carbon/30" />
+          <Link
+            to="/admin/customers/new"
+            className="inline-flex min-h-11 items-center rounded-full bg-carbon px-6 text-sm font-bold text-hueso transition-colors hover:bg-bosque"
+          >
+            Nuevo usuario
+          </Link>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">

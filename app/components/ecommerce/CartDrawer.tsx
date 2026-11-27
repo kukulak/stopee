@@ -10,6 +10,7 @@ import type { AddressErrors } from "~/lib/deliveryAddress";
 import type { AddressOption } from "~/lib/addressBook";
 import type { DeliveryZone } from "~/lib/deliveryZone";
 import { InvoiceFields } from "~/components/ecommerce/InvoiceFields";
+import { MarketingOptIn } from "~/components/ui/MarketingOptIn";
 import { PRICES_INCLUDE_IVA, formatMxnCents, ivaBreakdown, type BillingErrors, type BillingInfo } from "~/lib/fiscal";
 
 const CHECKOUT_FORM_ID = "checkout-form";
@@ -104,6 +105,7 @@ export function CartDrawer({
   addressDefaults,
   addressBook,
   billingDefaults,
+  marketingOptedIn = false,
   invoiceEmail,
   signedIn = false,
   onClose,
@@ -134,6 +136,8 @@ export function CartDrawer({
   addressBook?: AddressOption[] | null;
   /** Datos fiscales guardados en la cuenta, para precargar «Requiero factura» (`null` = no tiene o es invitado). */
   billingDefaults?: BillingInfo | null;
+  /** Ya aceptó recibir promociones: no se le vuelve a ofrecer la casilla. */
+  marketingOptedIn?: boolean;
   /** A dónde pedir la factura después de comprar (de «Datos del negocio»). */
   invoiceEmail?: string | null;
   signedIn?: boolean;
@@ -333,6 +337,8 @@ export function CartDrawer({
             signedIn={signedIn}
             invoiceEmail={invoiceEmail}
           />
+
+          {!marketingOptedIn && <MarketingOptIn formId={CHECKOUT_FORM_ID} />}
 
           <CheckoutSteps />
 

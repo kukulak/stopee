@@ -109,6 +109,8 @@ const userSchema = new Schema(
     passwordHash: { type: String, required: true },
     /** Cuándo confirmó que el correo es suyo (enlace del correo o restablecer contraseña). Vacío = sin confirmar. */
     emailVerifiedAt: { type: Date },
+    /** Cuándo aceptó recibir promociones y novedades por correo. Vacío = no ha aceptado (ver ~/lib/marketing). */
+    marketingOptInAt: { type: Date },
     /** Último cambio de contraseña: las sesiones iniciadas antes de este momento dejan de valer. */
     passwordChangedAt: { type: Date },
     name: { type: String, trim: true },

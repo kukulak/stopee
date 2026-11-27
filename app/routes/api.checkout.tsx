@@ -9,6 +9,7 @@ import { buildShippingQuote, getShippingConfig } from "~/models/shipping.server"
 import { rememberDeliveryAddress } from "~/lib/addressBook.server";
 import { addressToMetadata, outOfZoneMessage, readAddressFields, validateDeliveryAddress } from "~/lib/deliveryAddress";
 import { billingToMetadata, readInvoiceRequest } from "~/lib/fiscal";
+import { readMarketingOptIn } from "~/lib/marketing";
 import { UserModel } from "~/models/user.server";
 import { createOneTimeCheckoutSession } from "~/lib/stripe.server";
 import { getAttribution } from "~/lib/attribution.server";
@@ -140,6 +141,9 @@ export async function action({ request }: ActionFunctionArgs) {
     );
   }
   const billingInfo = invoice.requested && invoice.result.ok ? invoice.result.info : null;
+  // «Quiero recibir promociones»: con cuenta se guarda aquí; sin cuenta viaja en la metadata y el webhook lo apunta
+  // con el correo que dé en el pago.
+  const marketingOptIn = readMarketingOptIn(formData);
 
   const giftProduct = giftSku ? await getCatalogItemBySku(giftSku, { includeUnavailable: true }) : null;
 
@@ -176,6 +180,7 @@ export async function action({ request }: ActionFunctionArgs) {
         ...addressToMetadata(deliveryAddress),
         ...(billingInfo ? billingToMetadata(billingInfo) : {}),
         userId: user ? String(user._id) : "guest",
+        marketingOptIn: marketingOptIn && !user ? "true" : "",
         // Se incluye el precio unitario cobrado (no solo el SKU) para que el
         // webhook registre el pedido con el precio real de esta compra, sin
         // depender de que el catálogo no haya cambiado entre el checkout y la
@@ -225,6 +230,14 @@ export async function action({ request }: ActionFunctionArgs) {
       await UserModel.updateOne({ _id: user._id }, { $set: { billingInfo } });
     } catch (error) {
       logError("checkout.save-billing-info", error);
+    }
+  }
+
+  if (user && marketingOptIn) {
+    try {
+      await UserModel.updateOne({ _id: user._id, marketingOptInAt: { $exists: false } }, { $set: { marketingOptInAt: new Date() } });
+    } catch (error) {
+      logError("checkout.save-marketing-opt-in", error);
     }
   }
 

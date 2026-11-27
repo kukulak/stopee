@@ -233,6 +233,21 @@ async function markLeadConverted(email: string) {
 }
 
 /**
+ * Quien pagó sin cuenta y marcó «Quiero recibir promociones» queda apuntado con el correo del pago (el que
+ * confirmó la tarjeta). Con cuenta, el permiso ya se guardó al abrir el pago.
+ */
+async function recordGuestMarketingOptIn(metadata: Stripe.Metadata | null, email: string) {
+  if (metadata?.marketingOptIn !== "true" || !email.includes("@") || email.endsWith("@stopee.com.mx")) return;
+  const address = email.trim().toLowerCase();
+  await LeadModel.updateOne(
+    { email: address },
+    { $setOnInsert: { email: address, registeredAt: new Date(), status: "converted", source: "other" } },
+    { upsert: true },
+  );
+  await LeadModel.updateOne({ email: address, marketingOptInAt: { $exists: false } }, { $set: { marketingOptInAt: new Date() } });
+}
+
+/**
  * El premio de lealtad nunca es permanente: se gana para la SIGUIENTE compra
  * y se limpia en cuanto se usa (usedLoyaltyReward). El contador del ciclo se
  * reinicia cada vez que se completa, y la recompensa que le toca depende de
@@ -371,7 +386,10 @@ async function handleOneTimeCheckoutCompleted(session: Stripe.Checkout.Session) 
 
   // Cada efecto se reclama por separado: si algo falla a la mitad, Stripe
   // reintenta el evento y solo se repite lo que faltó.
-  if (await claimEffect(order._id, "lead")) await markLeadConverted(email);
+  if (await claimEffect(order._id, "lead")) {
+    await markLeadConverted(email);
+    if (!user) await recordGuestMarketingOptIn(session.metadata, email);
+  }
   if (await claimEffect(order._id, "promotion")) await bumpPromotionUsage(appliedPromotion?.id);
   if (await claimEffect(order._id, "stock")) {
     await decrementStock([
