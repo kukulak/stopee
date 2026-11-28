@@ -49,7 +49,7 @@ export function AllyCard({
   if (!ally) {
     if (!requestStatus) return null;
     return (
-      <div className="mt-8 rounded-3xl border border-carbon/10 bg-white p-6">
+      <div className="rounded-3xl border border-carbon/10 bg-white p-6">
         <p className="font-display font-bold text-carbon">Tu solicitud de Punto de Recarga</p>
         <p className="mt-2 text-sm text-carbon/70">
           {requestStatus === "pending" && "Estamos revisando tu solicitud. Te escribimos por WhatsApp o por correo para platicar los siguientes pasos."}
@@ -82,7 +82,7 @@ function ActiveAllyCard({
   const place = [ally.neighborhood, ally.city].filter(Boolean).join(" · ");
 
   return (
-    <div className="mt-8 rounded-3xl border-2 border-lima bg-lima/10 p-6">
+    <div className="rounded-3xl border-2 border-lima bg-lima/10 p-6">
       <div className="flex flex-wrap items-center gap-2">
         <span className="rounded-full bg-carbon px-3 py-1 text-xs font-bold uppercase tracking-wide text-lima">
           <BrandText>Aliado STOPee</BrandText>

@@ -126,7 +126,7 @@ export function DeliveryAddressFields({
         <div className={outOfZone ? "hidden" : "flex flex-col gap-3"}>
           <div>
             <label htmlFor={id("name")} className="mb-1 block text-xs font-semibold text-carbon/70">
-              Nombre de quien recibe
+              Nombre completo de quien recibe
             </label>
             <input
               id={id("name")}

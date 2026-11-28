@@ -10,7 +10,9 @@ const { Schema, model, models } = mongoose;
 const authTokenSchema = new Schema(
   {
     user: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
-    purpose: { type: String, enum: ["reset", "verify"], required: true },
+    purpose: { type: String, enum: ["reset", "verify", "email-change", "email-revert"], required: true },
+    /** Solo en el cambio de correo: el correo nuevo (email-change) o el que había antes (email-revert). */
+    email: { type: String, lowercase: true, trim: true },
     tokenHash: { type: String, required: true, unique: true },
     expiresAt: { type: Date, required: true },
     usedAt: { type: Date },

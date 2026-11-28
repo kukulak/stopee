@@ -88,7 +88,7 @@ describe.skipIf(!hasTestDb)("permiso para recibir correos", () => {
 
   describe("al crear la cuenta", () => {
     const signUp = (email: string, extra: Record<string, string> = {}) =>
-      registro(form("https://stopee.test/cuenta/registro", { email, password: "Perrito-Feliz-2031", confirmPassword: "Perrito-Feliz-2031", ...extra }));
+      registro(form("https://stopee.test/cuenta/registro", { email, password: "Perrito-Feliz-2031", confirmPassword: "Perrito-Feliz-2031", firstName: "Ana", lastName: "Pérez", ...extra }));
 
     it("sin marcar la casilla no queda ningún permiso", async () => {
       await signUp("luis@correo.com");

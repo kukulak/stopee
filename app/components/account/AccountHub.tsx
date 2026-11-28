@@ -1,24 +1,54 @@
-import { Link } from "react-router";
-import { ChevronIcon } from "~/components/ui/Icons";
+import { ArrowIcon, ChevronIcon } from "~/components/ui/Icons";
 
 /**
- * Las secciones de Mi cuenta. Cada cuadro del tablero abre una (`/cuenta?seccion=pedidos`), en la misma página:
- * el botón Atrás vuelve al tablero y los correos pueden enlazar directo a una sección.
+ * Mi cuenta es UNA sola página: arriba el tablero (fidelidad y cuadros) y debajo todas las secciones. Tocar un
+ * cuadro baja hasta su sección (`/cuenta#pedidos`) y cada sección trae «Volver al menú» para subir de nuevo.
+ * Nada abre otra pantalla.
  */
-export const ACCOUNT_SECTIONS = ["pedidos", "auto-envio", "perfil", "direcciones", "facturacion", "correos", "punto", "eliminar"] as const;
-export type AccountSection = (typeof ACCOUNT_SECTIONS)[number];
+export const ACCOUNT_SECTION_IDS = ["punto", "pedidos", "suscripcion", "perritos", "perfil", "direcciones", "facturacion", "eliminar"] as const;
+export type AccountSectionId = (typeof ACCOUNT_SECTION_IDS)[number];
 
-/** Lee la sección de la dirección; lo desconocido (o «punto» sin ser aliado) vuelve al tablero. */
-export function parseAccountSection(value: string | null, { hasPoint }: { hasPoint: boolean }): AccountSection | null {
-  const section = ACCOUNT_SECTIONS.find((s) => s === value);
-  if (!section) return null;
-  if (section === "punto" && !hasPoint) return null;
-  return section;
+const reducedMotion = () => typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+/**
+ * Baja (o sube) a una sección con desplazamiento suave, sin tocar la dirección ni el historial: así «Atrás» sigue
+ * saliendo de Mi cuenta y no recorriendo cada salto. Con teclado, el foco queda en la sección a la que llegó.
+ */
+export function jumpTo(event: React.MouseEvent, id: string) {
+  const el = document.getElementById(id);
+  if (!el) return; // sin ella, el enlace normal (#id) hace su trabajo
+  event.preventDefault();
+  el.scrollIntoView({ behavior: reducedMotion() ? "auto" : "smooth", block: "start" });
+  el.focus({ preventScroll: true });
 }
 
-export const sectionHref = (section: AccountSection) => `/cuenta?seccion=${section}`;
+function jumpToTop(event: React.MouseEvent) {
+  event.preventDefault();
+  window.scrollTo({ top: 0, behavior: reducedMotion() ? "auto" : "smooth" });
+}
 
-/** Un cuadro del tablero: ícono, nombre y una línea que dice cómo está eso hoy, sin tener que abrirlo. */
+/** Una sección de la página: el contenido y, debajo, el enlace para subir al menú. `scroll-mt` la deja debajo de la barra fija. */
+export function AccountSection({ id, children }: { id: AccountSectionId; children: React.ReactNode }) {
+  return (
+    <section id={id} tabIndex={-1} className="mt-12 scroll-mt-32 focus:outline-none">
+      {children}
+      <a
+        href="#menu"
+        onClick={jumpToTop}
+        className="group mt-4 inline-flex min-h-11 items-center gap-1.5 text-sm font-semibold text-bosque hover:underline"
+      >
+        <ArrowIcon direction="up" />
+        Volver al menú
+      </a>
+    </section>
+  );
+}
+
+/**
+ * Un cuadro del tablero: ícono, nombre y una línea que dice cómo está eso hoy, sin tener que abrirlo. Si todavía no hay
+ * nada que ver (aún sin pedidos, sin suscripción) se muestra quieto y sin enlace: la persona sabe que existe, pero no la
+ * mandamos a una sección vacía.
+ */
 export function AccountTile({
   section,
   icon,
@@ -27,7 +57,8 @@ export function AccountTile({
   badge,
   badgeTone = "info",
 }: {
-  section: AccountSection;
+  /** Sección a la que baja. Sin ella, el cuadro es informativo y no se puede tocar. */
+  section?: AccountSectionId;
   icon: React.ReactNode;
   title: string;
   summary: string;
@@ -35,9 +66,22 @@ export function AccountTile({
   badge?: string | null;
   badgeTone?: "info" | "warning";
 }) {
+  if (!section) {
+    return (
+      <div className="flex min-h-28 flex-col gap-3 rounded-2xl border border-dashed border-carbon/15 bg-carbon/[0.03] p-4">
+        <span className="text-carbon/40">{icon}</span>
+        <div className="min-w-0">
+          <p className="font-display font-bold text-carbon/70">{title}</p>
+          <p className="mt-0.5 text-sm text-carbon/60">{summary}</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <Link
-      to={sectionHref(section)}
+    <a
+      href={`#${section}`}
+      onClick={(event) => jumpTo(event, section)}
       className="group flex min-h-28 flex-col gap-3 rounded-2xl border border-carbon/10 bg-white p-4 transition-colors hover:border-carbon/30 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-oliva"
     >
       <div className="flex items-start justify-between gap-2">
@@ -56,9 +100,9 @@ export function AccountTile({
       </div>
       <div className="min-w-0">
         <p className="font-display font-bold text-carbon">{title}</p>
-        <p className="mt-0.5 text-sm text-carbon/60">{summary}</p>
+        <p className="mt-0.5 line-clamp-2 text-sm text-carbon/60">{summary}</p>
       </div>
-    </Link>
+    </a>
   );
 }
 

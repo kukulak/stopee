@@ -456,7 +456,7 @@ describe.skipIf(!hasTestDb)("cuentas y acceso", () => {
   // --- Registro y confirmación de correo -----------------------------------------------
 
   describe("registro", () => {
-    const datos = { email: "Luis@Correo.com", password: PASSWORD, confirmPassword: PASSWORD, name: "Luis", mascota: "Rocco" };
+    const datos = { email: "Luis@Correo.com", password: PASSWORD, confirmPassword: PASSWORD, firstName: "Luis Ángel", lastName: "Pérez Gómez", mascota: "Rocco" };
 
     it("crea la cuenta sin confirmar, con la contraseña cifrada, y manda el enlace; no abre sesión", async () => {
       const response = await registro(args(post("/cuenta/registro", datos)));
@@ -473,6 +473,19 @@ describe.skipIf(!hasTestDb)("cuentas y acceso", () => {
       expect(sendEmail).toHaveBeenCalledTimes(1);
       expect(sendEmail.mock.calls[0][0].to.email).toBe("luis@correo.com");
       expect(sendEmail.mock.calls[0][0].text).toMatch(/\/cuenta\/verificar\?token=[\w-]{43}/);
+    });
+
+    it("pide nombre y apellidos y los guarda por separado y juntos (para saludar con «Luis Ángel», no con «Luis»)", async () => {
+      const response = await registro(args(post("/cuenta/registro", datos)));
+      expect(response.status).toBe(200);
+      const user = await UserModel.findOne({ email: "luis@correo.com" }).lean();
+      expect(user).toMatchObject({ firstName: "Luis Ángel", lastName: "Pérez Gómez", name: "Luis Ángel Pérez Gómez" });
+
+      for (const faltan of [{ firstName: "" }, { lastName: "" }, { lastName: " " }]) {
+        const rechazado = await registro(args(post("/cuenta/registro", { ...datos, email: "otro@correo.com", ...faltan })));
+        expect(rechazado.status).toBe(400);
+      }
+      expect(await UserModel.exists({ email: "otro@correo.com" })).toBeNull();
     });
 
     it("no permite elegir el rol desde el formulario", async () => {
@@ -492,7 +505,7 @@ describe.skipIf(!hasTestDb)("cuentas y acceso", () => {
 
     it("registrarse con un correo que ya tiene cuenta se ve IGUAL que con uno nuevo (no revela qué correos existen)", async () => {
       const nuevo = await registro(args(post("/cuenta/registro", datos)));
-      const repetido = await registro(args(post("/cuenta/registro", { ...datos, name: "Otra persona" })));
+      const repetido = await registro(args(post("/cuenta/registro", { ...datos, firstName: "Otra", lastName: "Persona" })));
 
       expect(repetido.status).toBe(nuevo.status);
       const [a, b] = [await nuevo.json(), await repetido.json()];
@@ -503,7 +516,7 @@ describe.skipIf(!hasTestDb)("cuentas y acceso", () => {
 
       expect(await UserModel.countDocuments()).toBe(1);
       // La cuenta original no se toca: ni su nombre ni su contraseña.
-      expect((await UserModel.findOne({ email: "luis@correo.com" }).lean())!.name).toBe("Luis");
+      expect((await UserModel.findOne({ email: "luis@correo.com" }).lean())!.name).toBe("Luis Ángel Pérez Gómez");
     });
 
     it("a una cuenta ya confirmada le llega un aviso de que ya tiene cuenta (y ningún enlace para tomarla)", async () => {

@@ -18,7 +18,7 @@ const inputClass =
   "min-h-11 w-full rounded-xl border border-carbon/15 bg-white px-3 text-base text-carbon placeholder:text-carbon/40 focus:border-oliva focus:outline-none sm:text-sm";
 
 /**
- * «Datos de facturación (opcional)»: se guardan para llenarse solos cuando la persona pide factura al
+ * «Mis datos de facturación»: se guardan para llenarse solos cuando la persona pide factura al
  * pagar. Comprar nunca los exige. El precio es el mismo con o sin factura (ya incluye IVA).
  */
 export function BillingCard({ billing, invoicesBoxes = false }: { billing: BillingInfo | null; /** Alguna caja del auto-envío se factura con estos datos. */ invoicesBoxes?: boolean }) {
@@ -42,8 +42,8 @@ export function BillingCard({ billing, invoicesBoxes = false }: { billing: Billi
     ) : null;
 
   return (
-    <div className="mt-8 rounded-3xl border border-carbon/10 bg-white p-6">
-      <p className="font-display font-bold text-carbon">Datos de facturación (opcional)</p>
+    <div className="rounded-3xl border border-carbon/10 bg-white p-6">
+      <h2 className="font-display text-xl font-black text-carbon">Mis datos de facturación</h2>
       <p className="mt-1 text-sm text-carbon/60">
         Guárdalos una vez y se llenan solos cuando marques «Requiero factura» al pagar. No los necesitas para comprar, y el
         precio es el mismo con o sin factura: ya incluye el IVA.

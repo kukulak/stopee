@@ -7,6 +7,9 @@
  * principal; las demás, como secundarias. En "Mi cuenta" las nombra, cambia cuál es la principal o las quita.
  */
 
+import { normalizePhone } from "~/lib/deliveryAddress";
+import { normalizePostalCode } from "~/lib/deliveryZone";
+
 /** Tope de direcciones secundarias por cuenta: evita que una cuenta crezca sin límite. */
 export const MAX_SAVED_ADDRESSES = 10;
 
@@ -130,4 +133,50 @@ export function addressOptionsFromProfile(user: ProfileLike | null | undefined):
     });
   }
   return options;
+}
+
+export type AddressFormField = "label" | "name" | "phone" | "line1" | "city" | "postalCode";
+
+export type AddressFormValue = {
+  label: string;
+  name: string;
+  phone: string;
+  line1: string;
+  line2: string;
+  city: string;
+  state: string;
+  postalCode: string;
+};
+
+const tidy = (value: unknown, max: number) =>
+  (typeof value === "string" ? value : "").replace(/[<>]/g, "").replace(/\s+/g, " ").trim().slice(0, max);
+
+/**
+ * Lo que la persona escribe en «Agregar dirección» / «Editar»: acepta teléfonos y códigos postales escritos como
+ * quiera (con guiones, +52, un cero de menos) y dice, campo por campo, qué falta. No exige zona de entrega: eso se
+ * revisa al pagar, no al guardar una dirección.
+ */
+export function validateAddressForm(
+  raw: Partial<Record<keyof AddressFormValue, unknown>>,
+): { ok: true; value: AddressFormValue } | { ok: false; errors: Partial<Record<AddressFormField, string>> } {
+  const errors: Partial<Record<AddressFormField, string>> = {};
+  const label = tidy(raw.label, 40);
+  const name = tidy(raw.name, 100);
+  const line1 = tidy(raw.line1, 120);
+  const city = tidy(raw.city, 80);
+  const phone = normalizePhone(raw.phone);
+  const postalCode = normalizePostalCode(typeof raw.postalCode === "string" ? raw.postalCode : "");
+
+  if (label.length < 2) errors.label = "Ponle un nombre para reconocerla, por ejemplo «Casa de mamá».";
+  if (name.length < 3) errors.name = "Escribe el nombre de quien recibe.";
+  if (!phone) errors.phone = "Escribe un teléfono de 10 dígitos.";
+  if (line1.length < 3) errors.line1 = "Escribe la calle y el número.";
+  if (city.length < 2) errors.city = "Escribe la alcaldía o el municipio.";
+  if (!postalCode) errors.postalCode = "Escribe un código postal de 5 dígitos.";
+
+  if (Object.keys(errors).length > 0 || !phone || !postalCode) return { ok: false, errors };
+  return {
+    ok: true,
+    value: { label, name, phone, line1, line2: tidy(raw.line2, 120), city, state: tidy(raw.state, 80), postalCode },
+  };
 }

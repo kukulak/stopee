@@ -113,7 +113,11 @@ const userSchema = new Schema(
     marketingOptInAt: { type: Date },
     /** Último cambio de contraseña: las sesiones iniciadas antes de este momento dejan de valer. */
     passwordChangedAt: { type: Date },
+    /** Nombre completo (nombre y apellidos juntos): es el que ven los correos, los pedidos y el administrador. */
     name: { type: String, trim: true },
+    /** Lo mismo, por separado: el saludo usa el nombre de pila sin cortar «María José». Vacíos en cuentas anteriores. */
+    firstName: { type: String, trim: true, maxlength: 60 },
+    lastName: { type: String, trim: true, maxlength: 80 },
     stripeCustomerId: { type: String },
     /** @deprecated usar `dogs` — se conserva por el registro histórico y como fallback de despliegue. */
     dogName: { type: String, trim: true },

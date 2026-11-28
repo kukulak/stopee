@@ -74,12 +74,13 @@ export function StarRating({ rating, className = "h-4 w-4" }: { rating: number; 
   );
 }
 
-export type ArrowDirection = "right" | "left" | "down" | "external";
+export type ArrowDirection = "right" | "left" | "down" | "up" | "external";
 
 const ARROW_PATH: Record<ArrowDirection, string> = {
   right: "M5 12h14M13 6l6 6-6 6",
   left: "M19 12H5M11 6l-6 6 6 6",
   down: "M12 5v14M6 13l6 6 6-6",
+  up: "M12 19V5M6 11l6-6 6 6",
   external: "M7 17 17 7M9 7h8v8",
 };
 
@@ -88,6 +89,7 @@ const ARROW_NUDGE: Record<ArrowDirection, string> = {
   right: "group-hover:translate-x-0.5",
   left: "group-hover:-translate-x-0.5",
   down: "group-hover:translate-y-0.5",
+  up: "group-hover:-translate-y-0.5",
   external: "group-hover:-translate-y-0.5 group-hover:translate-x-0.5",
 };
 
@@ -168,14 +170,6 @@ export function RepeatIcon({ className }: IconProps) {
   );
 }
 
-export function UserIcon({ className }: IconProps) {
-  return (
-    <Svg className={className}>
-      <path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM5 20c0-3.3 3.1-6 7-6s7 2.7 7 6" {...STROKE} />
-    </Svg>
-  );
-}
-
 export function MapPinIcon({ className }: IconProps) {
   return (
     <Svg className={className}>
@@ -204,6 +198,26 @@ export function StoreIcon({ className }: IconProps) {
   return (
     <Svg className={className}>
       <path d="M4 9l1.5-5h13L20 9M4 9v11h16V9M4 9h16M9 20v-6h6v6" {...STROKE} />
+    </Svg>
+  );
+}
+
+export function PawIcon({ className }: IconProps) {
+  return (
+    <Svg className={className}>
+      <circle cx="6.5" cy="10.5" r="1.7" {...STROKE} />
+      <circle cx="10" cy="6.5" r="1.7" {...STROKE} />
+      <circle cx="14" cy="6.5" r="1.7" {...STROKE} />
+      <circle cx="17.5" cy="10.5" r="1.7" {...STROKE} />
+      <path d="M12 12.5c-2.8 0-5 2.3-5 4.4 0 1.5 1.1 2.4 2.5 2.4 1 0 1.6-.4 2.5-.4s1.5.4 2.5.4c1.4 0 2.5-.9 2.5-2.4 0-2.1-2.2-4.4-5-4.4z" {...STROKE} />
+    </Svg>
+  );
+}
+
+export function UserIcon({ className }: IconProps) {
+  return (
+    <Svg className={className}>
+      <path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM5 20c0-3.3 3.1-6 7-6s7 2.7 7 6" {...STROKE} />
     </Svg>
   );
 }

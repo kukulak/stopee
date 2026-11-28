@@ -7,6 +7,7 @@ import {
   isAddressEmpty,
   MAX_SAVED_ADDRESSES,
   sameAddress,
+  type AddressFormValue,
 } from "~/lib/addressBook";
 
 export type RememberedAddress = {
@@ -204,4 +205,131 @@ export async function makePrincipalAddress(userId: string, id: string): Promise<
     },
   );
   return { ok: true };
+}
+
+const ALREADY_SAVED = (label: string) => `Ya tienes esa dirección guardada como «${label || "Otra dirección"}».`;
+const TOO_MANY = `Puedes guardar hasta ${MAX_SAVED_ADDRESSES} direcciones además de la principal. Quita una para agregar otra.`;
+
+/**
+ * «Agregar dirección» desde Mi cuenta: la persona la escribe y la nombra sin tener que hacer un pedido. Si su cuenta
+ * todavía no tenía principal, esta lo es; si no, queda como una más (nunca pisa la principal).
+ */
+export async function addAddress(userId: string, value: AddressFormValue): Promise<AddressBookResult> {
+  await connectDB();
+  const user = await UserModel.findById(userId).select("name phone address savedAddresses");
+  if (!user) return { ok: false, error: NOT_FOUND };
+
+  const key = addressKey(value);
+  if (isAddressEmpty(user.address)) {
+    await UserModel.updateOne(
+      { _id: user._id },
+      {
+        $set: {
+          address: {
+            line1: value.line1,
+            line2: value.line2,
+            city: value.city,
+            state: value.state,
+            postalCode: value.postalCode,
+            country: "MX",
+            label: value.label,
+            recipientName: value.name,
+          },
+          ...(user.phone ? {} : { phone: value.phone }),
+          ...(user.name ? {} : { name: value.name }),
+        },
+      },
+    );
+    return { ok: true };
+  }
+
+  if (sameAddress(user.address ?? {}, value)) return { ok: false, error: ALREADY_SAVED(user.address?.label || "Principal") };
+  const known = (user.savedAddresses ?? []).find((saved) => sameAddress(saved, value));
+  if (known) return { ok: false, error: ALREADY_SAVED(known.label ?? "") };
+  if ((user.savedAddresses ?? []).length >= MAX_SAVED_ADDRESSES) return { ok: false, error: TOO_MANY };
+
+  // El filtro por `key` evita el duplicado si se envía dos veces seguidas.
+  const done = await UserModel.updateOne(
+    { _id: user._id, "savedAddresses.key": { $ne: key } },
+    {
+      $push: {
+        savedAddresses: {
+          label: value.label,
+          name: value.name,
+          phone: value.phone,
+          line1: value.line1,
+          line2: value.line2,
+          city: value.city,
+          state: value.state,
+          postalCode: value.postalCode,
+          country: "MX",
+          key,
+          lastUsedAt: new Date(),
+        },
+      },
+    },
+  );
+  return done.modifiedCount > 0 ? { ok: true } : { ok: false, error: ALREADY_SAVED(value.label) };
+}
+
+/** «Editar» una dirección (la principal con `id = "principal"`, o una guardada): corrige cualquiera de sus datos. */
+export async function updateAddress(userId: string, id: string, value: AddressFormValue): Promise<AddressBookResult> {
+  if (id !== "principal" && !Types.ObjectId.isValid(id)) return { ok: false, error: NOT_FOUND };
+  await connectDB();
+  const user = await UserModel.findById(userId).select("name phone address savedAddresses");
+  if (!user) return { ok: false, error: NOT_FOUND };
+
+  // No puede quedar igual a OTRA dirección de la cuenta (la que se edita no cuenta).
+  const others = [
+    ...(id !== "principal" && !isAddressEmpty(user.address) ? [{ label: user.address?.label || "Principal", line1: user.address?.line1, postalCode: user.address?.postalCode }] : []),
+    ...(user.savedAddresses ?? [])
+      .filter((saved) => String(saved._id) !== id)
+      .map((saved) => ({ label: saved.label ?? "", line1: saved.line1, postalCode: saved.postalCode })),
+  ];
+  const clash = others.find((other) => sameAddress(other, value));
+  if (clash) return { ok: false, error: ALREADY_SAVED(clash.label) };
+
+  if (id === "principal") {
+    if (isAddressEmpty(user.address)) return { ok: false, error: NOT_FOUND };
+    await UserModel.updateOne(
+      { _id: user._id },
+      {
+        $set: {
+          address: {
+            line1: value.line1,
+            line2: value.line2,
+            city: value.city,
+            // Si no escribió estado, conserva el que ya tenía.
+            state: value.state || user.address?.state || "",
+            postalCode: value.postalCode,
+            country: "MX",
+            label: value.label,
+            recipientName: value.name,
+          },
+          // El teléfono de la cuenta es el de la dirección principal.
+          phone: value.phone,
+        },
+      },
+    );
+    return { ok: true };
+  }
+
+  const current = (user.savedAddresses ?? []).find((saved) => String(saved._id) === id);
+  const done = await UserModel.updateOne(
+    { _id: user._id, "savedAddresses._id": id },
+    {
+      $set: {
+        "savedAddresses.$.label": value.label,
+        "savedAddresses.$.name": value.name,
+        "savedAddresses.$.phone": value.phone,
+        "savedAddresses.$.line1": value.line1,
+        "savedAddresses.$.line2": value.line2,
+        "savedAddresses.$.city": value.city,
+        "savedAddresses.$.state": value.state || current?.state || "",
+        "savedAddresses.$.postalCode": value.postalCode,
+        "savedAddresses.$.key": addressKey(value),
+      },
+    },
+  );
+  return done.matchedCount > 0 ? { ok: true } : { ok: false, error: NOT_FOUND };
 }

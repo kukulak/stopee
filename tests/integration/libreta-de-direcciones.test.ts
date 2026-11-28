@@ -145,4 +145,93 @@ describe.skipIf(!hasTestDb)("libreta de direcciones", () => {
     expect((await book.makePrincipalAddress(userId, "no-es-un-id")).ok).toBe(false);
     expect((await book.renameAddress(userId, "no-es-un-id", "Casa")).ok).toBe(false);
   });
+  const form = (over: Partial<import("~/lib/addressBook").AddressFormValue> = {}) => ({
+    label: "Casa de mamá",
+    name: MAMA.name,
+    phone: MAMA.phone,
+    line1: MAMA.line1,
+    line2: MAMA.line2,
+    city: MAMA.city,
+    state: "",
+    postalCode: MAMA.postalCode,
+    ...over,
+  });
+
+  it("agregar desde Mi cuenta: sin dirección previa queda como principal, con su nombre y teléfono", async () => {
+    expect(await book.addAddress(userId, form({ label: "Mi casa", name: HOME.name, phone: HOME.phone, line1: HOME.line1, postalCode: HOME.postalCode }))).toEqual({ ok: true });
+    const user = await load();
+    expect(user.address).toMatchObject({ label: "Mi casa", line1: HOME.line1, recipientName: HOME.name });
+    expect(user.phone).toBe("5511111111");
+    expect(user.savedAddresses).toHaveLength(0);
+  });
+
+  it("agregar otra queda como secundaria con el nombre que le puso, sin pisar la principal", async () => {
+    await book.rememberDeliveryAddress(userId, HOME);
+    expect(await book.addAddress(userId, form())).toEqual({ ok: true });
+    const user = await load();
+    expect(user.address).toMatchObject({ line1: HOME.line1 });
+    expect(user.savedAddresses).toHaveLength(1);
+    expect(user.savedAddresses[0]).toMatchObject({ label: "Casa de mamá", name: "Rosa Pérez", phone: "5522222222", line1: MAMA.line1 });
+  });
+
+  it("no guarda dos veces la misma dirección y dice cómo se llama la que ya existe", async () => {
+    await book.rememberDeliveryAddress(userId, HOME);
+    await book.addAddress(userId, form());
+    const again = await book.addAddress(userId, form({ label: "Otra vez", line1: "calle horacio #45" }));
+    expect(again).toMatchObject({ ok: false });
+    expect((again as { error: string }).error).toContain("Casa de mamá");
+    const onPrincipal = await book.addAddress(userId, form({ line1: HOME.line1, postalCode: HOME.postalCode }));
+    expect(onPrincipal.ok).toBe(false);
+    expect((await load()).savedAddresses).toHaveLength(1);
+  });
+
+  it("tope de direcciones al agregar a mano", async () => {
+    await book.rememberDeliveryAddress(userId, HOME);
+    for (let i = 0; i < 10; i++) {
+      expect((await book.addAddress(userId, form({ label: `Lugar ${i}`, line1: `Calle ${i + 1} número ${i + 1}` }))).ok).toBe(true);
+    }
+    const extra = await book.addAddress(userId, form({ label: "Una más", line1: "Calle Once 11" }));
+    expect(extra.ok).toBe(false);
+    expect((await load()).savedAddresses).toHaveLength(10);
+  });
+
+  it("editar una guardada cambia sus datos y su nombre; editar la principal actualiza el teléfono de la cuenta", async () => {
+    await book.rememberDeliveryAddress(userId, HOME);
+    await book.addAddress(userId, form());
+    const mamaId = String((await load()).savedAddresses[0]._id);
+
+    expect(await book.updateAddress(userId, mamaId, form({ label: "Casa de la abuela", line1: "Calle Horacio 99", phone: "5599999999" }))).toEqual({ ok: true });
+    let user = await load();
+    expect(user.savedAddresses[0]).toMatchObject({ label: "Casa de la abuela", line1: "Calle Horacio 99", phone: "5599999999" });
+    expect(user.savedAddresses).toHaveLength(1);
+
+    expect(await book.updateAddress(userId, "principal", form({ label: "Casa", name: HOME.name, phone: "5588888888", line1: HOME.line1, postalCode: HOME.postalCode }))).toEqual({ ok: true });
+    user = await load();
+    expect(user.address).toMatchObject({ label: "Casa", line1: HOME.line1 });
+    expect(user.phone).toBe("5588888888");
+  });
+
+  it("editar no puede dejarla igual a otra de las direcciones; guardarla sin cambios sí se puede", async () => {
+    await book.rememberDeliveryAddress(userId, HOME);
+    await book.addAddress(userId, form());
+    const mamaId = String((await load()).savedAddresses[0]._id);
+
+    expect((await book.updateAddress(userId, mamaId, form({ line1: HOME.line1, postalCode: HOME.postalCode }))).ok).toBe(false);
+    expect((await book.updateAddress(userId, "principal", form({ line1: MAMA.line1, postalCode: MAMA.postalCode }))).ok).toBe(false);
+    expect((await book.updateAddress(userId, mamaId, form())).ok).toBe(true);
+  });
+
+  it("editar conserva el estado si no se escribió uno, y nadie edita direcciones de otra cuenta", async () => {
+    await book.rememberDeliveryAddress(userId, HOME);
+    await book.rememberDeliveryAddress(userId, MAMA);
+    const mamaId = String((await load()).savedAddresses[0]._id);
+    await book.updateAddress(userId, mamaId, form({ label: "Mamá" }));
+    expect((await load()).savedAddresses[0].state).toBe("Ciudad de México");
+
+    const other = await UserModel.create({ email: "otro@example.com", passwordHash: "x", emailVerifiedAt: new Date() });
+    expect((await book.updateAddress(String(other._id), mamaId, form({ label: "Hackeada" }))).ok).toBe(false);
+    expect((await load()).savedAddresses[0].label).toBe("Mamá");
+    expect((await book.updateAddress(userId, "no-es-un-id", form())).ok).toBe(false);
+    expect((await book.updateAddress(String(other._id), "principal", form())).ok).toBe(false);
+  });
 });

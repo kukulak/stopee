@@ -257,6 +257,50 @@ export function passwordChangedEmail() {
   return { subject: "Tu contraseña de STOPee cambió", html, text };
 }
 
+/** Al correo NUEVO: confirma que es suyo para terminar el cambio. */
+export function confirmEmailChangeEmail(data: { name?: string | null; url: string }) {
+  const { html, text } = renderLayout({
+    title: "Confirma tu correo nuevo",
+    paragraphs: [
+      `${data.name ? `Hola, ${data.name}. ` : ""}Pediste usar este correo en tu cuenta de STOPee. Confírmalo para terminar el cambio.`,
+      "El enlace funciona durante 1 hora. Si tú no lo pediste, ignora este mensaje: no cambia nada.",
+    ],
+    action: { label: "Confirmar el cambio", url: data.url },
+  });
+  return { subject: "Confirma tu correo nuevo en STOPee", html, text };
+}
+
+/** Al correo nuevo cuando ya pertenece a OTRA cuenta: la pantalla responde igual exista o no, la diferencia llega aquí. */
+export function emailChangeBlockedEmail() {
+  const { html, text } = renderLayout({
+    title: "Este correo ya tiene una cuenta",
+    paragraphs: [
+      "Alguien intentó cambiar el correo de una cuenta de STOPee a este, pero este correo ya pertenece a otra cuenta.",
+      "Si fuiste tú, entra con este correo; si no la recuerdas, puedes crear una contraseña nueva. Si no fuiste tú, ignora este mensaje: no cambió nada.",
+    ],
+    action: { label: "Entrar a mi cuenta", url: appUrl("/cuenta/entrar") },
+  });
+  return { subject: "Este correo ya tiene una cuenta en STOPee", html, text };
+}
+
+/**
+ * Al correo ANTERIOR cuando ya cambió: el dueño real se entera y tiene una semana para deshacerlo. Si alguien se
+ * adueñó de la sesión y cambió el correo, este aviso es lo que le permite recuperar la cuenta.
+ */
+export function emailChangedNoticeEmail(data: { newEmailMasked: string; revertUrl: string; byTeam: boolean }) {
+  const { html, text } = renderLayout({
+    title: "El correo de tu cuenta cambió",
+    paragraphs: [
+      data.byTeam
+        ? `El equipo de STOPee cambió el correo de tu cuenta a ${data.newEmailMasked}, a petición tuya.`
+        : `El correo de tu cuenta de STOPee ahora es ${data.newEmailMasked}. Desde este momento los avisos llegan allá y no a este correo.`,
+      "Si fuiste tú, no tienes que hacer nada. Si NO fuiste tú, toca el botón: regresamos tu correo a este y cerramos todas las sesiones. Te mandaremos un enlace para elegir una contraseña nueva. El enlace funciona durante 7 días.",
+    ],
+    action: { label: "No fui yo: recuperar mi cuenta", url: data.revertUrl },
+  });
+  return { subject: "El correo de tu cuenta de STOPee cambió", html, text };
+}
+
 /** Invitación: un administrador le creó una cuenta y debe elegir su contraseña. */
 export function accountInvitationEmail(data: { name?: string | null; url: string }) {
   const { html, text } = renderLayout({

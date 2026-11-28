@@ -17,6 +17,7 @@ import { STATION_CITIES } from "~/lib/refillPoints";
 import { Types } from "mongoose";
 import { cleanPlainText } from "~/lib/formGuard.server";
 import { normalizePhone } from "~/lib/deliveryAddress";
+import { applyEmailChange, parseNewEmail } from "~/lib/emailChange.server";
 
 export const meta: MetaFunction = () => [{ title: "Cliente — Admin STOPee" }];
 
@@ -54,6 +55,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
 
   const viewer = await requireSuperAdmin(request);
   await connectDB();
+  if (intent === "change-email") return changeCustomerEmail(viewer, params.id, formData);
   if (intent !== "set-role") return data({ ok: false, savedIntent: null, error: "Acción no reconocida." }, { status: 400 });
 
   const role = formData.get("role");
@@ -77,6 +79,31 @@ export async function action({ request, params }: ActionFunctionArgs) {
     logAudit("user.role_changed", { by: String(viewer._id), userId: String(target._id), from: previousRole, to: role });
   }
   return data({ ok: true, savedIntent: "set-role" as const, error: null as string | null });
+}
+
+/**
+ * Cambiar el correo de un cliente que PERDIÓ el acceso al anterior (si lo conserva, lo cambia él mismo en Mi cuenta).
+ * Es la puerta de una toma de cuenta por ingeniería social, así que: solo un super administrador, nunca a una cuenta del
+ * equipo, y hay que dejar escrito cómo se comprobó que es la persona. Al correo anterior le llega el «no fui yo» y al
+ * nuevo, el enlace para confirmarlo; hasta entonces la cuenta no entra.
+ */
+async function changeCustomerEmail(viewer: { _id: unknown }, id: string | undefined, formData: FormData) {
+  const fail = (error: string, status = 400) => data({ ok: false, savedIntent: "change-email" as const, error }, { status });
+  if (!id || !Types.ObjectId.isValid(id)) return fail("Cuenta no encontrada.", 404);
+  const newEmail = parseNewEmail(formData.get("newEmail"));
+  if (!newEmail) return fail("Escribe un correo válido.");
+  const proof = cleanPlainText(formData.get("proof")).slice(0, 300);
+  if (proof.length < 10) return fail("Anota cómo comprobaste que es la persona (por ejemplo: número de pedido y dirección de entrega que coinciden).");
+
+  await connectDB();
+  const target = await UserModel.findById(id).select("role email");
+  if (!target) return fail("Cuenta no encontrada.", 404);
+  if (isStaff(target.role)) return fail("El correo de una cuenta del equipo no se cambia desde aquí.", 403);
+
+  const result = await applyEmailChange(id, newEmail, { byStaffId: String((viewer as { _id: unknown })._id) });
+  if (!result.ok) return fail(result.error);
+  logAudit("user.email_changed_by_staff", { by: String((viewer as { _id: unknown })._id), userId: id, proof });
+  return data({ ok: true, savedIntent: "change-email" as const, error: null as string | null });
 }
 
 /** Activa o desactiva a una cuenta como Punto de Recarga y guarda los datos de su punto. */
@@ -178,6 +205,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       isPublic: Boolean(user.allyStation?.isPublic),
     },
     canManageRole: isSuperAdmin(viewer.role) && user.role !== "superadmin" && String(user._id) !== String(viewer._id),
+    // El correo de una cuenta del equipo no se cambia desde aquí (ver changeCustomerEmail).
+    canChangeEmail: isSuperAdmin(viewer.role) && !isStaff(user.role),
     insights: {
       ltv: Math.round(user.totalSpentLTV ?? 0),
       orderCount: revenueOrders.length,
@@ -223,13 +252,15 @@ function Card({ children, className = "" }: { children: React.ReactNode; classNa
 }
 
 export default function AdminCustomerDetail() {
-  const { profile, ally, allyRequestStatus, canManageRole, insights, orders, subscriptions, timeline } = useLoaderData<typeof loader>();
+  const { profile, ally, allyRequestStatus, canManageRole, canChangeEmail, insights, orders, subscriptions, timeline } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const navigation = useNavigation();
   const isSavingRole = navigation.state !== "idle" && navigation.formData?.get("intent") === "set-role";
   const isSavingAlly = navigation.state !== "idle" && navigation.formData?.get("intent") === "set-ally";
   const roleResult = actionData && actionData.savedIntent === "set-role" ? actionData : null;
   const allyResult = actionData && actionData.savedIntent === "set-ally" ? actionData : null;
+  const emailResult = actionData && actionData.savedIntent === "change-email" ? actionData : null;
+  const isChangingEmail = navigation.state !== "idle" && navigation.formData?.get("intent") === "change-email";
 
   return (
     <div className="flex min-w-0 flex-col gap-6">
@@ -279,6 +310,33 @@ export default function AdminCustomerDetail() {
           {roleResult && !roleResult.ok && roleResult.error && (
             <p role="alert" className="mt-2 text-sm font-semibold text-red-600">{roleResult.error}</p>
           )}
+        </Card>
+      )}
+
+      {canChangeEmail && (
+        <Card>
+          <h2 className="font-display text-lg font-bold text-carbon">Cambiar el correo de esta cuenta</h2>
+          <p className="mt-1 text-sm text-carbon/60">
+            Solo para quien <strong>ya no tiene acceso</strong> a su correo (si lo tiene, lo cambia él mismo en Mi cuenta, con su contraseña).
+            Nunca lo cambies solo porque lo pidan: compara lo que te digan con esta ficha (pedidos, direcciones, qué compró y cuándo) y anota cómo lo
+            comprobaste. Al correo anterior le llega un aviso para deshacerlo y la persona confirma el nuevo con un enlace.
+          </p>
+          <Form method="post" className="mt-3 flex max-w-lg flex-col gap-3">
+            <input type="hidden" name="intent" value="change-email" />
+            <div>
+              <label htmlFor="newEmail" className="text-sm font-semibold text-carbon">Correo nuevo</label>
+              <input id="newEmail" name="newEmail" type="email" required autoComplete="off" className="mt-1 block min-h-11 w-full rounded-xl border border-carbon/15 px-3 focus:border-oliva focus:outline-none" />
+            </div>
+            <div>
+              <label htmlFor="proof" className="text-sm font-semibold text-carbon">¿Cómo comprobaste que es la persona?</label>
+              <textarea id="proof" name="proof" required minLength={10} maxLength={300} rows={2} className="mt-1 block w-full rounded-xl border border-carbon/15 px-3 py-2 focus:border-oliva focus:outline-none" />
+            </div>
+            <button type="submit" disabled={isChangingEmail} className="min-h-11 self-start rounded-full bg-carbon px-6 text-sm font-bold text-hueso disabled:opacity-60">
+              {isChangingEmail ? "Cambiando…" : "Cambiar correo"}
+            </button>
+          </Form>
+          {emailResult?.ok && <p role="status" className="mt-2 text-sm font-semibold text-bosque">Listo. Avisamos al correo anterior y mandamos el enlace de confirmación al nuevo.</p>}
+          {emailResult && !emailResult.ok && emailResult.error && <p role="alert" className="mt-2 text-sm font-semibold text-red-600">{emailResult.error}</p>}
         </Card>
       )}
 

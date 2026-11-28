@@ -17,6 +17,7 @@ import { CheckIcon } from "~/components/ui/Icons";
 import { LegalNotice } from "~/components/ui/LegalNotice";
 import { MarketingOptIn } from "~/components/ui/MarketingOptIn";
 import { readMarketingOptIn } from "~/lib/marketing";
+import { fullNameOf } from "~/lib/names";
 
 export const meta: MetaFunction = () => [{ title: "Crear cuenta — STOPee" }];
 
@@ -32,7 +33,8 @@ const registroSchema = z.object({
   confirmPassword: z.string(),
   // .nullish() (no solo .optional()) porque formData.get() devuelve `null`,
   // no `undefined`, cuando el campo no viene en la petición.
-  name: z.string().trim().max(120).nullish(),
+  firstName: z.string().trim().min(2, "Escribe tu nombre.").max(60, "Tu nombre es demasiado largo."),
+  lastName: z.string().trim().min(2, "Escribe tus apellidos.").max(80, "Tus apellidos son demasiado largos."),
   dogName: z.string().trim().max(80).nullish(),
 }).superRefine((data, ctx) => {
   const problem = passwordProblem(data.password, data.email);
@@ -56,7 +58,8 @@ export async function action({ request }: ActionFunctionArgs) {
     email: formData.get("email"),
     password: formData.get("password"),
     confirmPassword: formData.get("confirmPassword") ?? "",
-    name: formData.get("name"),
+    firstName: formData.get("firstName") ?? "",
+    lastName: formData.get("lastName") ?? "",
     // El campo se llama "mascota" (no "dogName") para que Chrome no lo
     // confunda con el nombre de la persona al guardar sus datos.
     dogName: formData.get("mascota"),
@@ -67,7 +70,8 @@ export async function action({ request }: ActionFunctionArgs) {
   }
 
   const { email, password } = parsed.data;
-  const name = parsed.data.name ?? "";
+  const { firstName, lastName } = parsed.data;
+  const name = fullNameOf(firstName, lastName);
   const dogName = parsed.data.dogName ?? "";
   // Solo cuenta cuando confirme su correo (el CSV de campañas pide correo confirmado): nadie queda apuntado por un tercero.
   const marketing = readMarketingOptIn(formData);
@@ -99,7 +103,7 @@ export async function action({ request }: ActionFunctionArgs) {
 
   let user;
   try {
-    user = await UserModel.create({ email, passwordHash, name, dogName, ...(marketing ? { marketingOptInAt: new Date() } : {}) });
+    user = await UserModel.create({ email, passwordHash, name, firstName, lastName, dogName, ...(marketing ? { marketingOptInAt: new Date() } : {}) });
   } catch (error) {
     // Dos registros del mismo correo a la vez: el segundo choca con el índice único y se trata como "ya existe".
     if ((error as { code?: number }).code === 11000) return data({ error: null, sentTo: email, maskedEmail: maskEmail(email) });
@@ -160,10 +164,16 @@ export default function Registro() {
 
         <Form method="post" className="mt-6 flex flex-col gap-4">
           <div>
-            <label htmlFor="name" className="text-sm font-semibold text-carbon">
-              Tu nombre
+            <label htmlFor="firstName" className="text-sm font-semibold text-carbon">
+              Nombre(s)
             </label>
-            <input id="name" name="name" type="text" autoComplete="name" className={inputClass} />
+            <input id="firstName" name="firstName" type="text" required minLength={2} maxLength={60} autoComplete="given-name" className={inputClass} />
+          </div>
+          <div>
+            <label htmlFor="lastName" className="text-sm font-semibold text-carbon">
+              Apellidos
+            </label>
+            <input id="lastName" name="lastName" type="text" required minLength={2} maxLength={80} autoComplete="family-name" className={inputClass} />
           </div>
           <div>
             <label htmlFor="email" className="text-sm font-semibold text-carbon">
@@ -220,7 +230,7 @@ export default function Registro() {
                 autocompletado apagado para que Chrome no lo guarde como el
                 nombre de la persona. */}
             <label htmlFor="mascota" className="text-sm font-semibold text-carbon">
-              Nombre de tu perro (opcional)
+              Nombre de tu perrito (opcional)
             </label>
             <input id="mascota" name="mascota" type="text" autoComplete="off" className={inputClass} />
           </div>

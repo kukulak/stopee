@@ -1,16 +1,18 @@
 import { isStaff } from "~/lib/roles";
 import type { ActionFunctionArgs, LoaderFunctionArgs, MetaFunction } from "react-router";
 import { data, redirect } from "react-router";
-import { Form, Link, useActionData, useLoaderData, useNavigation, useSearchParams } from "react-router";
+import { Form, Link, useActionData, useLoaderData, useNavigation } from "react-router";
 import { useState } from "react";
 import { z } from "zod";
 import { Navbar } from "~/components/layout/Navbar";
 import { Footer } from "~/components/layout/Footer";
 import { connectDB } from "~/lib/db.server";
-import { requireUserId, logout } from "~/lib/session.server";
-import { UserModel, verifyPassword } from "~/models/user.server";
+import { requireUserId, logout, getSession, sessionStorage } from "~/lib/session.server";
+import { UserModel, hashPassword, verifyPassword } from "~/models/user.server";
+import { passwordProblem } from "~/lib/password";
+import { requestEmailChange } from "~/lib/emailChange.server";
 import { checkRateLimit, rateLimitMessage } from "~/lib/rateLimit.server";
-import { sendVerificationEmail } from "~/lib/accountEmails.server";
+import { sendPasswordChangedNotice, sendVerificationEmail, settleWithin } from "~/lib/accountEmails.server";
 import { OrderModel } from "~/models/order.server";
 import { SubscriptionModel } from "~/models/subscription.server";
 import {
@@ -28,25 +30,16 @@ import {
   programDisplayName,
 } from "~/lib/subscriptionConfig";
 import { getActiveLoyaltyConfig } from "~/models/promotion.server";
-import {
-  ArrowIcon,
-  ChevronIcon,
-  CloseIcon,
-  MailIcon,
-  MapPinIcon,
-  PackageIcon,
-  ReceiptIcon,
-  RepeatIcon,
-  StoreIcon,
-  UserIcon,
-} from "~/components/ui/Icons";
-import { AccountTile, LoyaltyStrip, TileGroup, parseAccountSection, sectionHref } from "~/components/account/AccountHub";
-import { firstNameOf } from "~/lib/names";
+import { ArrowIcon, MapPinIcon, PackageIcon, PawIcon, ReceiptIcon, RepeatIcon, StoreIcon, UserIcon } from "~/components/ui/Icons";
+import { AccountSection, AccountTile, LoyaltyStrip, TileGroup, jumpTo } from "~/components/account/AccountHub";
+import { firstNameOf, fullNameOf, greetingFor, splitFullName } from "~/lib/names";
 import { describeLoyaltyReward, resolveLoyaltyTier } from "~/lib/loyalty";
 import { AddressBookCard } from "~/components/account/AddressBookCard";
 import { AllyCard } from "~/components/account/AllyCard";
 import { BillingCard } from "~/components/account/BillingCard";
 import { MarketingCard } from "~/components/account/MarketingCard";
+import { DogsCard } from "~/components/account/DogsCard";
+import { ProfileCard } from "~/components/account/ProfileCard";
 import { LeadModel } from "~/models/lead.server";
 import { orderNumber, validateBillingInfo } from "~/lib/fiscal";
 import { AllyRequestModel } from "~/models/allyRequest.server";
@@ -55,8 +48,8 @@ import { cleanPlainText } from "~/lib/formGuard.server";
 import { normalizeMapsUrl, REQUEST_STATUS_LABELS, type RequestStatus } from "~/lib/refillPoints";
 import { MAPS_URL_ERROR } from "~/lib/refillPoints.server";
 import { normalizePhone } from "~/lib/deliveryAddress";
-import { addressOptionsFromProfile } from "~/lib/addressBook";
-import { makePrincipalAddress, removeSavedAddress, renameAddress } from "~/lib/addressBook.server";
+import { addressOptionsFromProfile, validateAddressForm } from "~/lib/addressBook";
+import { addAddress, makePrincipalAddress, removeSavedAddress, renameAddress, updateAddress } from "~/lib/addressBook.server";
 
 const ORDER_STATUS_LABELS: Record<string, string> = {
   paid: "Pagado",
@@ -135,6 +128,11 @@ export async function loader({ request }: LoaderFunctionArgs) {
     allyOrders,
     user: {
       name: user.name,
+      // Nombre de pila para el saludo: el guardado por separado o, en cuentas anteriores, la primera palabra.
+      greetingName: user.firstName || firstNameOf(user.name),
+      // Lo que se muestra al editar: lo guardado o, en cuentas anteriores, una sugerencia que la persona corrige.
+      firstName: user.firstName || splitFullName(user.name).firstName,
+      lastName: user.lastName ?? (user.firstName ? "" : splitFullName(user.name).lastName),
       email: user.email,
       emailVerified: Boolean(user.emailVerifiedAt),
       marketing: Boolean(user.marketingOptInAt),
@@ -213,6 +211,31 @@ export async function action({ request }: ActionFunctionArgs) {
     );
   }
 
+  if (intent === "address-add" || intent === "address-update") {
+    const parsed = validateAddressForm({
+      label: formData.get("label"),
+      name: formData.get("name"),
+      phone: formData.get("phone"),
+      line1: formData.get("line1"),
+      line2: formData.get("line2"),
+      city: formData.get("city"),
+      state: formData.get("state"),
+      postalCode: formData.get("postalCode"),
+    });
+    if (!parsed.ok) {
+      return data(
+        { ok: false, savedIntent: intent, error: "Revisa los datos marcados en rojo.", errors: parsed.errors },
+        { status: 400 },
+      );
+    }
+    const result =
+      intent === "address-add"
+        ? await addAddress(userId, parsed.value)
+        : await updateAddress(userId, String(formData.get("addressId") ?? ""), parsed.value);
+    // Un fallo de la libreta (ya la tenía, llegó al tope) va como aviso general, no pegado a un campo.
+    return data({ ok: result.ok, savedIntent: intent, error: result.ok ? null : result.error }, { status: result.ok ? 200 : 400 });
+  }
+
   if (intent === "billing-update" || intent === "billing-remove") {
     if (intent === "billing-remove") {
       await UserModel.updateOne({ _id: userId }, { $unset: { billingInfo: 1 } });
@@ -263,49 +286,87 @@ export async function action({ request }: ActionFunctionArgs) {
   }
 
   if (intent === "update-profile") {
-    const profileSchema = z.object({
-      phone: z.string().trim().max(20),
-      addressLine1: z.string().trim().max(200),
-      addressLine2: z.string().trim().max(200),
-      addressCity: z.string().trim().max(100),
-      addressState: z.string().trim().max(100),
-      addressPostalCode: z.union([z.literal(""), z.string().trim().regex(/^\d{4,5}$/, "El código postal debe tener 4 o 5 dígitos.")]),
-    });
-    const parsed = profileSchema.safeParse({
-      phone: formData.get("phone"),
-      addressLine1: formData.get("addressLine1"),
-      addressLine2: formData.get("addressLine2"),
-      addressCity: formData.get("addressCity"),
-      addressState: formData.get("addressState"),
-      addressPostalCode: formData.get("addressPostalCode"),
-    });
+    // Mi perfil: nombre, apellidos y teléfono. El correo no se cambia aquí (lo ligan los pedidos y los avisos) y la
+    // contraseña tiene su propio paso. Los apellidos son opcionales al editar para que quien solo quiere cambiar su
+    // teléfono no tenga que llenarlos; al registrarse sí se piden.
+    const parsed = z
+      .object({
+        firstName: z.string().trim().min(2, "Escribe tu nombre.").max(60, "Tu nombre es demasiado largo."),
+        lastName: z.string().trim().max(80, "Tus apellidos son demasiado largos."),
+        phone: z.string().trim().max(20, "Revisa tu teléfono."),
+      })
+      .safeParse({ firstName: formData.get("firstName"), lastName: formData.get("lastName") ?? "", phone: formData.get("phone") });
     if (!parsed.success) {
       return data(
         { ok: false, savedIntent: "update-profile" as const, error: parsed.error.issues[0]?.message ?? "Revisa los datos." },
         { status: 400 },
       );
     }
+    const firstName = cleanPlainText(parsed.data.firstName);
+    const lastName = cleanPlainText(parsed.data.lastName);
+    await UserModel.updateOne({ _id: userId }, { firstName, lastName, name: fullNameOf(firstName, lastName), phone: parsed.data.phone });
+    return data({ ok: true, savedIntent: "update-profile" as const, error: null as string | null });
+  }
 
-    // Editar la dirección principal no debe borrar su nombre ni a quién se entrega.
-    const current = await UserModel.findById(userId).select("address.label address.recipientName").lean();
-    const address = {
-      label: current?.address?.label ?? "",
-      recipientName: current?.address?.recipientName ?? "",
-      line1: parsed.data.addressLine1,
-      line2: parsed.data.addressLine2,
-      city: parsed.data.addressCity,
-      state: parsed.data.addressState,
-      postalCode: parsed.data.addressPostalCode,
-      country: "MX",
-    };
+  if (intent === "update-dogs") {
     const dogNames = formData.getAll("mascota") as string[];
     const dogBirthdays = formData.getAll("dogBirthday") as string[];
     const dogs = dogNames
-      .map((name, i) => ({ name: name.trim(), birthday: dogBirthdays[i] ? new Date(dogBirthdays[i]) : undefined }))
-      .filter((d) => d.name);
+      .map((name, i) => ({ name: name.trim().slice(0, 40), birthday: dogBirthdays[i] ? new Date(dogBirthdays[i]) : undefined }))
+      .filter((d) => d.name)
+      .slice(0, 8);
+    await UserModel.updateOne({ _id: userId }, { dogs });
+    return data({ ok: true, savedIntent: "update-dogs" as const, error: null as string | null });
+  }
 
-    await UserModel.findByIdAndUpdate(userId, { phone: parsed.data.phone, address, dogs });
-    return data({ ok: true, savedIntent: "update-profile" as const, error: null as string | null });
+  if (intent === "change-email") {
+    const fail = (error: string, status = 400) => data({ ok: false, savedIntent: "change-email" as const, error }, { status });
+    const limit = await checkRateLimit(`change-email:${userId}`, { max: 5, windowMs: 15 * 60 * 1000 });
+    if (!limit.allowed) return fail(rateLimitMessage(limit.retryAfterSeconds), 429);
+
+    const user = await UserModel.findById(userId).select("email name passwordHash");
+    if (!user) return fail("No se encontró tu cuenta.", 404);
+    // Con la contraseña: una sesión abierta en un equipo prestado no basta para quedarse con la cuenta.
+    if (!(await verifyPassword(String(formData.get("currentPassword") ?? ""), user.passwordHash))) {
+      return fail("Tu contraseña actual no es correcta.");
+    }
+    const result = await requestEmailChange(user, formData.get("newEmail"));
+    if (!result.ok) return fail(result.error);
+    return data({ ok: true, savedIntent: "change-email" as const, error: null as string | null, maskedEmail: result.maskedEmail });
+  }
+
+  if (intent === "change-password") {
+    const fail = (error: string, status = 400) => data({ ok: false, savedIntent: "change-password" as const, error }, { status });
+    const limit = await checkRateLimit(`change-password:${userId}`, { max: 5, windowMs: 15 * 60 * 1000 });
+    if (!limit.allowed) return fail(rateLimitMessage(limit.retryAfterSeconds), 429);
+
+    const user = await UserModel.findById(userId);
+    if (!user) return fail("No se encontró tu cuenta.", 404);
+    const current = String(formData.get("currentPassword") ?? "");
+    const next = String(formData.get("newPassword") ?? "");
+    const confirm = String(formData.get("confirmPassword") ?? "");
+
+    // Pedir la actual evita que alguien con una sesión abierta (computadora compartida, teléfono prestado) cambie la
+    // contraseña y se quede con la cuenta.
+    if (!(await verifyPassword(current, user.passwordHash))) return fail("Tu contraseña actual no es correcta.");
+    const problem = passwordProblem(next, user.email);
+    if (problem) return fail(problem);
+    if (next !== confirm) return fail("Las contraseñas nuevas no coinciden.");
+    if (await verifyPassword(next, user.passwordHash)) return fail("La contraseña nueva debe ser distinta a la actual.");
+
+    user.passwordHash = await hashPassword(next);
+    user.passwordChangedAt = new Date();
+    await user.save();
+    // Aviso al correo, sin que un fallo del envío detenga el cambio.
+    await settleWithin(sendPasswordChangedNotice(user).catch(() => undefined), 1500);
+
+    // Las otras sesiones dejan de valer (passwordChangedAt); esta se renueva para que quien la cambió siga dentro.
+    const session = await getSession(request);
+    session.set("iat", Date.now());
+    return data(
+      { ok: true, savedIntent: "change-password" as const, error: null as string | null },
+      { headers: { "Set-Cookie": await sessionStorage.commitSession(session) } },
+    );
   }
 
   if (intent === "marketing-update") {
@@ -411,7 +472,7 @@ export async function action({ request }: ActionFunctionArgs) {
           {
             ok: false,
             savedIntent: "subscription-invoice" as const,
-            error: "Primero guarda tus datos en «Datos de facturación» (en Mi cuenta) y luego prende la factura de cada caja.",
+            error: "Primero guarda tus datos en «Mis datos de facturación» (en Mi cuenta) y luego prende la factura de cada caja.",
           },
           { status: 400 },
         );
@@ -458,8 +519,6 @@ export default function Cuenta() {
   const actionData = useActionData<typeof action>();
   const navigation = useNavigation();
   const isBusy = navigation.state !== "idle";
-  const isSavingProfile = isBusy && navigation.formData?.get("intent") === "update-profile";
-  const [showProfileForm, setShowProfileForm] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const isResendingVerification = isBusy && navigation.formData?.get("intent") === "resend-verification";
   const resendResult =
@@ -469,32 +528,26 @@ export default function Cuenta() {
     actionData && "savedIntent" in actionData && actionData.savedIntent === "delete-account"
       ? actionData.error
       : null;
-  const [dogRows, setDogRows] = useState(
-    user.dogs.length > 0 ? user.dogs : [{ name: "", birthday: "" }],
-  );
 
-  const [searchParams] = useSearchParams();
   const hasPoint = Boolean(ally) || Boolean(allyRequestStatus);
-  const section = parseAccountSection(searchParams.get("seccion"), { hasPoint });
 
-  // Lo que dice cada cuadro del tablero: cómo está eso hoy, sin tener que abrirlo.
+  // Lo que dice cada cuadro del tablero: cómo está eso hoy, sin tener que abrirlo. Un cuadro sin nada que ver
+  // (aún sin pedidos ni suscripción) se queda quieto y sin enlace; su sección ni siquiera se dibuja abajo.
+  const hasOrders = orders.length > 0;
+  const hasSubscriptions = subscriptions.length > 0;
   const inTransit = orders.filter((o) => o.status === "shipped").length;
   const preparing = orders.filter((o) => o.status === "paid" || o.status === "processing").length;
-  const ordersSummary =
-    orders.length === 0 ? "Todavía no tienes pedidos" : `${orders.length} ${orders.length === 1 ? "pedido" : "pedidos"}`;
+  const ordersSummary = hasOrders ? `${orders.length} ${orders.length === 1 ? "pedido" : "pedidos"}` : "Todavía no tienes pedidos";
   const ordersBadge = inTransit > 0 ? `${inTransit} en camino` : preparing > 0 ? `${preparing} en preparación` : null;
   const firstSubscription = subscriptions[0];
   const subscriptionSummary = firstSubscription
     ? `${SUBSCRIPTION_STATUS_LABELS[firstSubscription.status] ?? firstSubscription.status} · ${frequencyLabel(firstSubscription.frequency)}`
-    : "Aún no tienes uno";
+    : "Todavía no tienes una";
   const subscriptionBadge = subscriptions.some((s) => s.status === "past_due") ? "Pago pendiente" : null;
-  const profileSummary = user.dogs.length > 0 ? user.dogs.map((d) => d.name).join(", ") : "Agrega a tu perro";
-  const addressesSummary =
-    user.addresses.length === 0
-      ? "Se guardan con tu primer pedido"
-      : `${user.addresses.length} ${user.addresses.length === 1 ? "guardada" : "guardadas"}`;
+  const dogsSummary = user.dogs.length > 0 ? user.dogs.map((d) => d.name).join(", ") : "Agrega a tu perrito";
+  const profileSummary = user.name || user.email;
+  const addressesSummary = user.addresses.length === 0 ? "Agrega la primera" : user.addresses.map((a) => a.label).join(", ");
   const billingSummary = user.billing ? `RFC ${user.billing.rfc}` : "Sin datos guardados";
-  const marketingSummary = user.marketing ? "Recibes promociones" : "Sin promociones";
 
   return (
     <div className="flex min-h-screen flex-col bg-hueso">
@@ -505,10 +558,7 @@ export default function Cuenta() {
           <p className="font-body text-sm font-bold uppercase tracking-widest text-oliva">
             Mi cuenta
           </p>
-          <h1 className="mt-2 font-display text-3xl font-black text-carbon">
-            Hola{firstNameOf(user.name) ? `, ${firstNameOf(user.name)}` : ""}
-            {user.dogs[0]?.name ? ` y ${user.dogs[0].name}` : ""}
-          </h1>
+          <h1 className="mt-2 font-display text-3xl font-black text-carbon">{greetingFor(user.greetingName, user.dogs.map((d) => d.name))}</h1>
           <p className="mt-1 text-carbon/60">{user.email}</p>
 
           {!user.emailVerified && (
@@ -548,370 +598,250 @@ export default function Cuenta() {
             </Link>
           )}
 
-          {section ? (
-            <>
-            <Link
-              to="/cuenta"
-              className="mt-6 inline-flex min-h-11 items-center gap-1 text-sm font-semibold text-bosque hover:underline"
-            >
-              <ChevronIcon direction="left" className="h-4 w-4" />
-              Mi cuenta
-            </Link>
-            {section === "pedidos" && (
-              <>
-    {/* Pedidos */}
-              <div className="mt-10">
-                <h2 className="font-display text-xl font-black text-carbon">Mis pedidos</h2>
-                {orders.length === 0 ? (
-                  <p className="mt-2 text-sm text-carbon/60">Todavía no tienes pedidos.</p>
-                ) : (
-                  <ul className="mt-4 flex flex-col gap-3">
-                    {orders.map((order) => (
-                      <li
-                        key={order.id}
-                        className="flex items-center justify-between rounded-2xl border border-carbon/10 bg-white p-4"
-                      >
-                        <div>
-                          <p className="text-sm font-semibold text-carbon">
-                            {(order.items as Array<{ quantity: number; name: string }>)
-                              .map((i) => `${i.quantity}× ${i.name}`)
-                              .join(", ")}
-                          </p>
-                          <p className="text-xs text-carbon/50">
-                            Pedido {order.number} · {new Date(order.createdAt).toLocaleDateString("es-MX")} ·{" "}
-                            {ORDER_STATUS_LABELS[order.status] ?? order.status}
-                            {order.shippingCost > 0 && ` · Incluye envío $${order.shippingCost} MXN`}
-                            {order.requiresInvoice && " · Factura solicitada"}
-                          </p>
-                        </div>
-                        <p className="font-display font-bold text-carbon">${order.netAmount} MXN</p>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-              </>
+          <div id="menu" className="scroll-mt-20">
+            <LoyaltyStrip loyalty={loyalty} pendingRewardText={loyalty.pendingReward ? describeLoyaltyReward(loyalty.pendingReward) : null} />
+  
+            {hasPoint && (
+              <TileGroup title="Mi punto de recarga">
+                <AccountTile
+                  section="punto"
+                  icon={<StoreIcon className="h-6 w-6" />}
+                  title={ally ? "Mi punto de recarga" : "Mi solicitud de punto de recarga"}
+                  summary={ally ? ally.businessName || "Tu punto y tus pedidos de bidón" : REQUEST_STATUS_LABELS[allyRequestStatus!]}
+                />
+              </TileGroup>
             )}
-            {section === "auto-envio" && (
-              <>
-    {/* Suscripciones */}
-              <div className="mt-10">
-                <h2 className="font-display text-xl font-black text-carbon">Mi suscripción</h2>
-                {subscriptions.length === 0 ? (
-                  <p className="mt-2 text-sm text-carbon/60">
-                    Aún no tienes un auto-envío activo. Actívalo desde{" "}
-                    <a href="/suscripcion" className="font-semibold text-bosque hover:underline">
-                      {subscriptionProgram.name}
-                    </a>
-                    .
-                  </p>
-                ) : (
-                  <ul className="mt-4 flex flex-col gap-4">
-                    {subscriptions.map((sub) => (
-                      <li
-                        key={sub.id}
-                        className="rounded-3xl border border-carbon/10 bg-white p-5 sm:p-6"
-                      >
-                        <div className="flex flex-wrap items-center justify-between gap-3">
-                          <div>
-                            <p className="font-display font-bold text-carbon">
-                              {sub.items.map((i) => `${i.quantity}× ${i.name}`).join(" + ")}
-                            </p>
-                            <p className="text-sm text-carbon/60">
-                              {frequencyLabel(sub.frequency)} · Estado:{" "}
-                              <span className="font-semibold capitalize">
-                                {sub.status === "active"
-                                  ? "Activa"
-                                  : sub.status === "paused"
-                                    ? "Pausada"
-                                    : sub.status === "past_due"
-                                      ? "Pago pendiente"
-                                      : "Cancelada"}
-                              </span>
-                            </p>
-                          </div>
-    
-                          <div className="flex flex-wrap gap-2">
-                            {sub.status === "active" ? (
-                              <Form method="post">
-                                <input type="hidden" name="intent" value="pause-subscription" />
-                                <input type="hidden" name="subscriptionId" value={sub.id} />
-                                <button
-                                  type="submit"
-                                  disabled={isBusy}
-                                  className="min-h-11 rounded-full border border-carbon/15 px-4 text-sm font-semibold text-carbon disabled:opacity-60"
-                                >
-                                  Pausar
-                                </button>
-                              </Form>
-                            ) : sub.status === "paused" ? (
-                              <Form method="post">
-                                <input type="hidden" name="intent" value="resume-subscription" />
-                                <input type="hidden" name="subscriptionId" value={sub.id} />
-                                <button
-                                  type="submit"
-                                  disabled={isBusy}
-                                  className="min-h-11 rounded-full bg-lima px-4 text-sm font-bold text-carbon disabled:opacity-60"
-                                >
-                                  Reanudar
-                                </button>
-                              </Form>
-                            ) : null}
-    
-                            <Form method="post">
-                              <input type="hidden" name="intent" value="billing-portal" />
-                              <button
-                                type="submit"
-                                disabled={isBusy}
-                                className="min-h-11 rounded-full border border-carbon/15 px-4 text-sm font-semibold text-carbon disabled:opacity-60"
-                              >
-                                Gestionar pago
-                              </button>
-                            </Form>
-                          </div>
-                        </div>
-    
-                        <Form method="post" className="mt-4 flex flex-wrap items-center gap-2">
-                          <input type="hidden" name="intent" value="update-frequency" />
-                          <input type="hidden" name="subscriptionId" value={sub.id} />
-                          <label htmlFor={`freq-${sub.id}`} className="text-sm text-carbon/60">
-                            Cambiar frecuencia:
-                          </label>
-                          <select
-                            id={`freq-${sub.id}`}
-                            name="frequency"
-                            defaultValue={sub.frequency}
-                            className="min-h-11 rounded-xl border border-carbon/15 px-3 text-sm"
-                          >
-                            {(subscriptionProgram.frequencies.includes(sub.frequency)
-                              ? subscriptionProgram.frequencies
-                              : [sub.frequency, ...subscriptionProgram.frequencies]
-                            ).map((value) => (
-                              <option key={value} value={value}>
-                                {frequencyLabel(value)}
-                              </option>
-                            ))}
-                          </select>
-                          <button
-                            type="submit"
-                            disabled={isBusy}
-                            className="min-h-11 rounded-full border border-carbon/15 px-4 text-sm font-semibold text-carbon disabled:opacity-60"
-                          >
-                            Guardar
-                          </button>
-                        </Form>
-    
-                        {/* La factura de cada caja: se emite con los datos de «Datos de facturación» (otra sección de Mi cuenta). */}
-                        <Form method="post" className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-carbon/10 pt-4">
-                          <input type="hidden" name="intent" value="subscription-invoice" />
-                          <input type="hidden" name="subscriptionId" value={sub.id} />
-                          <input type="hidden" name="invoice" value={sub.requiresInvoice ? "off" : "on"} />
-                          <div className="min-w-0 flex-1 basis-60">
-                            <p className="text-sm font-semibold text-carbon">Factura en cada caja</p>
-                            <p className="text-sm text-carbon/60">
-                              {sub.requiresInvoice
-                                ? user.billing
-                                  ? `Prendida: cada caja se factura con el RFC ${user.billing.rfc}.`
-                                  : "Prendida, pero ya no tienes datos fiscales guardados: agrégalos en «Datos de facturación» para que se emita."
-                                : "Apagada: si necesitas factura de una caja, pídela dentro del mismo mes de su cobro."}
-                            </p>
-                          </div>
-                          <button
-                            type="submit"
-                            disabled={isBusy}
-                            className="min-h-11 rounded-full border border-carbon/15 px-4 text-sm font-semibold text-carbon disabled:opacity-60"
-                          >
-                            {sub.requiresInvoice ? "Apagar" : "Prender"}
-                          </button>
-                          {actionData && "savedIntent" in actionData && actionData.savedIntent === "subscription-invoice" && !actionData.ok && (
-                            <p className="basis-full text-sm font-semibold text-red-600">{actionData.error}</p>
-                          )}
-                        </Form>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-              </>
-            )}
-            {section === "perfil" && (
-              <>
-    {/* Perfil: teléfono, dirección y perros */}
-              <div className="mt-8 rounded-3xl border border-carbon/10 bg-white p-6">
-                <div className="flex items-center justify-between gap-4">
-                  <div>
-                    <p className="font-display font-bold text-carbon">Mi perfil</p>
-                    <p className="mt-1 text-sm text-carbon/60">
-                      Teléfono, dirección de envío y tus perros — para tus pedidos y para no perdernos
-                      su cumpleaños.
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setShowProfileForm((v) => !v)}
-                    className="min-h-11 shrink-0 rounded-full border border-carbon/15 px-4 text-sm font-semibold text-carbon hover:border-carbon/30"
+  
+            <TileGroup title="Mis compras">
+              <AccountTile
+                section={hasOrders ? "pedidos" : undefined}
+                icon={<PackageIcon className="h-6 w-6" />}
+                title="Mis pedidos"
+                summary={ordersSummary}
+                badge={ordersBadge}
+              />
+              <AccountTile
+                section={hasSubscriptions ? "suscripcion" : undefined}
+                icon={<RepeatIcon className="h-6 w-6" />}
+                title="Mi suscripción"
+                summary={subscriptionSummary}
+                badge={subscriptionBadge}
+                badgeTone="warning"
+              />
+            </TileGroup>
+
+            <TileGroup title="Mi información" columns="sm:grid-cols-2 lg:grid-cols-4">
+              <AccountTile section="perritos" icon={<PawIcon className="h-6 w-6" />} title="Mis perritos" summary={dogsSummary} />
+              <AccountTile section="perfil" icon={<UserIcon className="h-6 w-6" />} title="Mi perfil" summary={profileSummary} />
+              <AccountTile section="direcciones" icon={<MapPinIcon className="h-6 w-6" />} title="Mis direcciones" summary={addressesSummary} />
+              <AccountTile section="facturacion" icon={<ReceiptIcon className="h-6 w-6" />} title="Mis datos de facturación" summary={billingSummary} />
+            </TileGroup>
+
+            {/* Es solo sí o no: va aquí mismo, sin mandar a nadie a otra sección. */}
+            <MarketingCard subscribed={user.marketing} />
+
+            <div className="mt-10 flex flex-wrap items-center gap-x-6 gap-y-3">
+              <Form method="post" action="/cuenta/salir">
+                <button
+                  type="submit"
+                  className="min-h-11 rounded-full border border-carbon/25 px-6 text-sm font-semibold text-carbon transition-colors hover:bg-carbon/5"
+                >
+                  Cerrar sesión
+                </button>
+              </Form>
+              <a
+                href="#eliminar"
+                onClick={(event) => jumpTo(event, "eliminar")}
+                className="min-h-11 content-center text-sm font-semibold text-carbon/50 underline hover:text-red-700"
+              >
+                Eliminar mi cuenta
+              </a>
+            </div>
+          </div>
+
+          {hasPoint && <AccountSection id="punto">
+    <AllyCard ally={ally} requestStatus={allyRequestStatus} orders={allyOrders} orderStatusLabels={ORDER_STATUS_LABELS} />
+          </AccountSection>}
+
+          {hasOrders && (
+            <AccountSection id="pedidos">
+              <h2 className="font-display text-xl font-black text-carbon">Mis pedidos</h2>
+              <ul className="mt-4 flex flex-col gap-3">
+                {orders.map((order) => (
+                  <li
+                    key={order.id}
+                    className="flex items-center justify-between rounded-2xl border border-carbon/10 bg-white p-4"
                   >
-                    {showProfileForm ? "Cerrar" : "Editar"}
-                  </button>
-                </div>
-    
-                {actionData && "savedIntent" in actionData && actionData.savedIntent === "update-profile" && (
-                  actionData.ok ? (
-                    <p className="mt-3 text-sm font-semibold text-bosque">Perfil actualizado.</p>
-                  ) : (
-                    <p className="mt-3 text-sm font-semibold text-red-600">{actionData.error}</p>
-                  )
-                )}
-    
-                {!showProfileForm ? (
-                  <div className="mt-4 grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
-                    <p className="text-carbon/70">
-                      <span className="font-semibold text-carbon">Teléfono: </span>
-                      {user.phone || "sin registrar"}
-                    </p>
-                    <p className="text-carbon/70">
-                      <span className="font-semibold text-carbon">Dirección: </span>
-                      {user.address?.line1 ? `${user.address.line1}, ${user.address.city ?? ""}` : "sin registrar"}
-                    </p>
-                    <p className="text-carbon/70 sm:col-span-2">
-                      <span className="font-semibold text-carbon">Perros: </span>
-                      {user.dogs.length > 0
-                        ? user.dogs.map((d) => (d.birthday ? `${d.name} (cumpleaños ${d.birthday})` : d.name)).join(", ")
-                        : "sin registrar"}
-                    </p>
-                  </div>
-                ) : (
-                  <Form method="post" className="mt-4 flex flex-col gap-4">
-                    <input type="hidden" name="intent" value="update-profile" />
-    
                     <div>
-                      <label htmlFor="phone" className="text-sm font-semibold text-carbon">
-                        Teléfono
-                      </label>
-                      <input
-                        id="phone"
-                        name="phone"
-                        type="tel"
-                        defaultValue={user.phone}
-                        className="mt-1 w-full min-h-11 rounded-xl border border-carbon/15 px-4 focus:border-oliva focus:outline-none"
-                      />
+                      <p className="text-sm font-semibold text-carbon">
+                        {(order.items as Array<{ quantity: number; name: string }>)
+                          .map((i) => `${i.quantity}× ${i.name}`)
+                          .join(", ")}
+                      </p>
+                      <p className="text-xs text-carbon/50">
+                        Pedido {order.number} · {new Date(order.createdAt).toLocaleDateString("es-MX")} ·{" "}
+                        {ORDER_STATUS_LABELS[order.status] ?? order.status}
+                        {order.shippingCost > 0 && ` · Incluye envío $${order.shippingCost} MXN`}
+                        {order.requiresInvoice && " · Factura solicitada"}
+                      </p>
                     </div>
-    
-                    <div>
-                      <p className="text-sm font-semibold text-carbon">Dirección principal</p>
-                      <div className="mt-1 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                        <input
-                          name="addressLine1"
-                          placeholder="Calle y número"
-                          defaultValue={user.address?.line1}
-                          className="min-h-11 rounded-xl border border-carbon/15 px-4 focus:border-oliva focus:outline-none sm:col-span-2"
-                        />
-                        <input
-                          name="addressLine2"
-                          placeholder="Colonia, interior (opcional)"
-                          defaultValue={user.address?.line2}
-                          className="min-h-11 rounded-xl border border-carbon/15 px-4 focus:border-oliva focus:outline-none sm:col-span-2"
-                        />
-                        <input
-                          name="addressCity"
-                          placeholder="Ciudad"
-                          defaultValue={user.address?.city}
-                          className="min-h-11 rounded-xl border border-carbon/15 px-4 focus:border-oliva focus:outline-none"
-                        />
-                        <input
-                          name="addressState"
-                          placeholder="Estado"
-                          defaultValue={user.address?.state}
-                          className="min-h-11 rounded-xl border border-carbon/15 px-4 focus:border-oliva focus:outline-none"
-                        />
-                        <input
-                          name="addressPostalCode"
-                          placeholder="Código postal"
-                          defaultValue={user.address?.postalCode}
-                          className="min-h-11 rounded-xl border border-carbon/15 px-4 focus:border-oliva focus:outline-none"
-                        />
+                    <p className="font-display font-bold text-carbon">${order.netAmount} MXN</p>
+                  </li>
+                ))}
+              </ul>
+            </AccountSection>
+          )}
+
+          {hasSubscriptions && (
+            <AccountSection id="suscripcion">
+              <h2 className="font-display text-xl font-black text-carbon">Mi suscripción</h2>
+              <ul className="mt-4 flex flex-col gap-4">
+                {subscriptions.map((sub) => (
+                  <li key={sub.id} className="rounded-3xl border border-carbon/10 bg-white p-5 sm:p-6">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <p className="font-display font-bold text-carbon">
+                          {sub.items.map((i) => `${i.quantity}× ${i.name}`).join(" + ")}
+                        </p>
+                        <p className="text-sm text-carbon/60">
+                          {frequencyLabel(sub.frequency)} · Estado:{" "}
+                          <span className="font-semibold capitalize">
+                            {sub.status === "active"
+                              ? "Activa"
+                              : sub.status === "paused"
+                                ? "Pausada"
+                                : sub.status === "past_due"
+                                  ? "Pago pendiente"
+                                  : "Cancelada"}
+                          </span>
+                        </p>
+                      </div>
+
+                      <div className="flex flex-wrap gap-2">
+                        {sub.status === "active" ? (
+                          <Form method="post">
+                            <input type="hidden" name="intent" value="pause-subscription" />
+                            <input type="hidden" name="subscriptionId" value={sub.id} />
+                            <button
+                              type="submit"
+                              disabled={isBusy}
+                              className="min-h-11 rounded-full border border-carbon/15 px-4 text-sm font-semibold text-carbon disabled:opacity-60"
+                            >
+                              Pausar
+                            </button>
+                          </Form>
+                        ) : sub.status === "paused" ? (
+                          <Form method="post">
+                            <input type="hidden" name="intent" value="resume-subscription" />
+                            <input type="hidden" name="subscriptionId" value={sub.id} />
+                            <button
+                              type="submit"
+                              disabled={isBusy}
+                              className="min-h-11 rounded-full bg-lima px-4 text-sm font-bold text-carbon disabled:opacity-60"
+                            >
+                              Reanudar
+                            </button>
+                          </Form>
+                        ) : null}
+
+                        <Form method="post">
+                          <input type="hidden" name="intent" value="billing-portal" />
+                          <button
+                            type="submit"
+                            disabled={isBusy}
+                            className="min-h-11 rounded-full border border-carbon/15 px-4 text-sm font-semibold text-carbon disabled:opacity-60"
+                          >
+                            Gestionar pago
+                          </button>
+                        </Form>
                       </div>
                     </div>
-    
-                    <div>
-                      <p className="text-sm font-semibold text-carbon">Tus perros</p>
-                      <div className="mt-1 flex flex-col gap-2">
-                        {dogRows.map((dog, i) => (
-                          <div key={i} className="flex flex-wrap items-center gap-2">
-                            <input
-                              name="mascota"
-                              autoComplete="off"
-                              placeholder="Nombre"
-                              defaultValue={dog.name}
-                              className="min-h-11 flex-1 rounded-xl border border-carbon/15 px-4 focus:border-oliva focus:outline-none"
-                            />
-                            <input
-                              name="dogBirthday"
-                              type="date"
-                              defaultValue={dog.birthday ?? ""}
-                              aria-label="Cumpleaños"
-                              className="min-h-11 rounded-xl border border-carbon/15 px-4 focus:border-oliva focus:outline-none"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => setDogRows((rows) => rows.filter((_, idx) => idx !== i))}
-                              aria-label="Quitar perro"
-                              className="min-h-11 min-w-11 rounded-full text-carbon/40 hover:text-carbon"
-                            >
-                              <CloseIcon className="mx-auto block h-4 w-4" />
-                            </button>
-                          </div>
+
+                    <Form method="post" className="mt-4 flex flex-wrap items-center gap-2">
+                      <input type="hidden" name="intent" value="update-frequency" />
+                      <input type="hidden" name="subscriptionId" value={sub.id} />
+                      <label htmlFor={`freq-${sub.id}`} className="text-sm text-carbon/60">
+                        Cambiar frecuencia:
+                      </label>
+                      <select
+                        id={`freq-${sub.id}`}
+                        name="frequency"
+                        defaultValue={sub.frequency}
+                        className="min-h-11 rounded-xl border border-carbon/15 px-3 text-sm"
+                      >
+                        {(subscriptionProgram.frequencies.includes(sub.frequency)
+                          ? subscriptionProgram.frequencies
+                          : [sub.frequency, ...subscriptionProgram.frequencies]
+                        ).map((value) => (
+                          <option key={value} value={value}>
+                            {frequencyLabel(value)}
+                          </option>
                         ))}
+                      </select>
+                      <button
+                        type="submit"
+                        disabled={isBusy}
+                        className="min-h-11 rounded-full border border-carbon/15 px-4 text-sm font-semibold text-carbon disabled:opacity-60"
+                      >
+                        Guardar
+                      </button>
+                    </Form>
+
+                    {/* La factura de cada caja: se emite con los datos de «Mis datos de facturación» (otra sección de Mi cuenta). */}
+                    <Form method="post" className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-carbon/10 pt-4">
+                      <input type="hidden" name="intent" value="subscription-invoice" />
+                      <input type="hidden" name="subscriptionId" value={sub.id} />
+                      <input type="hidden" name="invoice" value={sub.requiresInvoice ? "off" : "on"} />
+                      <div className="min-w-0 flex-1 basis-60">
+                        <p className="text-sm font-semibold text-carbon">Factura en cada caja</p>
+                        <p className="text-sm text-carbon/60">
+                          {sub.requiresInvoice
+                            ? user.billing
+                              ? `Prendida: cada caja se factura con el RFC ${user.billing.rfc}.`
+                              : "Prendida, pero ya no tienes datos fiscales guardados: agrégalos en «Mis datos de facturación» para que se emita."
+                            : "Apagada: si necesitas factura de una caja, pídela dentro del mismo mes de su cobro."}
+                        </p>
                       </div>
                       <button
-                        type="button"
-                        onClick={() => setDogRows((rows) => [...rows, { name: "", birthday: "" }])}
-                        className="mt-2 text-sm font-semibold text-bosque hover:underline"
+                        type="submit"
+                        disabled={isBusy}
+                        className="min-h-11 rounded-full border border-carbon/15 px-4 text-sm font-semibold text-carbon disabled:opacity-60"
                       >
-                        + Agregar otro perro
+                        {sub.requiresInvoice ? "Apagar" : "Prender"}
                       </button>
-                    </div>
-    
-                    <button
-                      type="submit"
-                      disabled={isSavingProfile}
-                      className="min-h-11 self-start rounded-full bg-carbon px-6 text-sm font-bold text-hueso disabled:opacity-60"
-                    >
-                      {isSavingProfile ? "Guardando…" : "Guardar perfil"}
-                    </button>
-                  </Form>
-                )}
-              </div>
-              </>
-            )}
-            {section === "direcciones" && (
-              <>
-    <AddressBookCard addresses={user.addresses} />
-              </>
-            )}
-            {section === "facturacion" && (
-              <>
-    <BillingCard billing={user.billing} invoicesBoxes={subscriptions.some((s) => s.requiresInvoice)} />
-              </>
-            )}
-            {section === "correos" && (
-              <>
-    <MarketingCard subscribed={user.marketing} />
-              </>
-            )}
-            {section === "punto" && (
-              <>
-    <AllyCard ally={ally} requestStatus={allyRequestStatus} orders={allyOrders} orderStatusLabels={ORDER_STATUS_LABELS} />
-              </>
-            )}
-            {section === "eliminar" && (
-              <>
+                      {actionData && "savedIntent" in actionData && actionData.savedIntent === "subscription-invoice" && !actionData.ok && (
+                        <p className="basis-full text-sm font-semibold text-red-600">{actionData.error}</p>
+                      )}
+                    </Form>
+                  </li>
+                ))}
+              </ul>
+            </AccountSection>
+          )}
+
+          <AccountSection id="perritos">
+            <DogsCard dogs={user.dogs} />
+          </AccountSection>
+
+          <AccountSection id="perfil">
+            <ProfileCard name={user.name ?? ""} firstName={user.firstName} lastName={user.lastName} email={user.email} emailVerified={user.emailVerified} phone={user.phone} />
+          </AccountSection>
+
+          <AccountSection id="direcciones">
+            <AddressBookCard addresses={user.addresses} />
+          </AccountSection>
+
+          <AccountSection id="facturacion">
+            <BillingCard billing={user.billing} invoicesBoxes={subscriptions.some((s) => s.requiresInvoice)} />
+          </AccountSection>
+
+          <AccountSection id="eliminar">
     {/* Borrar la cuenta va aparte, con su propio espacio y divisor: nadie debe confundirlo con salir. */}
-              <div className="mt-6">
+              <div>
               <div className="rounded-3xl border border-red-200 bg-red-50/50 p-6">
                 <p className="font-display font-bold text-red-900">Eliminar mi cuenta</p>
                 <p className="mt-1 text-sm text-red-900/70">
-                  Se borra tu perfil (datos de contacto, mascotas, dirección) de forma permanente. Tus
+                  Se borra tu perfil (datos de contacto, perritos, direcciones) de forma permanente. Tus
                   pedidos ya pagados se conservan como comprobante, sin ligarlos a tu nombre.
                 </p>
     
@@ -960,64 +890,7 @@ export default function Cuenta() {
                 )}
               </div>
               </div>
-              </>
-            )}
-            </>
-          ) : (
-            <>
-            <LoyaltyStrip loyalty={loyalty} pendingRewardText={loyalty.pendingReward ? describeLoyaltyReward(loyalty.pendingReward) : null} />
-  
-            {hasPoint && (
-              <TileGroup title="Mi punto de recarga">
-                <AccountTile
-                  section="punto"
-                  icon={<StoreIcon className="h-6 w-6" />}
-                  title={ally ? "Mi punto de recarga" : "Mi solicitud de punto de recarga"}
-                  summary={ally ? ally.businessName || "Tu punto y tus pedidos de bidón" : REQUEST_STATUS_LABELS[allyRequestStatus!]}
-                />
-              </TileGroup>
-            )}
-  
-            <TileGroup title="Mis compras">
-              <AccountTile
-                section="pedidos"
-                icon={<PackageIcon className="h-6 w-6" />}
-                title="Mis pedidos"
-                summary={ordersSummary}
-                badge={ordersBadge}
-              />
-              <AccountTile
-                section="auto-envio"
-                icon={<RepeatIcon className="h-6 w-6" />}
-                title="Mi auto-envío"
-                summary={subscriptionSummary}
-                badge={subscriptionBadge}
-                badgeTone="warning"
-              />
-            </TileGroup>
-  
-            <TileGroup title="Mi información" columns="grid-cols-2 sm:grid-cols-2 lg:grid-cols-4">
-              <AccountTile section="perfil" icon={<UserIcon className="h-6 w-6" />} title="Perfil y perros" summary={profileSummary} />
-              <AccountTile section="direcciones" icon={<MapPinIcon className="h-6 w-6" />} title="Direcciones" summary={addressesSummary} />
-              <AccountTile section="facturacion" icon={<ReceiptIcon className="h-6 w-6" />} title="Datos de facturación" summary={billingSummary} />
-              <AccountTile section="correos" icon={<MailIcon className="h-6 w-6" />} title="Correos de STOPee" summary={marketingSummary} />
-            </TileGroup>
-  
-            <div className="mt-12 flex flex-wrap items-center gap-x-6 gap-y-3">
-    <Form method="post" action="/cuenta/salir" className="">
-                <button
-                  type="submit"
-                  className="min-h-11 rounded-full border border-carbon/25 px-6 text-sm font-semibold text-carbon transition-colors hover:bg-carbon/5"
-                >
-                  Cerrar sesión
-                </button>
-              </Form>
-              <Link to={sectionHref("eliminar")} className="min-h-11 content-center text-sm font-semibold text-carbon/50 underline hover:text-red-700">
-                Eliminar mi cuenta
-              </Link>
-            </div>
-            </>
-          )}
+          </AccountSection>
         </section>
       </main>
 
