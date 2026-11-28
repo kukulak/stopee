@@ -62,7 +62,7 @@ export async function action({ request }: ActionFunctionArgs) {
   const items = resolved.filter((i): i is NonNullable<typeof i> => i !== null);
 
   if (items.length === 0) {
-    return data({ error: "Los productos elegidos ya no están disponibles para auto-envío." }, { status: 400 });
+    return data({ error: "Los productos elegidos ya no están disponibles para la suscripción." }, { status: 400 });
   }
 
   // La caja siempre llega a domicilio, dentro de la zona de entrega: mismo candado que en una

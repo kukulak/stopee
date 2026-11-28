@@ -14,7 +14,7 @@ import { Field, inputClass } from "~/components/admin/MediaFields";
 import { requireAdmin } from "~/lib/session.server";
 import { cleanPlainText } from "~/lib/formGuard.server";
 
-export const meta: MetaFunction = () => [{ title: "Auto-envío — Admin STOPee" }];
+export const meta: MetaFunction = () => [{ title: "Suscripción — Admin STOPee" }];
 
 export async function loader({ request }: LoaderFunctionArgs) {
   await requireAdmin(request);
@@ -205,7 +205,7 @@ export default function AdminSubscription() {
 
   return (
     <div className="w-full min-w-0 max-w-3xl">
-      <h1 className="font-display text-2xl font-black text-carbon sm:text-3xl">Auto-envío</h1>
+      <h1 className="font-display text-2xl font-black text-carbon sm:text-3xl">Suscripción</h1>
       <p className="mt-1 text-sm text-carbon/60">
         Lo que ve el cliente al armar su caja periódica: nombre, descuento, frecuencias y textos.{" "}
         <a href="/suscripcion" target="_blank" rel="noreferrer" className="font-semibold text-bosque underline">
@@ -239,7 +239,7 @@ export default function AdminSubscription() {
             </Field>
           </div>
           <p className="mt-2 text-xs text-carbon/50">
-            Sin nombre, el sitio solo dice &ldquo;Auto-envío&rdquo;. El descuento se aplica en cada entrega; con 0 no se cobra descuento
+            Sin nombre, el sitio solo dice &ldquo;Suscripción&rdquo;. El descuento se aplica en cada entrega; con 0 no se cobra descuento
             y desaparece de los textos que lo mencionan.
           </p>
         </fieldset>

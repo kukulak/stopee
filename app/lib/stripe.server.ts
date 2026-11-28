@@ -43,7 +43,7 @@ async function getSubscriptionProductId(sku: string, name: string): Promise<stri
   const cached = subscriptionProductIdCache.get(sku);
   if (cached) return cached;
 
-  const productName = `${name} — Auto-envío`;
+  const productName = `${name} — Suscripción`;
   // Recorre TODAS las páginas: con más de 100 productos en Stripe, mirar solo la
   // primera no encontraría el de auto-envío y se crearía uno duplicado cada vez.
   for await (const product of stripe.products.list({ limit: 100, active: true })) {
@@ -156,7 +156,7 @@ async function getSubscriptionCouponId(discountPercent: number) {
   const coupon = await stripe.coupons.create({
     percent_off: discountPercent,
     duration: "forever",
-    name: `Auto-Envío STOPee ${discountPercent}%`,
+    name: `Suscripción STOPee ${discountPercent}%`,
   });
   cachedSubscriptionCouponIds.set(discountPercent, coupon.id);
   return coupon.id;

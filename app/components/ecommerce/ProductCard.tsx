@@ -132,7 +132,7 @@ export function ProductCard({
               to={`/suscripcion?sku=${product.sku}`}
               className="text-center text-xs font-semibold text-bosque hover:underline"
             >
-              También disponible en auto-envío periódico
+              También disponible en suscripción periódica
             </Link>
           )}
         </div>

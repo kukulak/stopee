@@ -22,7 +22,7 @@ import { getInvoiceRequestEmail } from "~/models/legalSettings.server";
 import { billingDefaultsFromUser } from "~/lib/cartView.server";
 
 export const meta: MetaFunction<typeof loader> = ({ data }) => {
-  if (!data) return [{ title: "Auto-envío periódico — STOPee" }];
+  if (!data) return [{ title: "Suscripción periódica — STOPee" }];
   const title = data.pageTitle;
   const discount = data.subscriptionConfig.discountPercent > 0 ? ` con ${data.subscriptionConfig.discountPercent}% de descuento` : "";
   return [
@@ -62,8 +62,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
     origin: siteOrigin(request),
     subscriptionConfig,
     pageTitle: subscriptionConfig.programName
-      ? `${subscriptionConfig.programName} — Auto-envío periódico`
-      : "Auto-envío periódico",
+      ? `${subscriptionConfig.programName} — Suscripción periódica`
+      : "Suscripción periódica",
     frequencySummary: describeFrequencies(subscriptionConfig),
     subscribableItems,
     highlightSku,
@@ -107,7 +107,7 @@ export default function Suscripcion() {
 
           <p className="font-body text-sm font-bold uppercase tracking-widest text-oliva"><BrandText>{programDisplayName(subscriptionConfig)}</BrandText></p>
           <h1 className="mt-2 max-w-2xl font-display text-3xl font-black text-carbon sm:text-4xl">
-            Tu auto-envío periódico, armado a tu medida
+            Tu suscripción periódica, armada a tu medida
           </h1>
           <p className="mt-3 max-w-2xl text-carbon/70">
             Desde un litro para tu casa hasta varios para un negocio pet-friendly — elige qué va en

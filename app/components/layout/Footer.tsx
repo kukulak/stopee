@@ -8,7 +8,7 @@ export function Footer() {
   const rootData = useRouteLoaderData<typeof RootLoader>("root");
   const socialLinks = rootData?.socialLinks ?? [];
   const storeVisible = rootData?.storeVisible ?? false;
-  const subscriptionLinkLabel = rootData?.subscriptionLinkLabel ?? "Auto-envío";
+  const subscriptionLinkLabel = rootData?.subscriptionLinkLabel ?? "Suscripción";
   const hasSocialLinks = socialLinks.length > 0;
 
   return (

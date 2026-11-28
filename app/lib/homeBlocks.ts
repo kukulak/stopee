@@ -104,7 +104,7 @@ export const HOME_BLOCKS: Record<HomeBlockType, HomeBlockDef> = {
         fields: [
           text("subTitle", "Título", 80, { hint: "Si lo dejas vacío, la tarjeta no se muestra." }),
           textarea("subText", "Texto", 240, {
-            hint: "Vacío = texto automático con tu descuento y frecuencias de auto-envío.",
+            hint: "Vacío = texto automático con tu descuento y frecuencias de suscripción.",
           }),
           text("subButton", "Texto del botón", 40),
         ],

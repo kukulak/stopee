@@ -436,7 +436,7 @@ export default function AdminCustomerDetail() {
         <Card className="border-oliva/40 bg-oliva/5">
           <p className="font-display font-bold text-carbon">Candidato a suscripción</p>
           <p className="mt-1 text-sm text-carbon/70">
-            Ya hizo {insights.orderCount} compras individuales pero no tiene un auto-envío activo —
+            Ya hizo {insights.orderCount} compras individuales pero no tiene una suscripción activa —
             cada vez que recompra a mano, se pierde el descuento de suscripción. Buen momento para
             ofrecérselo.
           </p>
@@ -501,7 +501,7 @@ export default function AdminCustomerDetail() {
         <Card>
           <h2 className="font-display text-lg font-bold text-carbon">Suscripción</h2>
           {subscriptions.length === 0 ? (
-            <p className="mt-2 text-sm text-carbon/60">Nunca se ha suscrito al auto-envío.</p>
+            <p className="mt-2 text-sm text-carbon/60">Nunca se ha suscrito.</p>
           ) : (
             <ul className="mt-2 flex flex-col gap-3">
               {subscriptions.map((s) => (

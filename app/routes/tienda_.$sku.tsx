@@ -245,11 +245,11 @@ export default function ProductDetail() {
                 <div className="mt-6 rounded-2xl border border-lima/30 bg-bosque/5 p-5">
                   <p className="font-display font-bold text-carbon">
                     {subscription.discountPercent > 0
-                      ? `¿Lo quieres en auto-envío? Ahorra ${subscription.discountPercent}%`
-                      : "¿Lo quieres en auto-envío?"}
+                      ? `¿Lo quieres en suscripción? Ahorra ${subscription.discountPercent}%`
+                      : "¿Lo quieres en suscripción?"}
                   </p>
                   <p className="mt-1 text-sm text-carbon/70">
-                    Arma tu caja de auto-envío con {product.name} y recíbela
+                    Arma tu caja de suscripción con {product.name} y recíbela
                     {subscription.frequencies && `, ${subscription.frequencies}`}.
                   </p>
                   <Link

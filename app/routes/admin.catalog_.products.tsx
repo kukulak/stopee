@@ -279,7 +279,7 @@ function ProductFormFields({ defaults }: { defaults?: Product }) {
       </Field>
       <p className="col-span-full -mt-3 text-xs text-carbon/50">
         Un producto solo para aliados no aparece para nadie más (ni en la tienda, ni por su enlace, ni en el sitemap), no
-        puede ser producto estrella ni ir en el auto-envío o en un paquete.
+        puede ser producto estrella ni ir en la suscripción o en un paquete.
       </p>
       <label className="col-span-full flex min-h-11 items-center gap-2 text-sm font-medium text-carbon">
         <input type="checkbox" name="isIndividuallySellable" defaultChecked={defaults?.isIndividuallySellable ?? true} className="h-5 w-5 shrink-0 accent-lima" />
@@ -297,7 +297,7 @@ function ProductFormFields({ defaults }: { defaults?: Product }) {
       </label>
       <label className="col-span-full flex min-h-11 items-center gap-2 text-sm font-medium text-carbon">
         <input type="checkbox" name="isSubscribable" defaultChecked={defaults?.isSubscribable ?? true} className="h-5 w-5 shrink-0 accent-lima" />
-        Se puede incluir en el auto-envío periódico
+        Se puede incluir en la suscripción periódica
       </label>
     </div>
   );

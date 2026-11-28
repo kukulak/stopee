@@ -77,7 +77,7 @@ describe("correos transaccionales", () => {
         frequency: "cada 4 semanas",
         hasAccount: true,
       });
-      expect(mail.subject).toBe("Tu auto-envío de STOPee está activo");
+      expect(mail.subject).toBe("Tu suscripción de STOPee está activa");
       expect(mail.text).toContain("cada 4 semanas");
       expect(mail.text).toContain("https://stopee.com.mx/cuenta");
     });

@@ -144,10 +144,10 @@ export function fillDiscount(text: string, config: Pick<SubscriptionConfig, "dis
 
 /** "Club STOPee — Auto-envío periódico", o solo "Auto-envío periódico" si no hay nombre. */
 export function programEyebrow(config: Pick<SubscriptionConfig, "programName">): string {
-  return config.programName ? `${config.programName} — Auto-envío periódico` : "Auto-envío periódico";
+  return config.programName ? `${config.programName} — Suscripción periódica` : "Suscripción periódica";
 }
 
 /** Cómo llamar al programa en frases sueltas (enlaces, títulos). */
 export function programDisplayName(config: Pick<SubscriptionConfig, "programName">): string {
-  return config.programName || "Auto-envío";
+  return config.programName || "Suscripción";
 }

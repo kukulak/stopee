@@ -133,7 +133,7 @@ export function SubscriptionConfigurator({
       <p className="font-body text-sm font-bold uppercase tracking-widest text-oliva"><BrandText>{programEyebrow(config)}</BrandText></p>
       <h3 className="mt-2 font-display text-2xl font-black text-carbon">{fillDiscount(config.headline, config)}</h3>
       <p className="mt-2 max-w-2xl text-sm font-semibold text-carbon">
-        Cuando sepas cuánto te dura tu primer litro, activa el auto-envío periódico.
+        Cuando sepas cuánto te dura tu primer litro, activa tu suscripción periódica.
       </p>
       {config.description && <p className="mt-2 max-w-2xl text-sm text-carbon/70">{config.description}</p>}
 

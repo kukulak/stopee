@@ -117,7 +117,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     heroBanners,
     featured,
     subscriptionPitch: subscriptionConfig
-      ? `Activa el auto-envío periódico y recibe tu concentrado ${describeFrequencies(subscriptionConfig)}${
+      ? `Activa tu suscripción periódica y recibe tu concentrado ${describeFrequencies(subscriptionConfig)}${
           subscriptionConfig.discountPercent > 0
             ? ` con ${subscriptionConfig.discountPercent}% de descuento automático`
             : ''

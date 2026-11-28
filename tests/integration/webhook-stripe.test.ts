@@ -404,7 +404,7 @@ describe.skipIf(!hasTestDb)("webhook de Stripe", () => {
       expect((await OrderModel.findOne().lean())!.type).toBe("subscription_first");
       expect(await stockOf()).toBe(9);
       expect(sendEmail).toHaveBeenCalledTimes(1);
-      expect(sendEmail.mock.calls[0][0].subject).toBe("Tu auto-envío de STOPee está activo");
+      expect(sendEmail.mock.calls[0][0].subject).toBe("Tu suscripción de STOPee está activa");
       expect((await UserModel.findById(user._id).lean())!.stripeCustomerId).toBe("cus_test_1");
     });
 

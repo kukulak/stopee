@@ -18,8 +18,8 @@ const FIELD_LABELS: Record<keyof LegalBusinessData, string> = {
   correoContacto: "correo de contacto",
   tiemposEnvio: "tiempos de envío",
   politicaDevoluciones: "política de devoluciones",
-  frecuenciasAutoenvio: "frecuencias del auto-envío",
-  descuentoAutoenvio: "descuento del auto-envío",
+  frecuenciasAutoenvio: "frecuencias de la suscripción",
+  descuentoAutoenvio: "descuento de la suscripción",
 };
 
 /**

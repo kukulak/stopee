@@ -310,7 +310,7 @@ describe.skipIf(!hasTestDb)("productos solo para aliados", () => {
         ),
       );
       expect(response.status).toBe(400);
-      expect(((await response.json()) as { error: string }).error).toMatch(/ya no están disponibles para auto-envío/);
+      expect(((await response.json()) as { error: string }).error).toMatch(/ya no están disponibles para la suscripción/);
       expect(createSession).not.toHaveBeenCalled();
     });
   });

@@ -98,7 +98,7 @@ Por tratarse de un producto de higiene, no aceptamos devoluciones de envases ya 
 
 ## 5. Suscripción periódica
 
-Al activar el auto-envío periódico, autorizas a STOPee a realizar cargos recurrentes a tu método de pago con la frecuencia que elijas ({{frecuenciasAutoenvio}}){{descuentoAutoenvio}}. Puedes pausar, cambiar la frecuencia o cancelar tu suscripción en cualquier momento desde tu cuenta, sin penalización. La cancelación aplica a partir del siguiente ciclo de cobro; no se reembolsan cargos ya procesados.
+Al activar la suscripción periódica, autorizas a STOPee a realizar cargos recurrentes a tu método de pago con la frecuencia que elijas ({{frecuenciasAutoenvio}}){{descuentoAutoenvio}}. Puedes pausar, cambiar la frecuencia o cancelar tu suscripción en cualquier momento desde tu cuenta, sin penalización. La cancelación aplica a partir del siguiente ciclo de cobro; no se reembolsan cargos ya procesados.
 
 ## 6. Cuenta de usuario
 

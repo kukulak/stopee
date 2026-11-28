@@ -153,11 +153,11 @@ export function orderConfirmationEmail(data: {
         totalLine,
         ...(data.orderNumber ? [`Número de pedido: ${data.orderNumber}`] : []),
         ...(shippingLine ? [shippingLine] : []),
-        "Te avisamos por correo en cuanto salga, con tu número de guía. Puedes pausar o cancelar tu auto-envío cuando quieras desde tu cuenta.",
+        "Te avisamos por correo en cuanto salga, con tu número de guía. Puedes pausar o cancelar tu suscripción cuando quieras desde tu cuenta.",
         invoiceParagraph,
       ]
     : [
-        data.frequency ? "Tu auto-envío quedó activo. Gracias por confiar en STOPee." : "Recibimos tu pago. Gracias por tu compra.",
+        data.frequency ? "Tu suscripción quedó activa. Gracias por confiar en STOPee." : "Recibimos tu pago. Gracias por tu compra.",
         itemsLine,
         totalLine,
         ...(data.orderNumber ? [`Número de pedido: ${data.orderNumber}`] : []),
@@ -167,7 +167,7 @@ export function orderConfirmationEmail(data: {
         invoiceParagraph,
       ];
   const { html, text } = renderLayout({
-    title: data.renewal ? "Tu caja se está preparando" : data.frequency ? "Tu auto-envío está activo" : "Recibimos tu pedido",
+    title: data.renewal ? "Tu caja se está preparando" : data.frequency ? "Tu suscripción está activa" : "Recibimos tu pedido",
     paragraphs,
     action: data.hasAccount
       ? { label: "Ver mis pedidos", url: appUrl("/cuenta") }
@@ -177,7 +177,7 @@ export function orderConfirmationEmail(data: {
     subject: data.renewal
       ? `Tu caja de ${data.renewal.programName} se está preparando`
       : data.frequency
-        ? "Tu auto-envío de STOPee está activo"
+        ? "Tu suscripción de STOPee está activa"
         : "Recibimos tu pedido de STOPee",
     html,
     text,

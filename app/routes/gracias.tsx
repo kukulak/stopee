@@ -163,7 +163,7 @@ export default function Gracias() {
               : !confirmed
                 ? "Estamos confirmando tu pago"
                 : isSubscription
-                  ? "Tu auto-envío ya está activo"
+                  ? "Tu suscripción ya está activa"
                   : "¡Gracias por tu compra!"}
           </h1>
           <p className="mt-3 text-carbon/70">
